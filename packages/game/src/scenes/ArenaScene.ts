@@ -11,13 +11,15 @@ import {
   parseTuning,
   wrapMod,
   type ArenaData,
-  type Sim
+  type Sim,
+  type SimEvent
 } from "@shoot-and-run/sim";
 import arenaJson from "../../../../content/arenas/arena-001.json";
 import playersJson from "../../../../content/players.json";
 import tuningJson from "../../../../content/tuning.json";
 import { KeyboardInput } from "../input/keyboard";
 import { parsePlayersConfig, type PlayerSlotConfig } from "../input/players-config";
+import { parseJuice, type JuiceConfig } from "../juice";
 import { FixedStepDriver } from "../loop";
 
 const TILE_COLOR = 0x5a5a6e;
@@ -43,6 +45,11 @@ export class ArenaScene extends Phaser.Scene {
   private overlayText!: Phaser.GameObjects.Text;
   private scoreTexts: Phaser.GameObjects.Text[] = [];
   private prev!: PrevPositions;
+  private juice!: JuiceConfig;
+  private hitstopRemainingMs = 0;
+  private lastAlpha = 0;
+  private killEmitters = new Map<number, Phaser.GameObjects.Particles.ParticleEmitter>();
+  private stickEmitter!: Phaser.GameObjects.Particles.ParticleEmitter;
 
   constructor() {
     super("arena");
@@ -60,9 +67,11 @@ export class ArenaScene extends Phaser.Scene {
     });
     this.prev = this.snapshot();
 
+    this.juice = parseJuice(tuningJson);
     this.keyboard = new KeyboardInput(window);
     this.drawTiles(arena);
     this.entityGfx = this.add.graphics();
+    this.createParticles();
     this.overlayText = this.add
       .text(ARENA_WIDTH / 2, ARENA_HEIGHT / 2 - 24, "", {
         fontFamily: "monospace",
@@ -88,6 +97,7 @@ export class ArenaScene extends Phaser.Scene {
         if (!mod) return;
         try {
           this.sim.setTuning(parseTuning(mod.default));
+          this.juice = parseJuice(mod.default);
           console.log("tuning hot-reloaded");
         } catch (err) {
           console.error("tuning hot-reload rejected:", err);
@@ -99,15 +109,69 @@ export class ArenaScene extends Phaser.Scene {
   }
 
   override update(_time: number, delta: number): void {
+    if (this.hitstopRemainingMs > 0) {
+      // Hitstop: hold the sim and the interpolation where they are. The
+      // camera shake effect still plays — frozen frame + shake reads as impact.
+      this.hitstopRemainingMs -= delta;
+      this.render(this.lastAlpha);
+      return;
+    }
     const alpha = this.driver.advance(delta, () => {
       const inputs = this.slots.map((s) => this.keyboard.sample(s.keys));
       this.prev = this.snapshot();
       const events = this.sim.step(inputs);
+      this.applyJuice(events);
       if (import.meta.env.DEV) {
         for (const e of events) console.log("[sim]", JSON.stringify(e));
       }
     });
+    this.lastAlpha = alpha;
     this.render(alpha);
+  }
+
+  private applyJuice(events: readonly SimEvent[]): void {
+    for (const e of events) {
+      if (e.type === "player_killed") {
+        this.hitstopRemainingMs = this.juice.hitstopMs;
+        this.cameras.main.shake(
+          this.juice.shakeDurationMs,
+          this.juice.shakeMagnitudePx / ARENA_WIDTH
+        );
+        this.killEmitters.get(e.victim)?.explode(this.juice.killBurstParticles, e.x, e.y);
+      } else if (e.type === "arrow_stuck") {
+        this.stickEmitter.explode(this.juice.stickPuffParticles, e.x, e.y);
+      }
+    }
+  }
+
+  private createParticles(): void {
+    const gfx = this.make.graphics();
+    gfx.fillStyle(0xffffff);
+    gfx.fillRect(0, 0, 2, 2);
+    gfx.generateTexture("px", 2, 2);
+    gfx.destroy();
+
+    const base = {
+      lifespan: { min: 150, max: 400 },
+      scale: { start: 1, end: 0 },
+      gravityY: 300,
+      emitting: false
+    };
+    this.stickEmitter = this.add.particles(0, 0, "px", {
+      ...base,
+      speed: { min: 20, max: 60 },
+      tint: 0xaaaaaa
+    });
+    for (const s of this.slots) {
+      this.killEmitters.set(
+        s.slot,
+        this.add.particles(0, 0, "px", {
+          ...base,
+          speed: { min: 60, max: 180 },
+          tint: Phaser.Display.Color.HexStringToColor(s.color).color
+        })
+      );
+    }
   }
 
   private snapshot(): PrevPositions {

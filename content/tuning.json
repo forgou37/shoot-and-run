@@ -13,5 +13,12 @@
   "roundRestartDelayMs": 1500,
   "startingArrows": 3,
   "roundsToWin": 3,
-  "matchRestartDelayMs": 4000
+  "matchRestartDelayMs": 4000,
+  "juice": {
+    "hitstopMs": 80,
+    "shakeDurationMs": 180,
+    "shakeMagnitudePx": 3,
+    "killBurstParticles": 24,
+    "stickPuffParticles": 6
+  }
 }
