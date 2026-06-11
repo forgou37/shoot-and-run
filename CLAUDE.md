@@ -122,6 +122,7 @@ Keep this section current as scripts change.
 | `npm run build` | Type-check both packages + production Vite build |
 | `npm run typecheck` | `tsc --noEmit` over sim src (no Node/DOM types — purity), sim tests (Node types), and game |
 | `npm test` | All Vitest suites (sim tests run headless in Node) |
+| `npm run e2e` | Playwright shell smoke suite (Chromium, dev server, `window.__testApi`) |
 | `npm run lint` | ESLint, incl. sim determinism guards (no `Math.random`/`Date.now`/timers in sim) |
 | `npm run check:deps` | dependency-cruiser: fails if `packages/sim/src` imports anything outside itself |
 
