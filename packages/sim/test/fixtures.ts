@@ -19,6 +19,115 @@ export const TEST_TUNING: Tuning = {
   startingArrows: 3
 };
 
+/** Flat full-width floor (rows 13–14), nothing else. For wrap-X tests. */
+export const FLAT_ARENA: ArenaData = {
+  name: "test-flat",
+  tiles: [
+    ...Array.from({ length: 13 }, () => "...................."),
+    "####################",
+    "####################"
+  ],
+  spawns: [
+    { x: 20, y: 192 },
+    { x: 300, y: 192 },
+    { x: 100, y: 192 },
+    { x: 220, y: 192 }
+  ]
+};
+
+/** Flat floor with spawn 0 floating high above it. For jump-buffer tests
+ *  (needs a long fall). Bypasses parseArena's spawn-on-ground check. */
+export const DROP_ARENA: ArenaData = {
+  name: "test-drop",
+  tiles: [
+    ...Array.from({ length: 13 }, () => "...................."),
+    "####################",
+    "####################"
+  ],
+  spawns: [
+    { x: 160, y: 40 },
+    { x: 40, y: 192 },
+    { x: 280, y: 192 },
+    { x: 100, y: 192 }
+  ]
+};
+
+/** Full floor plus a wall (col 15, rows 11–12). For wall-collision tests. */
+export const WALL_ARENA: ArenaData = {
+  name: "test-wall",
+  tiles: [
+    "....................",
+    "....................",
+    "....................",
+    "....................",
+    "....................",
+    "....................",
+    "....................",
+    "....................",
+    "....................",
+    "....................",
+    "....................",
+    "...............#....",
+    "...............#....",
+    "####################",
+    "####################"
+  ],
+  spawns: [
+    { x: 200, y: 192 },
+    { x: 40, y: 192 },
+    { x: 100, y: 192 },
+    { x: 60, y: 192 }
+  ]
+};
+
+/** One platform (row 5, cols 6–11) over a full floor. For ledge/coyote tests. */
+export const LEDGE_ARENA: ArenaData = {
+  name: "test-ledge",
+  tiles: [
+    "....................",
+    "....................",
+    "....................",
+    "....................",
+    "....................",
+    "......######........",
+    "....................",
+    "....................",
+    "....................",
+    "....................",
+    "....................",
+    "....................",
+    "....................",
+    "####################",
+    "####################"
+  ],
+  spawns: [
+    { x: 100, y: 74 },
+    { x: 280, y: 192 },
+    { x: 40, y: 192 },
+    { x: 200, y: 192 }
+  ]
+};
+
+/**
+ * Floor with a central gap (cols 9–10) and NO other tiles. For wrap-Y tests.
+ * Spawn 0 floats over the gap — this fixture deliberately bypasses
+ * parseArena (createSim trusts its input; validation happens at load time).
+ */
+export const VOID_COLUMN_ARENA: ArenaData = {
+  name: "test-void-column",
+  tiles: [
+    ...Array.from({ length: 13 }, () => "...................."),
+    "#########..#########",
+    "#########..#########"
+  ],
+  spawns: [
+    { x: 152, y: 100 },
+    { x: 40, y: 192 },
+    { x: 280, y: 192 },
+    { x: 100, y: 192 }
+  ]
+};
+
 export const TEST_ARENA: ArenaData = {
   name: "test-box",
   tiles: [

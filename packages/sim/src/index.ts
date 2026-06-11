@@ -1,13 +1,15 @@
 import type { ArenaData } from "./arena";
 import type { SimEvent } from "./events";
 import type { PlayerInput } from "./input";
+import { updatePlayer } from "./player";
 import { createRng, type Rng } from "./rng";
 import type { SimState } from "./state";
-import type { Tuning } from "./tuning";
+import { deriveTuning, type Tuning } from "./tuning";
 
 export const SIM_VERSION = "0.0.0";
 
 export * from "./arena";
+export * from "./constants";
 export * from "./events";
 export * from "./input";
 export * from "./rng";
@@ -40,6 +42,7 @@ export function createSim(config: SimConfig): Sim {
   // gameplay needs it, but seeded at init so the seed is part of the
   // sim's identity from tick 0.
   const _rng: Rng = createRng(config.seed);
+  const tuning = deriveTuning(config.tuning);
 
   let nextEntityId = 1;
   const allocId = (): number => nextEntityId++;
@@ -63,7 +66,12 @@ export function createSim(config: SimConfig): Sim {
         vy: 0,
         facing: 1 as const,
         arrows: config.tuning.startingArrows,
-        alive: true
+        alive: true,
+        grounded: false,
+        coyoteTicksLeft: 0,
+        jumpBufferTicksLeft: 0,
+        prevJumpHeld: false,
+        jumpCutAvailable: false
       };
     }),
     arrows: []
@@ -84,7 +92,11 @@ export function createSim(config: SimConfig): Sim {
         // Proper round state machine lands in T0.8.
         events.push({ tick: 0, type: "round_started" });
       }
-      // T0.4: movement & collision. T0.6: arrows. T0.7: kills. T0.8: round flow.
+      state.players.forEach((p, i) => {
+        if (!p.alive) return;
+        updatePlayer(p, inputs[i]!, config.arena, tuning);
+      });
+      // T0.6: arrows. T0.7: kills. T0.8: round flow.
       state.tick++;
       return events;
     }

@@ -1,0 +1,166 @@
+import { describe, expect, it } from "vitest";
+import type { ArenaData } from "../src/arena";
+import { createSim, type Sim } from "../src/index";
+import { emptyInput, type PlayerInput } from "../src/input";
+import { msToTicks } from "../src/tuning";
+import {
+  DROP_ARENA,
+  FLAT_ARENA,
+  LEDGE_ARENA,
+  TEST_TUNING,
+  VOID_COLUMN_ARENA,
+  WALL_ARENA
+} from "./fixtures";
+
+/** Single-player sim on the given arena, settled onto the ground. */
+function makeSettledSim(arena: ArenaData, settleTicks = 60): Sim {
+  const sim = createSim({
+    arena,
+    tuning: TEST_TUNING,
+    players: [{ slot: 0 }],
+    seed: 42
+  });
+  for (let i = 0; i < settleTicks; i++) sim.step([emptyInput()]);
+  return sim;
+}
+
+function inp(partial: Partial<PlayerInput>): PlayerInput {
+  return { ...emptyInput(), ...partial };
+}
+
+function p0(sim: Sim) {
+  return sim.state.players[0]!;
+}
+
+const COYOTE_TICKS = msToTicks(TEST_TUNING.coyoteTimeMs); // 80ms -> 5 ticks
+
+describe("movement acceptance (spec 000 T0.4)", () => {
+  it("(a) held jump reaches a measurably higher apex than a tapped jump", () => {
+    const apexHeight = (jumpHeldTicks: number): number => {
+      const sim = makeSettledSim(FLAT_ARENA);
+      const groundY = p0(sim).y;
+      let minY = groundY;
+      for (let t = 0; t < 90; t++) {
+        sim.step([inp({ jump: t < jumpHeldTicks })]);
+        minY = Math.min(minY, p0(sim).y);
+      }
+      return groundY - minY; // pixels risen
+    };
+
+    const tapped = apexHeight(2);
+    const held = apexHeight(40);
+    expect(tapped).toBeGreaterThan(0);
+    expect(held).toBeGreaterThan(tapped + 10);
+  });
+
+  it("(b) jump within the coyote window after walking off a ledge still jumps; after it, does not", () => {
+    const jumpAfterLeavingLedge = (delayTicks: number): boolean => {
+      const sim = makeSettledSim(LEDGE_ARENA, 10); // spawn 0 stands on the platform
+      expect(p0(sim).grounded).toBe(true);
+
+      // Walk right until the player leaves the platform.
+      let walked = 0;
+      while (p0(sim).grounded && walked < 300) {
+        sim.step([inp({ right: true })]);
+        walked++;
+      }
+      expect(p0(sim).grounded).toBe(false);
+
+      // Wait, then press jump for one tick.
+      for (let i = 0; i < delayTicks; i++) sim.step([emptyInput()]);
+      sim.step([inp({ jump: true })]);
+      return p0(sim).vy < 0; // rising means the jump happened
+    };
+
+    expect(jumpAfterLeavingLedge(COYOTE_TICKS - 2)).toBe(true);
+    expect(jumpAfterLeavingLedge(COYOTE_TICKS + 3)).toBe(false);
+  });
+
+  it("(c) jump pressed shortly before landing executes on landing; too early does not", () => {
+    const jumpsAfterLanding = (pressHeightPx: number): boolean => {
+      const sim = createSim({
+        arena: DROP_ARENA,
+        tuning: TEST_TUNING,
+        players: [{ slot: 0 }],
+        seed: 42
+      });
+      // Player falls ~160px from the floating spawn. Press jump once when
+      // within pressHeightPx of standing height, watch for a post-landing jump.
+      const standingY = 202; // floor top 208 minus half height 6
+      let pressed = false;
+      for (let t = 0; t < 240; t++) {
+        const closeEnough = !pressed && standingY - p0(sim).y < pressHeightPx && p0(sim).vy > 0;
+        sim.step([inp({ jump: closeEnough })]);
+        if (closeEnough) pressed = true;
+        if (pressed && p0(sim).vy < 0) return true; // rising again: buffered jump fired
+        if (pressed && p0(sim).grounded) {
+          // Give the buffer two ticks past landing to fire.
+          sim.step([emptyInput()]);
+          sim.step([emptyInput()]);
+          return p0(sim).vy < 0 || !p0(sim).grounded;
+        }
+      }
+      return false;
+    };
+
+    // maxFallSpeed 240 px/s = 4 px/tick; buffer 6 ticks = ~24 px of fall.
+    expect(jumpsAfterLanding(12)).toBe(true); // ~3 ticks before landing
+    expect(jumpsAfterLanding(60)).toBe(false); // ~15 ticks: buffer expires
+  });
+
+  it("(d) walking off the left edge re-enters on the right at the same height", () => {
+    const sim = makeSettledSim(FLAT_ARENA);
+    // Spawn 0 is at x=20 on flat ground.
+    const yBefore = p0(sim).y;
+    let wrapped = false;
+    let prevX = p0(sim).x;
+    for (let t = 0; t < 600 && !wrapped; t++) {
+      sim.step([inp({ left: true })]);
+      if (p0(sim).x > prevX + 100) wrapped = true; // jumped from ~0 to ~320
+      else prevX = p0(sim).x;
+    }
+    expect(wrapped).toBe(true);
+    expect(p0(sim).x).toBeGreaterThan(300);
+    expect(p0(sim).y).toBeCloseTo(yBefore, 6);
+    expect(p0(sim).grounded).toBe(true);
+  });
+
+  it("(d) falling through a bottom gap re-enters at the top in the same column", () => {
+    const sim = createSim({
+      arena: VOID_COLUMN_ARENA,
+      tuning: TEST_TUNING,
+      players: [{ slot: 0 }],
+      seed: 42
+    });
+    const xBefore = p0(sim).x;
+    let wrapped = false;
+    let prevY = p0(sim).y;
+    for (let t = 0; t < 600 && !wrapped; t++) {
+      sim.step([emptyInput()]);
+      if (p0(sim).y < prevY - 100) wrapped = true; // jumped from ~240 to ~0
+      else prevY = p0(sim).y;
+    }
+    expect(wrapped).toBe(true);
+    expect(p0(sim).x).toBe(xBefore);
+  });
+
+  it("stays grounded while running on flat ground, including across the wrap seam", () => {
+    const sim = makeSettledSim(FLAT_ARENA);
+    // Spawn 0 at x=20: 30 ticks of walking left crosses x=0 onto the right side.
+    for (let t = 0; t < 30; t++) {
+      sim.step([inp({ left: true })]);
+      expect(p0(sim).grounded).toBe(true);
+      expect(p0(sim).vy).toBe(0);
+    }
+  });
+
+  it("stops at a wall and stays put while pushing into it", () => {
+    const sim = makeSettledSim(WALL_ARENA);
+    // Spawn 0 at x=200; wall col 15 starts at x=240, so the player stops at 234.
+    for (let t = 0; t < 100; t++) {
+      sim.step([inp({ right: true })]);
+    }
+    expect(p0(sim).x).toBeCloseTo(234, 6);
+    expect(p0(sim).grounded).toBe(true);
+  });
+});

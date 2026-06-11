@@ -1,0 +1,15 @@
+{
+  "gravity": 900,
+  "maxFallSpeed": 240,
+  "runSpeed": 100,
+  "airAccel": 600,
+  "jumpVelocity": 260,
+  "jumpCutFactor": 0.4,
+  "coyoteTimeMs": 80,
+  "jumpBufferMs": 100,
+  "arrowSpeed": 350,
+  "arrowGravity": 180,
+  "stompBounceVelocity": 180,
+  "roundRestartDelayMs": 1500,
+  "startingArrows": 3
+}
