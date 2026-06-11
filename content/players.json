@@ -1,0 +1,30 @@
+{
+  "players": [
+    {
+      "slot": 0,
+      "name": "P1",
+      "color": "#4fc3f7",
+      "keys": {
+        "left": "KeyA",
+        "right": "KeyD",
+        "up": "KeyW",
+        "down": "KeyS",
+        "jump": "KeyG",
+        "shoot": "KeyF"
+      }
+    },
+    {
+      "slot": 1,
+      "name": "P2",
+      "color": "#ff8a65",
+      "keys": {
+        "left": "ArrowLeft",
+        "right": "ArrowRight",
+        "up": "ArrowUp",
+        "down": "ArrowDown",
+        "jump": "Period",
+        "shoot": "Slash"
+      }
+    }
+  ]
+}

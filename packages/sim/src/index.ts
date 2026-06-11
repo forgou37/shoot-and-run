@@ -12,6 +12,7 @@ export * from "./arena";
 export * from "./constants";
 export * from "./events";
 export * from "./input";
+export * from "./physics";
 export * from "./rng";
 export * from "./state";
 export * from "./tuning";
@@ -35,6 +36,12 @@ export interface Sim {
    * from SimConfig. Returns the events emitted during this tick.
    */
   step(inputs: readonly PlayerInput[]): SimEvent[];
+  /**
+   * Swap tuning mid-run (dev hot-reload). Applies from the next tick;
+   * startingArrows takes effect on the next round reset. Replays and the
+   * determinism proof always pin one tuning snapshot at init instead.
+   */
+  setTuning(next: Tuning): void;
 }
 
 export function createSim(config: SimConfig): Sim {
@@ -42,7 +49,7 @@ export function createSim(config: SimConfig): Sim {
   // gameplay needs it, but seeded at init so the seed is part of the
   // sim's identity from tick 0.
   const _rng: Rng = createRng(config.seed);
-  const tuning = deriveTuning(config.tuning);
+  let tuning = deriveTuning(config.tuning);
 
   let nextEntityId = 1;
   const allocId = (): number => nextEntityId++;
@@ -99,6 +106,9 @@ export function createSim(config: SimConfig): Sim {
       // T0.6: arrows. T0.7: kills. T0.8: round flow.
       state.tick++;
       return events;
+    },
+    setTuning(next: Tuning): void {
+      tuning = deriveTuning(next);
     }
   };
 }
