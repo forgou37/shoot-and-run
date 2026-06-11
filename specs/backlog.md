@@ -6,8 +6,8 @@ Everything that is not in the current spec lives here. New ideas land here first
 
 | Spec | Theme | Gate |
 |---|---|---|
-| 000 | Baseline first playable (current) | — |
-| 001 | Game feel & match structure: juice, best-of-N, scores; shell e2e smoke suite | 000 done and fun in 2P |
+| 000 | Baseline first playable — **done** | — |
+| 001 | Game feel & match structure: juice, best-of-N, scores; shell e2e smoke suite (current, see specs/001-feel-and-match.md) | 000 done and fun in 2P |
 | 002 | Full roster: gamepads, 3–4 players, modes, menus/lobby | 001 done |
 | — | Pixel-art pass (owner does art; can overlap 003+) | 000–002 done (hard rule 6) |
 | 003 | Scripted bots + headless eval harness | game is fun by hand |
@@ -28,20 +28,19 @@ Everything that is not in the current spec lives here. New ideas land here first
 
 - Wings (extended air control / glide), speed boost, oversized arrows, brief invisibility, mirror/decoy. All original takes, all parameters in content files.
 
-## Game feel / juice (spec 001 candidates)
+## Game feel / juice (hitstop, shake, kill/stick particles moved to spec 001)
 
-- Hitstop on kills (a few frames of sim-presented freeze — implement in shell as render/step pause so sim stays pure).
-- Screen shake (shell-only, driven by events).
-- Particles: arrow impact dust, jump/land dust, kill burst (shell-only, event-driven).
 - Corpses with physics tumble (decide: sim entities for determinism, or shell-only cosmetic — log the decision).
-- Slow-mo on round-winning kill (shell timestep manipulation; sim unaware).
+- Slow-mo on round-winning kill — deferred from 001: in 2P every kill ends the round, so the end pause owns that moment; meaningful with 3–4 players or corpses.
 - Death cam nudge / kill flash.
+- Jump/land dust particles.
+- Particle wrap at arena seams (001 accepts the cosmetic glitch).
 
-## Match structure (spec 001 candidates)
+## Match structure (best-of-N, scores, HUD moved to spec 001)
 
-- Best-of-N match flow, round score HUD, match victory screen.
-- Round timer with sudden-death variant (e.g. shrinking safe area or auto-spawning hazard) to enforce the 10–60 s round envelope.
+- Round timer with sudden-death variant (e.g. shrinking safe area or auto-spawning hazard) to enforce the 10–60 s round envelope — evaluate after 001 playtesting.
 - Draw handling polish (replay the round, or both gain nothing).
+- Match victory screen beyond the text overlay.
 
 ## Input & roster (spec 002 candidates)
 
@@ -62,24 +61,18 @@ Everything that is not in the current spec lives here. New ideas land here first
 
 - SFX for fire/stick/pickup/jump/kill/round-end; event-driven from SimEvents (shell-only). Music later. No audio before 001 at the earliest.
 
-## Testing / e2e (spec 001 candidates)
+## Testing / e2e (Playwright suite + __testApi moved to spec 001)
 
-Game-rule e2e is already covered headless: bot-driven full rounds in `packages/sim` (spec 000, T0.9). Browser e2e covers only the shell glue and never re-tests game rules — re-testing rules in a browser duplicates the sim suite in a slower, flakier place.
+Game-rule e2e stays headless in `packages/sim`; browser e2e covers only shell glue and never re-tests game rules.
 
-- Playwright shell smoke suite (~4 tests against the real Vite build):
-  - Boot: page loads, canvas exists, `round_started` appears in the event log, zero console errors.
-  - Content loading: arena-001 tiles/spawns visible in sim state (proves JSON flows through Vite into the sim).
-  - Input mapping with real key events: `page.keyboard.down(...)` per player's actual bindings → input struct → movement; includes both players pressing simultaneously.
-  - Stability: ~10 wall-clock seconds under rAF, no errors, tick count ≈ 600 (validates the accumulator).
-- `window.__testApi` hook (dev/test builds only): read access to sim state + event log, plus `stepTicks(n, inputs)` bypassing the wall-clock accumulator so browser runs can be deterministic.
-- Playwright in CI (headless Chromium), kept small and fast.
 - Gamepad e2e (spec 002): Playwright cannot synthesize gamepad input — inject a `navigator.getGamepads` shim in test mode.
+- Visual regression screenshots — consider after the art pass, not before.
 
 ## Engineering / infrastructure
 
 - Replay system: record `{ arenaId, tuning snapshot, seed, per-tick inputs }` → playback through the sim. Nearly free thanks to determinism; also the foundation for bug repros and the eval pipeline's "watch this round" feature.
 - CI quality gate (GitHub Actions, lands with T0.1 in spec 000): `npm ci` → typecheck → lint → `check:deps` → Vitest → build, on every push. Trunk-based on `main`; `main` must stay green — a red gate blocks the next task. Staged additions: validation of all `content/**/*.json` (with T0.3), Playwright shell smoke (spec 001), sim step-time benchmark vs an explicit budget (before spec 003 — protects the eval pipeline that runs thousands of rounds). Bonus: Linux CI re-verifying the golden determinism log from the Windows dev machine is the cross-OS float-determinism check.
-- CD, static-only (no servers ever): continuous deploy of green `main` builds to GitHub Pages or Cloudflare Pages (spec 001 candidate — always-playable playtest URL); tagged releases to itch.io via `butler` (later, once the game is fun).
+- CD, static-only (no servers ever): continuous deploy of green `main` builds — **blocked**: GitHub Pages needs a public repo or paid plan; Cloudflare Pages needs an account decision. Revisit when hosting is decided. Tagged releases to itch.io via `butler` later, once the game is fun.
 - Crash-safe tuning hot-reload (validate before applying).
 - In-game debug overlay: hitboxes, sim tick, event ticker, input viewer.
 
