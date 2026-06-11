@@ -1,0 +1,9 @@
+{
+  "name": "@shoot-and-run/sim",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  }
+}

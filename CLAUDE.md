@@ -114,15 +114,18 @@ arcade-game/
 
 ## Commands
 
-To be created in T0.1 — keep this section current as scripts land.
+Keep this section current as scripts change.
 
 | Command | Purpose |
 |---|---|
-| `npm run dev` | Vite dev server for `packages/game` (with tuning hot-reload) |
-| `npm run build` | Type-check + production build |
+| `npm run dev` | Vite dev server for `packages/game` (tuning hot-reload from T0.5) |
+| `npm run build` | Type-check both packages + production Vite build |
+| `npm run typecheck` | `tsc --noEmit` over `packages/sim` and `packages/game` |
 | `npm test` | All Vitest suites (sim tests run headless in Node) |
-| `npm run lint` | ESLint over all packages |
-| `npm run check:deps` | dependency-cruiser: fails if `packages/sim` imports Phaser/DOM |
+| `npm run lint` | ESLint, incl. sim determinism guards (no `Math.random`/`Date.now`/timers in sim) |
+| `npm run check:deps` | dependency-cruiser: fails if `packages/sim/src` imports anything outside itself |
+
+Notes: `packages/sim` has no build step — its package `exports` points at `src/index.ts` and Vite/Vitest consume the TS source directly. Sim's tsconfig has no DOM lib, so `window`/`document` fail to typecheck there (first line of defense for hard rule 2).
 
 ## CI/CD
 
