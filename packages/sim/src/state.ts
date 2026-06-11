@@ -37,8 +37,21 @@ export interface ArrowState {
   vy: number;
 }
 
+export type RoundPhase = "running" | "ended";
+
+export interface RoundState {
+  phase: RoundPhase;
+  /** Winning slot or "draw" while ended; null while running. */
+  winner: number | "draw" | null;
+  /** Ticks until the next round starts (only meaningful while ended). */
+  restartTicksLeft: number;
+  /** 1-based round counter. */
+  number: number;
+}
+
 export interface SimState {
   tick: number;
+  round: RoundState;
   players: PlayerState[];
   arrows: ArrowState[];
 }

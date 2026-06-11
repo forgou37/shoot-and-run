@@ -5,6 +5,7 @@ import type { PlayerInput } from "./input";
 import { checkArrowKills, checkStomps } from "./kills";
 import { updatePlayer } from "./player";
 import { createRng, type Rng } from "./rng";
+import { updateRound } from "./round";
 import type { SimState } from "./state";
 import { deriveTuning, type Tuning } from "./tuning";
 
@@ -18,6 +19,7 @@ export * from "./input";
 export * from "./kills";
 export * from "./physics";
 export * from "./rng";
+export * from "./round";
 export * from "./state";
 export * from "./tuning";
 
@@ -60,6 +62,7 @@ export function createSim(config: SimConfig): Sim {
 
   const state: SimState = {
     tick: 0,
+    round: { phase: "running", winner: null, restartTicksLeft: 0, number: 1 },
     players: config.players.map((p, index) => {
       const spawn = config.arena.spawns[index];
       if (!spawn) {
@@ -101,19 +104,20 @@ export function createSim(config: SimConfig): Sim {
       }
       const events: SimEvent[] = [];
       if (state.tick === 0) {
-        // Proper round state machine lands in T0.8.
         events.push({ tick: 0, type: "round_started" });
       }
-      state.players.forEach((p, i) => {
-        if (!p.alive) return;
-        updatePlayer(p, inputs[i]!, config.arena, tuning);
-      });
-      checkStomps(state.players, tuning, events, state.tick);
-      handleShooting(state.players, inputs, state.arrows, allocId, tuning, events, state.tick);
-      updateArrows(config.arena, state.arrows, tuning, events, state.tick);
-      checkArrowKills(state.arrows, state.players, events, state.tick);
-      state.arrows = collectPickups(state.arrows, state.players, events, state.tick);
-      // T0.8: round flow.
+      if (state.round.phase === "running") {
+        state.players.forEach((p, i) => {
+          if (!p.alive) return;
+          updatePlayer(p, inputs[i]!, config.arena, tuning);
+        });
+        checkStomps(state.players, tuning, events, state.tick);
+        handleShooting(state.players, inputs, state.arrows, allocId, tuning, events, state.tick);
+        updateArrows(config.arena, state.arrows, tuning, events, state.tick);
+        checkArrowKills(state.arrows, state.players, events, state.tick);
+        state.arrows = collectPickups(state.arrows, state.players, events, state.tick);
+      }
+      updateRound(state, config.arena, tuning, events);
       state.tick++;
       return events;
     },

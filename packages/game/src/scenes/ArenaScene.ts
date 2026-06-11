@@ -40,6 +40,7 @@ export class ArenaScene extends Phaser.Scene {
   private keyboard!: KeyboardInput;
   private readonly driver = new FixedStepDriver();
   private entityGfx!: Phaser.GameObjects.Graphics;
+  private overlayText!: Phaser.GameObjects.Text;
   private prev!: PrevPositions;
 
   constructor() {
@@ -61,6 +62,14 @@ export class ArenaScene extends Phaser.Scene {
     this.keyboard = new KeyboardInput(window);
     this.drawTiles(arena);
     this.entityGfx = this.add.graphics();
+    this.overlayText = this.add
+      .text(ARENA_WIDTH / 2, ARENA_HEIGHT / 2 - 24, "", {
+        fontFamily: "monospace",
+        fontSize: "16px",
+        color: "#ffffff"
+      })
+      .setOrigin(0.5)
+      .setVisible(false);
 
     // Dev-only tuning hot-reload (A9): Vite HMR pushes the edited JSON into
     // the running sim without a page refresh.
@@ -83,7 +92,10 @@ export class ArenaScene extends Phaser.Scene {
     const alpha = this.driver.advance(delta, () => {
       const inputs = this.slots.map((s) => this.keyboard.sample(s.keys));
       this.prev = this.snapshot();
-      this.sim.step(inputs);
+      const events = this.sim.step(inputs);
+      if (import.meta.env.DEV) {
+        for (const e of events) console.log("[sim]", JSON.stringify(e));
+      }
     });
     this.render(alpha);
   }
@@ -108,6 +120,16 @@ export class ArenaScene extends Phaser.Scene {
   }
 
   private render(alpha: number): void {
+    const { round } = this.sim.state;
+    if (round.phase === "ended") {
+      const label =
+        round.winner === "draw"
+          ? "Draw"
+          : `${this.slots.find((s) => s.slot === round.winner)?.name ?? `P${String(round.winner)}`} wins!`;
+      this.overlayText.setText(label).setVisible(true);
+    } else {
+      this.overlayText.setVisible(false);
+    }
     this.entityGfx.clear();
     this.sim.state.players.forEach((p, i) => {
       if (!p.alive) return;
