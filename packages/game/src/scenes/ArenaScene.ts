@@ -48,6 +48,9 @@ export class ArenaScene extends Phaser.Scene {
   private juice!: JuiceConfig;
   private hitstopRemainingMs = 0;
   private lastAlpha = 0;
+  private manualMode = false;
+  private arenaName = "";
+  private readonly eventLog: SimEvent[] = [];
   private killEmitters = new Map<number, Phaser.GameObjects.Particles.ParticleEmitter>();
   private stickEmitter!: Phaser.GameObjects.Particles.ParticleEmitter;
 
@@ -57,6 +60,7 @@ export class ArenaScene extends Phaser.Scene {
 
   create(): void {
     const arena = parseArena(arenaJson);
+    this.arenaName = arena.name;
     // Spec 000: two keyboard players.
     this.slots = parsePlayersConfig(playersJson).slice(0, 2);
     this.sim = createSim({
@@ -106,9 +110,14 @@ export class ArenaScene extends Phaser.Scene {
     }
 
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.keyboard.dispose());
+    this.installTestApi();
   }
 
   override update(_time: number, delta: number): void {
+    if (this.manualMode) {
+      this.render(1);
+      return;
+    }
     if (this.hitstopRemainingMs > 0) {
       // Hitstop: hold the sim and the interpolation where they are. The
       // camera shake effect still plays — frozen frame + shake reads as impact.
@@ -116,17 +125,46 @@ export class ArenaScene extends Phaser.Scene {
       this.render(this.lastAlpha);
       return;
     }
-    const alpha = this.driver.advance(delta, () => {
-      const inputs = this.slots.map((s) => this.keyboard.sample(s.keys));
-      this.prev = this.snapshot();
-      const events = this.sim.step(inputs);
-      this.applyJuice(events);
+    const alpha = this.driver.advance(delta, this.doTick);
+    this.lastAlpha = alpha;
+    this.render(alpha);
+  }
+
+  /** One sim tick: sample devices, step, apply FX, record events. The only
+   *  place the sim is advanced — both the accumulator and __testApi use it. */
+  private readonly doTick = (): void => {
+    const inputs = this.slots.map((s) => this.keyboard.sample(s.keys));
+    this.prev = this.snapshot();
+    const events = this.sim.step(inputs);
+    this.applyJuice(events);
+    if (events.length > 0) {
+      this.eventLog.push(...events);
+      if (this.eventLog.length > 1000) {
+        this.eventLog.splice(0, this.eventLog.length - 1000);
+      }
       if (import.meta.env.DEV) {
         for (const e of events) console.log("[sim]", JSON.stringify(e));
       }
+    }
+  };
+
+  private installTestApi(): void {
+    if (!import.meta.env.DEV) return;
+    window.__testApi = {
+      getState: () => this.sim.state,
+      getArenaName: () => this.arenaName,
+      getEvents: () => [...this.eventLog],
+      setManual: (on: boolean) => {
+        this.manualMode = on;
+      },
+      stepTicks: (n: number) => {
+        for (let i = 0; i < n; i++) this.doTick();
+        this.render(1);
+      }
+    };
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      delete window.__testApi;
     });
-    this.lastAlpha = alpha;
-    this.render(alpha);
   }
 
   private applyJuice(events: readonly SimEvent[]): void {
