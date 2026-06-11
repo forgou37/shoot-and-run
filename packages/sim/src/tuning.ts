@@ -18,6 +18,9 @@ export interface Tuning {
   stompBounceVelocity: number;
   roundRestartDelayMs: number;
   startingArrows: number;
+  /** Round wins needed to take the match (best-of-N). */
+  roundsToWin: number;
+  matchRestartDelayMs: number;
 }
 
 const TUNING_KEYS: readonly (keyof Tuning)[] = [
@@ -33,7 +36,9 @@ const TUNING_KEYS: readonly (keyof Tuning)[] = [
   "arrowGravity",
   "stompBounceVelocity",
   "roundRestartDelayMs",
-  "startingArrows"
+  "startingArrows",
+  "roundsToWin",
+  "matchRestartDelayMs"
 ];
 
 /** Validate untyped data (parsed content/tuning.json) as a Tuning object. */
@@ -55,6 +60,9 @@ export function parseTuning(data: unknown): Tuning {
   if (!Number.isInteger(t.startingArrows) || t.startingArrows < 0) {
     throw new Error("tuning: startingArrows must be a non-negative integer");
   }
+  if (!Number.isInteger(t.roundsToWin) || t.roundsToWin < 1) {
+    throw new Error("tuning: roundsToWin must be a positive integer");
+  }
   return TUNING_KEYS.reduce((acc, key) => {
     acc[key] = t[key];
     return acc;
@@ -70,6 +78,7 @@ export interface DerivedTuning extends Tuning {
   coyoteTicks: number;
   jumpBufferTicks: number;
   roundRestartDelayTicks: number;
+  matchRestartDelayTicks: number;
 }
 
 export function deriveTuning(t: Tuning): DerivedTuning {
@@ -77,6 +86,7 @@ export function deriveTuning(t: Tuning): DerivedTuning {
     ...t,
     coyoteTicks: msToTicks(t.coyoteTimeMs),
     jumpBufferTicks: msToTicks(t.jumpBufferMs),
-    roundRestartDelayTicks: msToTicks(t.roundRestartDelayMs)
+    roundRestartDelayTicks: msToTicks(t.roundRestartDelayMs),
+    matchRestartDelayTicks: msToTicks(t.matchRestartDelayMs)
   };
 }

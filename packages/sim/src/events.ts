@@ -11,5 +11,15 @@ export type SimEvent =
   | { tick: number; type: "arrow_fired"; playerSlot: number; arrowId: number }
   | { tick: number; type: "arrow_stuck"; arrowId: number; x: number; y: number }
   | { tick: number; type: "arrow_picked_up"; arrowId: number; playerSlot: number }
-  | { tick: number; type: "player_killed"; victim: number; killer: number; cause: KillCause }
-  | { tick: number; type: "round_ended"; winner: number | "draw" };
+  | {
+      tick: number;
+      type: "player_killed";
+      victim: number;
+      killer: number;
+      cause: KillCause;
+      /** Victim position at death — used by shell FX and future kill heatmaps. */
+      x: number;
+      y: number;
+    }
+  | { tick: number; type: "round_ended"; winner: number | "draw" }
+  | { tick: number; type: "match_ended"; winner: number; scores: number[] };

@@ -49,9 +49,17 @@ export interface RoundState {
   number: number;
 }
 
+export interface MatchState {
+  /** Round wins by player index (parallel to the players array). */
+  scores: number[];
+  /** Winning slot once someone reaches roundsToWin; null while contested. */
+  winner: number | null;
+}
+
 export interface SimState {
   tick: number;
   round: RoundState;
+  match: MatchState;
   players: PlayerState[];
   arrows: ArrowState[];
 }

@@ -16,7 +16,9 @@ export const TEST_TUNING: Tuning = {
   arrowGravity: 180,
   stompBounceVelocity: 180,
   roundRestartDelayMs: 1500,
-  startingArrows: 3
+  startingArrows: 3,
+  roundsToWin: 3,
+  matchRestartDelayMs: 2000
 };
 
 /** Flat full-width floor (rows 13–14), nothing else. For wrap-X tests. */

@@ -11,5 +11,7 @@
   "arrowGravity": 180,
   "stompBounceVelocity": 180,
   "roundRestartDelayMs": 1500,
-  "startingArrows": 3
+  "startingArrows": 3,
+  "roundsToWin": 3,
+  "matchRestartDelayMs": 4000
 }

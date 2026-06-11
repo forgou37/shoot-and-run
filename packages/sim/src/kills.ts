@@ -38,7 +38,9 @@ export function checkArrowKills(
           type: "player_killed",
           victim: p.slot,
           killer: a.ownerSlot,
-          cause: "arrow"
+          cause: "arrow",
+          x: p.x,
+          y: p.y
         });
         a.phase = "stuck";
         a.vx = 0;
@@ -80,7 +82,9 @@ export function checkStomps(
         type: "player_killed",
         victim: victim.slot,
         killer: attacker.slot,
-        cause: "stomp"
+        cause: "stomp",
+        x: victim.x,
+        y: victim.y
       });
       attacker.vy = -t.stompBounceVelocity;
       attacker.grounded = false;

@@ -63,6 +63,7 @@ export function createSim(config: SimConfig): Sim {
   const state: SimState = {
     tick: 0,
     round: { phase: "running", winner: null, restartTicksLeft: 0, number: 1 },
+    match: { scores: config.players.map(() => 0), winner: null },
     players: config.players.map((p, index) => {
       const spawn = config.arena.spawns[index];
       if (!spawn) {

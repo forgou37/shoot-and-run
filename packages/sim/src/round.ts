@@ -24,15 +24,37 @@ export function updateRound(
       alive.length === 0 || (state.players.length > 1 && alive.length <= 1);
     if (roundOver) {
       state.round.phase = "ended";
-      state.round.winner = alive.length === 1 ? alive[0]!.slot : "draw";
-      state.round.restartTicksLeft = t.roundRestartDelayTicks;
-      events.push({ tick: state.tick, type: "round_ended", winner: state.round.winner });
+      const winner = alive.length === 1 ? alive[0]!.slot : "draw";
+      state.round.winner = winner;
+      events.push({ tick: state.tick, type: "round_ended", winner });
+
+      if (winner !== "draw") {
+        const idx = state.players.findIndex((p) => p.slot === winner);
+        state.match.scores[idx] = (state.match.scores[idx] ?? 0) + 1;
+        if (state.match.scores[idx]! >= t.roundsToWin) {
+          state.match.winner = winner;
+          events.push({
+            tick: state.tick,
+            type: "match_ended",
+            winner,
+            scores: [...state.match.scores]
+          });
+        }
+      }
+      state.round.restartTicksLeft =
+        state.match.winner !== null ? t.matchRestartDelayTicks : t.roundRestartDelayTicks;
     }
     return;
   }
 
   state.round.restartTicksLeft--;
   if (state.round.restartTicksLeft <= 0) {
+    if (state.match.winner !== null) {
+      // Match over: the restart begins a fresh match.
+      state.match.scores = state.players.map(() => 0);
+      state.match.winner = null;
+      state.round.number = 0;
+    }
     state.players.forEach((p, index) => resetPlayer(p, index, arena, t));
     state.arrows = [];
     state.round.phase = "running";

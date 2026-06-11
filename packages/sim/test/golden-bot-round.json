@@ -14,7 +14,9 @@
     "type": "player_killed",
     "victim": 1,
     "killer": 0,
-    "cause": "arrow"
+    "cause": "arrow",
+    "x": 305.0000000000023,
+    "y": 202
   },
   {
     "tick": 165,
