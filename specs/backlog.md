@@ -7,7 +7,7 @@ Everything that is not in the current spec lives here. New ideas land here first
 | Spec | Theme | Gate |
 |---|---|---|
 | 000 | Baseline first playable — **done** | — |
-| 001 | Game feel & match structure: juice, best-of-N, scores; shell e2e smoke suite (current, see specs/001-feel-and-match.md) | 000 done and fun in 2P |
+| 001 | Game feel & match structure: juice, best-of-N, scores; shell e2e smoke suite — **done** (specs/001-feel-and-match.md) | 000 done and fun in 2P |
 | 002 | Full roster: gamepads, 3–4 players, modes, menus/lobby | 001 done |
 | — | Pixel-art pass (owner does art; can overlap 003+) | 000–002 done (hard rule 6) |
 | 003 | Scripted bots + headless eval harness | game is fun by hand |
