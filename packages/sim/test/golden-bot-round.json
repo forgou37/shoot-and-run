@@ -1,0 +1,31 @@
+[
+  {
+    "tick": 0,
+    "type": "round_started"
+  },
+  {
+    "tick": 160,
+    "type": "arrow_fired",
+    "playerSlot": 0,
+    "arrowId": 3
+  },
+  {
+    "tick": 165,
+    "type": "player_killed",
+    "victim": 1,
+    "killer": 0,
+    "cause": "arrow"
+  },
+  {
+    "tick": 165,
+    "type": "arrow_stuck",
+    "arrowId": 3,
+    "x": 313.33333333333326,
+    "y": 203.04999999999995
+  },
+  {
+    "tick": 165,
+    "type": "round_ended",
+    "winner": 0
+  }
+]

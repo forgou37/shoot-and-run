@@ -9,13 +9,14 @@
   "scripts": {
     "dev": "npm run dev -w @shoot-and-run/game",
     "build": "npm run typecheck && npm run build -w @shoot-and-run/game",
-    "typecheck": "tsc --noEmit -p packages/sim && tsc --noEmit -p packages/game",
+    "typecheck": "tsc --noEmit -p packages/sim && tsc --noEmit -p packages/sim/tsconfig.test.json && tsc --noEmit -p packages/game",
     "test": "vitest run",
     "lint": "eslint .",
     "check:deps": "depcruise --config .dependency-cruiser.cjs packages/sim/src"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@types/node": "^25.9.3",
     "dependency-cruiser": "^17.4.3",
     "eslint": "^10.4.1",
     "typescript": "^6.0.3",
