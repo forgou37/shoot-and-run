@@ -41,6 +41,7 @@ export class ArenaScene extends Phaser.Scene {
   private readonly driver = new FixedStepDriver();
   private entityGfx!: Phaser.GameObjects.Graphics;
   private overlayText!: Phaser.GameObjects.Text;
+  private scoreTexts: Phaser.GameObjects.Text[] = [];
   private prev!: PrevPositions;
 
   constructor() {
@@ -70,6 +71,15 @@ export class ArenaScene extends Phaser.Scene {
       })
       .setOrigin(0.5)
       .setVisible(false);
+    this.scoreTexts = this.slots.map((s, i) =>
+      this.add
+        .text(i === 0 ? 4 : ARENA_WIDTH - 4, 3, "", {
+          fontFamily: "monospace",
+          fontSize: "10px",
+          color: s.color
+        })
+        .setOrigin(i === 0 ? 0 : 1, 0)
+    );
 
     // Dev-only tuning hot-reload (A9): Vite HMR pushes the edited JSON into
     // the running sim without a page refresh.
@@ -120,16 +130,22 @@ export class ArenaScene extends Phaser.Scene {
   }
 
   private render(alpha: number): void {
-    const { round } = this.sim.state;
+    const { round, match } = this.sim.state;
     if (round.phase === "ended") {
       const label =
-        round.winner === "draw"
-          ? "Draw"
-          : `${this.slots.find((s) => s.slot === round.winner)?.name ?? `P${String(round.winner)}`} wins!`;
+        match.winner !== null
+          ? `${this.slotName(match.winner)} wins the match!`
+          : round.winner === "draw"
+            ? "Draw"
+            : `${this.slotName(round.winner!)} wins!`;
       this.overlayText.setText(label).setVisible(true);
     } else {
       this.overlayText.setVisible(false);
     }
+    this.scoreTexts.forEach((text, i) => {
+      const label = `${this.slots[i]!.name} ${String(match.scores[i] ?? 0)}`;
+      if (text.text !== label) text.setText(label);
+    });
     this.entityGfx.clear();
     this.sim.state.players.forEach((p, i) => {
       if (!p.alive) return;
@@ -150,6 +166,10 @@ export class ArenaScene extends Phaser.Scene {
         this.drawWrappedRect(x, y, 4, 4, ARROW_COLOR);
       }
     }
+  }
+
+  private slotName(slot: number): string {
+    return this.slots.find((s) => s.slot === slot)?.name ?? `P${String(slot)}`;
   }
 
   /** Draw a centered rect, plus mirror copies when it straddles arena edges. */
