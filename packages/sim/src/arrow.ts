@@ -52,6 +52,7 @@ export function handleShooting(
       id: allocId(),
       ownerSlot: p.slot,
       phase: "flying",
+      firedTick: tick,
       x: p.x,
       y: p.y,
       vx: nx * t.arrowSpeed,

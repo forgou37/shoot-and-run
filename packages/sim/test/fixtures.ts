@@ -80,6 +80,23 @@ export const WALL_ARENA: ArenaData = {
   ]
 };
 
+/** Flat floor; spawn 0 floats directly above spawn 1's column. For stomp
+ *  tests (bypasses parseArena's spawn-on-ground check for spawn 0). */
+export const STOMP_ARENA: ArenaData = {
+  name: "test-stomp",
+  tiles: [
+    ...Array.from({ length: 13 }, () => "...................."),
+    "####################",
+    "####################"
+  ],
+  spawns: [
+    { x: 100, y: 40 },
+    { x: 100, y: 192 },
+    { x: 200, y: 192 },
+    { x: 280, y: 192 }
+  ]
+};
+
 /** One platform (row 5, cols 6–11) over a full floor. For ledge/coyote tests. */
 export const LEDGE_ARENA: ArenaData = {
   name: "test-ledge",

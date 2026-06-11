@@ -29,6 +29,8 @@ export interface ArrowState {
   id: number;
   ownerSlot: number;
   phase: ArrowPhase;
+  /** Tick the arrow was fired on; drives muzzle immunity for the shooter. */
+  firedTick: number;
   x: number;
   y: number;
   vx: number;
