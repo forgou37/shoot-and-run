@@ -17,6 +17,8 @@ export interface PlayerState {
   jumpBufferTicksLeft: number;
   /** Previous tick's jump-held state, for press/release edge detection. */
   prevJumpHeld: boolean;
+  /** Previous tick's shoot-held state, for press edge detection. */
+  prevShootHeld: boolean;
   /** Whether releasing jump still shortens the current jump (variable height). */
   jumpCutAvailable: boolean;
 }

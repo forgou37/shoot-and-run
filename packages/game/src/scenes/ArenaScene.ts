@@ -5,6 +5,7 @@ import {
   PLAYER_HEIGHT,
   PLAYER_WIDTH,
   TILE_SIZE,
+  arrowHalves,
   createSim,
   parseArena,
   parseTuning,
@@ -20,10 +21,12 @@ import { parsePlayersConfig, type PlayerSlotConfig } from "../input/players-conf
 import { FixedStepDriver } from "../loop";
 
 const TILE_COLOR = 0x5a5a6e;
+const ARROW_COLOR = 0xf0e6c8;
 const SIM_SEED = 1;
 
 interface PrevPositions {
   players: { x: number; y: number }[];
+  arrows: Map<number, { x: number; y: number }>;
 }
 
 /**
@@ -87,7 +90,8 @@ export class ArenaScene extends Phaser.Scene {
 
   private snapshot(): PrevPositions {
     return {
-      players: this.sim.state.players.map((p) => ({ x: p.x, y: p.y }))
+      players: this.sim.state.players.map((p) => ({ x: p.x, y: p.y })),
+      arrows: new Map(this.sim.state.arrows.map((a) => [a.id, { x: a.x, y: a.y }]))
     };
   }
 
@@ -113,6 +117,17 @@ export class ArenaScene extends Phaser.Scene {
       const color = Phaser.Display.Color.HexStringToColor(this.slots[i]!.color).color;
       this.drawWrappedRect(x, y, PLAYER_WIDTH, PLAYER_HEIGHT, color);
     });
+    for (const a of this.sim.state.arrows) {
+      const prev = this.prev.arrows.get(a.id) ?? a;
+      const x = lerpWrapped(prev.x, a.x, alpha, ARENA_WIDTH);
+      const y = lerpWrapped(prev.y, a.y, alpha, ARENA_HEIGHT);
+      if (a.phase === "flying") {
+        const { hw, hh } = arrowHalves(a);
+        this.drawWrappedRect(x, y, hw * 2, hh * 2, ARROW_COLOR);
+      } else {
+        this.drawWrappedRect(x, y, 4, 4, ARROW_COLOR);
+      }
+    }
   }
 
   /** Draw a centered rect, plus mirror copies when it straddles arena edges. */

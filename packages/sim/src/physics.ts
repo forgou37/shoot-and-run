@@ -14,6 +14,12 @@ export function wrapMod(n: number, m: number): number {
   return ((n % m) + m) % m;
 }
 
+/** Shortest signed delta on a wrapping axis (result in [-range/2, range/2)). */
+export function wrapDelta(d: number, range: number): number {
+  const r = wrapMod(d, range);
+  return r > range / 2 ? r - range : r;
+}
+
 /**
  * Wrap-aware solidity lookup: indices may be any integer; they wrap onto the
  * grid. This is what makes an entity straddling an arena edge collide

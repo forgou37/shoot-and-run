@@ -55,10 +55,10 @@ describe("sim determinism (skeleton)", () => {
     expect(sim.state.players[1]).toMatchObject({ x: 280, y: 192, arrows: 3, alive: true });
   });
 
-  it("emits round_started on the first tick", () => {
+  it("emits round_started first on the first tick", () => {
     const sim = makeSim(1);
     const events = sim.step([cannedInput(0, 0), cannedInput(0, 1)]);
-    expect(events).toEqual([{ tick: 0, type: "round_started" }]);
+    expect(events[0]).toEqual({ tick: 0, type: "round_started" });
   });
 
   it("rejects mismatched input count", () => {

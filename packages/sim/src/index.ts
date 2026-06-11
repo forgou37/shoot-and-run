@@ -1,4 +1,5 @@
 import type { ArenaData } from "./arena";
+import { collectPickups, handleShooting, updateArrows } from "./arrow";
 import type { SimEvent } from "./events";
 import type { PlayerInput } from "./input";
 import { updatePlayer } from "./player";
@@ -9,6 +10,7 @@ import { deriveTuning, type Tuning } from "./tuning";
 export const SIM_VERSION = "0.0.0";
 
 export * from "./arena";
+export * from "./arrow";
 export * from "./constants";
 export * from "./events";
 export * from "./input";
@@ -78,6 +80,7 @@ export function createSim(config: SimConfig): Sim {
         coyoteTicksLeft: 0,
         jumpBufferTicksLeft: 0,
         prevJumpHeld: false,
+        prevShootHeld: false,
         jumpCutAvailable: false
       };
     }),
@@ -103,7 +106,10 @@ export function createSim(config: SimConfig): Sim {
         if (!p.alive) return;
         updatePlayer(p, inputs[i]!, config.arena, tuning);
       });
-      // T0.6: arrows. T0.7: kills. T0.8: round flow.
+      handleShooting(state.players, inputs, state.arrows, allocId, tuning, events, state.tick);
+      updateArrows(config.arena, state.arrows, tuning, events, state.tick);
+      state.arrows = collectPickups(state.arrows, state.players, events, state.tick);
+      // T0.7: kills. T0.8: round flow.
       state.tick++;
       return events;
     },
