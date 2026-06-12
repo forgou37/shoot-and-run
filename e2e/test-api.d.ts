@@ -12,11 +12,12 @@ interface ShellTestApi {
       y: number;
       vx: number;
       vy: number;
-      arrows: number;
+      quiver: string[];
       alive: boolean;
       grounded: boolean;
     }[];
     arrows: unknown[];
+    chests: { x: number; y: number }[];
   };
   getArenaName(): string;
   getEvents(): { tick: number; type: string }[];

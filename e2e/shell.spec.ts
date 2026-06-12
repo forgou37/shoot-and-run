@@ -34,7 +34,7 @@ test("content: arena and tuning flowed through Vite into the sim", async ({ page
     return {
       arena: api.getArenaName(),
       playerCount: state.players.length,
-      startingArrows: state.players[0]!.arrows,
+      startingArrows: state.players[0]!.quiver.length,
       scores: state.match.scores
     };
   });
