@@ -10,7 +10,7 @@ Everything that is not in the current spec lives here. New ideas land here first
 | 001 | Game feel & match structure: juice, best-of-N, scores; shell e2e smoke suite — **done** (specs/001-feel-and-match.md) | 000 done and fun in 2P |
 | 002 | Treasure chests, special arrows (bomb/laser/bounce), power-ups (invisibility/flight) — **done** (specs/002-chests-and-powers.md; re-scoped 2026-06-12, gamepads moved out) | 001 done |
 | 003 | Full roster: gamepads, 3–4 players, modes, menus/lobby | 002 done |
-| — | Pixel-art pass (owner does art; can overlap 004+) | 000–002 done (hard rule 6) |
+| 006 | Art pass I: sprite pipeline + player animation — **proposed** (specs/006-art-pass.md; Claude generates art via Aseprite MCP, owner art-directs; can land before or alongside 003) | 000–002 done ✓ (hard rule 6) |
 | 004 | Scripted bots + headless eval harness | game is fun by hand |
 | 005 | AI arena-generation pipeline: generator + metrics + judge loop | 004 done |
 
