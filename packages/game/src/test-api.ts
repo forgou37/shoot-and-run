@@ -14,6 +14,9 @@ export interface TestApi {
   setManual(on: boolean): void;
   /** Step exactly n ticks; the real keyboard state is sampled each tick. */
   stepTicks(n: number): void;
+  /** Sprite smoke probe (spec 006): loaded archer texture keys plus any
+   *  missing per-slot animation keys (empty when healthy). */
+  getSpriteProbe(): { textures: string[]; missingAnims: string[] };
 }
 
 declare global {

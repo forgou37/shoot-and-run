@@ -70,6 +70,14 @@ test("input: real key events move both players simultaneously", async ({ page })
   expect(after[1]!).toBeLessThan(before[1]!);
 });
 
+test("sprites: archer atlas and per-slot animations loaded (spec 006)", async ({ page }) => {
+  await boot(page);
+  const probe = await page.evaluate(() => window.__testApi!.getSpriteProbe());
+  expect(probe.textures).toContain("archer");
+  expect(probe.textures).toContain("archer-1"); // P2's recolored copy
+  expect(probe.missingAnims).toEqual([]);
+});
+
 test("stability: ~10s under rAF ticks the sim at ~60 Hz with no errors", async ({ page }) => {
   const errors = await boot(page);
   const t0 = await page.evaluate(() => window.__testApi!.getState().tick);

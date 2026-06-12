@@ -24,7 +24,7 @@ import { KeyboardInput } from "../input/keyboard";
 import { parsePlayersConfig, type PlayerSlotConfig } from "../input/players-config";
 import { parseJuice, type JuiceConfig } from "../juice";
 import { FixedStepDriver } from "../loop";
-import { ArcherRenderer, loadArcherAssets } from "../render/archer";
+import { ARCHER_TAGS, ArcherRenderer, animKey, loadArcherAssets } from "../render/archer";
 
 const TILE_COLOR = 0x5a5a6e;
 const CHEST_COLOR = 0xd4a017;
@@ -181,7 +181,18 @@ export class ArenaScene extends Phaser.Scene {
       stepTicks: (n: number) => {
         for (let i = 0; i < n; i++) this.doTick();
         this.render(1);
-      }
+      },
+      getSpriteProbe: () => ({
+        textures: this.textures
+          .getTextureKeys()
+          .filter((k) => k.startsWith("archer"))
+          .sort(),
+        missingAnims: this.slots.flatMap((s) =>
+          ARCHER_TAGS.filter((t) => !this.anims.exists(animKey(s.slot, t))).map((t) =>
+            animKey(s.slot, t)
+          )
+        )
+      })
     };
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       delete window.__testApi;

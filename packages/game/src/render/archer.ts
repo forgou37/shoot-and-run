@@ -28,7 +28,8 @@ const SPRITE_SIZE = 16;
  *  drawWrappedRect): main + up to 3 mirrors. */
 const QUAD = 4;
 
-export type ArcherTag = "idle" | "run" | "jump" | "fall" | "shoot" | "death";
+export const ARCHER_TAGS = ["idle", "run", "jump", "fall", "shoot", "death"] as const;
+export type ArcherTag = (typeof ARCHER_TAGS)[number];
 
 /** Playback per tag: loops follow the tag's direction; jump/shoot/death are
  *  one-shots that hold their final frame. */

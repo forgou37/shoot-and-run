@@ -23,6 +23,7 @@ interface ShellTestApi {
   getEvents(): { tick: number; type: string }[];
   setManual(on: boolean): void;
   stepTicks(n: number): void;
+  getSpriteProbe(): { textures: string[]; missingAnims: string[] };
 }
 
 interface Window {
