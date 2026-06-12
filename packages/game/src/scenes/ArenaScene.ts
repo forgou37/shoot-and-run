@@ -24,6 +24,7 @@ import { KeyboardInput } from "../input/keyboard";
 import { parsePlayersConfig, type PlayerSlotConfig } from "../input/players-config";
 import { parseJuice, type JuiceConfig } from "../juice";
 import { FixedStepDriver } from "../loop";
+import { ArcherRenderer, loadArcherAssets } from "../render/archer";
 
 const TILE_COLOR = 0x5a5a6e;
 const CHEST_COLOR = 0xd4a017;
@@ -63,9 +64,15 @@ export class ArenaScene extends Phaser.Scene {
   private killEmitters = new Map<number, Phaser.GameObjects.Particles.ParticleEmitter>();
   private stickEmitter!: Phaser.GameObjects.Particles.ParticleEmitter;
   private bombEmitter!: Phaser.GameObjects.Particles.ParticleEmitter;
+  /** Sprite renderer (spec 006); null in `?rects=1` debug mode. */
+  private archers: ArcherRenderer | null = null;
 
   constructor() {
     super("arena");
+  }
+
+  preload(): void {
+    loadArcherAssets(this.load);
   }
 
   create(): void {
@@ -85,6 +92,8 @@ export class ArenaScene extends Phaser.Scene {
     this.keyboard = new KeyboardInput(window);
     this.drawTiles(arena);
     this.entityGfx = this.add.graphics();
+    const rectsMode = new URLSearchParams(window.location.search).get("rects") === "1";
+    if (!rectsMode) this.archers = new ArcherRenderer(this, this.slots);
     this.createParticles();
     this.overlayText = this.add
       .text(ARENA_WIDTH / 2, ARENA_HEIGHT / 2 - 24, "", {
@@ -132,6 +141,7 @@ export class ArenaScene extends Phaser.Scene {
       // Hitstop: hold the sim and the interpolation where they are. The
       // camera shake effect still plays — frozen frame + shake reads as impact.
       this.hitstopRemainingMs -= delta;
+      if (this.hitstopRemainingMs <= 0) this.anims.resumeAll();
       this.render(this.lastAlpha);
       return;
     }
@@ -181,6 +191,9 @@ export class ArenaScene extends Phaser.Scene {
     for (const e of events) {
       if (e.type === "player_killed") {
         this.hitstopRemainingMs = this.juice.hitstopMs;
+        // Sprite animations are driven by Phaser's clock, not the sim
+        // accumulator — freeze them too so the hitstop frame truly holds.
+        this.anims.pauseAll();
         this.cameras.main.shake(
           this.juice.shakeDurationMs,
           this.juice.shakeMagnitudePx / ARENA_WIDTH
@@ -275,12 +288,17 @@ export class ArenaScene extends Phaser.Scene {
       this.drawWrappedRect(chest.x, chest.y, CHEST_WIDTH, CHEST_HEIGHT, CHEST_COLOR);
     }
     this.sim.state.players.forEach((p, i) => {
-      if (!p.alive) return;
       const prev = this.prev.players[i] ?? p;
       const x = lerpWrapped(prev.x, p.x, alpha, ARENA_WIDTH);
       const y = lerpWrapped(prev.y, p.y, alpha, ARENA_HEIGHT);
-      const color = Phaser.Display.Color.HexStringToColor(this.slots[i]!.color).color;
       const playerAlpha = p.invisibleTicksLeft > 0 ? this.juice.invisibilityOpacity : 1;
+      if (this.archers) {
+        this.archers.update(p, i, x, y, playerAlpha);
+        if (p.alive) this.drawQuiverDots(p.quiver, x, y, playerAlpha);
+        return;
+      }
+      if (!p.alive) return;
+      const color = Phaser.Display.Color.HexStringToColor(this.slots[i]!.color).color;
       this.drawWrappedRect(x, y, PLAYER_WIDTH, PLAYER_HEIGHT, color, playerAlpha);
       this.drawQuiverDots(p.quiver, x, y, playerAlpha);
     });

@@ -1,0 +1,252 @@
+import Phaser from "phaser";
+import { ARENA_HEIGHT, ARENA_WIDTH, PLAYER_HEIGHT, type PlayerState } from "@shoot-and-run/sim";
+
+/**
+ * Player sprite rendering (spec 006). One canonical archer atlas (P1 ramp);
+ * other slots get a runtime-recolored copy. Animations are built from the
+ * Aseprite JSON's frameTags with exact per-frame durations. Render code only
+ * READS sim state — selection below is cosmetic mapping, not game logic.
+ */
+
+const ATLAS_KEY = "archer";
+const DATA_KEY = "archer-data";
+
+/** The P1 ramp baked into the canonical sheet: [shadow, base, highlight]. */
+const CANONICAL_RAMP = ["#2d7fc4", "#4fc3f7", "#a8e6ff"] as const;
+/** Lightness offsets used to derive a slot ramp from its players.json color. */
+const SHADOW_OFFSET = -0.22;
+const HIGHLIGHT_OFFSET = 0.22;
+
+const SPRITE_SIZE = 16;
+/** Mirror copies drawn when the sprite straddles a wrapping edge (parity with
+ *  drawWrappedRect): main + up to 3 mirrors. */
+const QUAD = 4;
+
+export type ArcherTag = "idle" | "run" | "jump" | "fall" | "shoot" | "death";
+
+/** Playback per tag: loops follow the tag's direction; jump/shoot/death are
+ *  one-shots that hold their final frame. */
+const PLAYBACK: Record<ArcherTag, { repeat: number; yoyo: boolean }> = {
+  idle: { repeat: -1, yoyo: true },
+  run: { repeat: -1, yoyo: false },
+  jump: { repeat: 0, yoyo: false },
+  fall: { repeat: -1, yoyo: true },
+  shoot: { repeat: 0, yoyo: false },
+  death: { repeat: 0, yoyo: false }
+};
+
+interface AsepriteData {
+  frames: Record<string, { duration: number }>;
+  meta: { frameTags: { name: string; from: number; to: number }[] };
+}
+
+export function loadArcherAssets(loader: Phaser.Loader.LoaderPlugin): void {
+  loader.atlas(ATLAS_KEY, "assets/archer.png", "assets/archer.json");
+  loader.json(DATA_KEY, "assets/archer.json");
+}
+
+export class ArcherRenderer {
+  private readonly quads: Phaser.GameObjects.Sprite[][] = [];
+
+  constructor(
+    private readonly scene: Phaser.Scene,
+    private readonly slots: readonly { slot: number; color: string }[]
+  ) {
+    const data = scene.cache.json.get(DATA_KEY) as AsepriteData | undefined;
+    if (!data?.meta?.frameTags?.length) {
+      throw new Error("archer atlas data missing frameTags — re-run `npm run export:art`");
+    }
+    const frameNames = orderedFrameNames(data);
+    for (const s of slots) {
+      const textureKey = this.buildSlotTexture(s.slot, s.color);
+      this.buildSlotAnims(s.slot, textureKey, data, frameNames);
+      const quad: Phaser.GameObjects.Sprite[] = [];
+      for (let m = 0; m < QUAD; m++) {
+        quad.push(
+          scene.add.sprite(0, 0, textureKey, frameNames[0]).setOrigin(0.5, 1).setVisible(false)
+        );
+      }
+      this.quads.push(quad);
+    }
+  }
+
+  /** Per render frame. (x, y) is the interpolated hitbox center. */
+  update(p: PlayerState, slotIndex: number, x: number, y: number, alpha: number): void {
+    const quad = this.quads[slotIndex]!;
+    const main = quad[0]!;
+    if (!p.alive) {
+      for (const s of quad) s.setVisible(false);
+      return;
+    }
+    const bottomY = y + PLAYER_HEIGHT / 2;
+    const desired = animKey(this.slots[slotIndex]!.slot, this.selectTag(p));
+    if (main.anims.currentAnim?.key !== desired) main.play(desired);
+    this.place(main, x, bottomY, p, alpha);
+
+    const offsets: [number, number][] = [];
+    const xs = x - SPRITE_SIZE / 2 < 0 ? [ARENA_WIDTH] : x + SPRITE_SIZE / 2 > ARENA_WIDTH ? [-ARENA_WIDTH] : [];
+    const ys = bottomY - SPRITE_SIZE < 0 ? [ARENA_HEIGHT] : bottomY > ARENA_HEIGHT ? [-ARENA_HEIGHT] : [];
+    for (const dx of xs) offsets.push([dx, 0]);
+    for (const dy of ys) offsets.push([0, dy]);
+    if (xs.length > 0 && ys.length > 0) offsets.push([xs[0]!, ys[0]!]);
+    for (let m = 1; m < QUAD; m++) {
+      const mirror = quad[m]!;
+      const off = offsets[m - 1];
+      if (!off) {
+        mirror.setVisible(false);
+        continue;
+      }
+      mirror.setTexture(main.texture.key, main.frame.name);
+      this.place(mirror, x + off[0], bottomY + off[1], p, alpha);
+    }
+  }
+
+  hideAll(): void {
+    for (const quad of this.quads) for (const s of quad) s.setVisible(false);
+  }
+
+  private place(
+    sprite: Phaser.GameObjects.Sprite,
+    x: number,
+    bottomY: number,
+    p: PlayerState,
+    alpha: number
+  ): void {
+    sprite.setPosition(x, bottomY).setFlipX(p.facing === -1).setAlpha(alpha).setVisible(true);
+  }
+
+  /** Locomotion mapping (spec 006 fixed design points). */
+  private selectTag(p: PlayerState): ArcherTag {
+    if (!p.grounded) return p.vy < 0 ? "jump" : "fall";
+    return Math.abs(p.vx) > 1 ? "run" : "idle";
+  }
+
+  /** Recolor the canonical ramp toward the slot color; slot 0 (the ramp the
+   *  sheet is drawn in) uses the canonical texture untouched. */
+  private buildSlotTexture(slot: number, color: string): string {
+    if (slot === 0) return ATLAS_KEY;
+    const key = `${ATLAS_KEY}-${String(slot)}`;
+    const canonical = this.scene.textures.get(ATLAS_KEY);
+    const source = canonical.getSourceImage() as HTMLImageElement | HTMLCanvasElement;
+    const canvas = this.scene.textures.createCanvas(key, source.width, source.height);
+    if (!canvas) throw new Error(`texture key collision: ${key}`);
+    canvas.context.drawImage(source, 0, 0);
+    const image = canvas.context.getImageData(0, 0, source.width, source.height);
+    const ramp = slotRamp(color);
+    const map = new Map<number, readonly [number, number, number]>();
+    CANONICAL_RAMP.forEach((hex, i) => map.set(packHex(hex), ramp[i]!));
+    const px = image.data;
+    for (let i = 0; i < px.length; i += 4) {
+      if (px[i + 3] === 0) continue;
+      const replacement = map.get((px[i]! << 16) | (px[i + 1]! << 8) | px[i + 2]!);
+      if (replacement) {
+        px[i] = replacement[0];
+        px[i + 1] = replacement[1];
+        px[i + 2] = replacement[2];
+      }
+    }
+    canvas.context.putImageData(image, 0, 0);
+    canvas.refresh();
+    for (const name of canonical.getFrameNames()) {
+      const f = canonical.get(name);
+      canvas.add(name, 0, f.cutX, f.cutY, f.cutWidth, f.cutHeight);
+    }
+    return key;
+  }
+
+  /** Mirrors Phaser's createFromAseprite timing: base rate from the tag's
+   *  shortest frame, per-frame `duration` carries the remainder. */
+  private buildSlotAnims(
+    slot: number,
+    textureKey: string,
+    data: AsepriteData,
+    frameNames: readonly string[]
+  ): void {
+    for (const tag of data.meta.frameTags) {
+      const playback = PLAYBACK[tag.name as ArcherTag];
+      if (!playback) continue;
+      const names = frameNames.slice(tag.from, tag.to + 1);
+      const durations = names.map((n) => data.frames[n]?.duration ?? 100);
+      const minDuration = Math.min(...durations);
+      this.scene.anims.create({
+        key: animKey(slot, tag.name as ArcherTag),
+        frames: names.map((frame, i) => ({
+          key: textureKey,
+          frame,
+          duration: durations[i]! - minDuration
+        })),
+        frameRate: 1000 / minDuration,
+        repeat: playback.repeat,
+        yoyo: playback.yoyo
+      });
+    }
+  }
+}
+
+export function animKey(slot: number, tag: ArcherTag): string {
+  return `archer-${String(slot)}-${tag}`;
+}
+
+function orderedFrameNames(data: AsepriteData): string[] {
+  return Object.keys(data.frames)
+    .map((name) => ({ name, index: Number(/(\d+)\.aseprite$/.exec(name)?.[1] ?? Number.NaN) }))
+    .filter((e) => Number.isFinite(e.index))
+    .sort((a, b) => a.index - b.index)
+    .map((e) => e.name);
+}
+
+function slotRamp(color: string): [number, number, number][] {
+  const [h, s, l] = rgbToHsl(packHex(color));
+  return [
+    hslToRgb(h, s, clamp01(l + SHADOW_OFFSET, 0.08, 0.92)),
+    hslToRgb(h, s, l),
+    hslToRgb(h, s, clamp01(l + HIGHLIGHT_OFFSET, 0.08, 0.92))
+  ];
+}
+
+function packHex(hex: string): number {
+  return parseInt(hex.replace("#", ""), 16);
+}
+
+function clamp01(v: number, lo: number, hi: number): number {
+  return Math.min(hi, Math.max(lo, v));
+}
+
+function rgbToHsl(rgb: number): [number, number, number] {
+  const r = ((rgb >> 16) & 0xff) / 255;
+  const g = ((rgb >> 8) & 0xff) / 255;
+  const b = (rgb & 0xff) / 255;
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const l = (max + min) / 2;
+  if (max === min) return [0, 0, l];
+  const d = max - min;
+  const s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+  let h: number;
+  if (max === r) h = ((g - b) / d + (g < b ? 6 : 0)) / 6;
+  else if (max === g) h = ((b - r) / d + 2) / 6;
+  else h = ((r - g) / d + 4) / 6;
+  return [h, s, l];
+}
+
+function hslToRgb(h: number, s: number, l: number): [number, number, number] {
+  if (s === 0) {
+    const v = Math.round(l * 255);
+    return [v, v, v];
+  }
+  const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+  const p = 2 * l - q;
+  const channel = (t: number): number => {
+    if (t < 0) t += 1;
+    if (t > 1) t -= 1;
+    if (t < 1 / 6) return p + (q - p) * 6 * t;
+    if (t < 1 / 2) return q;
+    if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
+    return p;
+  };
+  return [
+    Math.round(channel(h + 1 / 3) * 255),
+    Math.round(channel(h) * 255),
+    Math.round(channel(h - 1 / 3) * 255)
+  ];
+}
