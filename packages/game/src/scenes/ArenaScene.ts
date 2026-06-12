@@ -25,6 +25,7 @@ import { parsePlayersConfig, type PlayerSlotConfig } from "../input/players-conf
 import { parseJuice, type JuiceConfig } from "../juice";
 import { FixedStepDriver } from "../loop";
 import { ARCHER_TAGS, ArcherRenderer, animKey, loadArcherAssets } from "../render/archer";
+import { ArrowRenderer, loadArrowAssets } from "../render/arrows";
 import { EnvironmentRenderer, loadEnvironmentAssets } from "../render/environment";
 
 const TILE_COLOR = 0x5a5a6e;
@@ -69,6 +70,8 @@ export class ArenaScene extends Phaser.Scene {
   private archers: ArcherRenderer | null = null;
   /** Jungle environment renderer (spec 007); null in `?rects=1` debug mode. */
   private env: EnvironmentRenderer | null = null;
+  /** Sprite arrows (spec 007); null in `?rects=1` debug mode. */
+  private arrowSprites: ArrowRenderer | null = null;
 
   constructor() {
     super("arena");
@@ -77,6 +80,7 @@ export class ArenaScene extends Phaser.Scene {
   preload(): void {
     loadArcherAssets(this.load);
     loadEnvironmentAssets(this.load);
+    loadArrowAssets(this.load);
   }
 
   create(): void {
@@ -101,7 +105,10 @@ export class ArenaScene extends Phaser.Scene {
       this.env = new EnvironmentRenderer(this, arena);
     }
     this.entityGfx = this.add.graphics();
-    if (!rectsMode) this.archers = new ArcherRenderer(this, this.slots);
+    if (!rectsMode) {
+      this.archers = new ArcherRenderer(this, this.slots);
+      this.arrowSprites = new ArrowRenderer(this);
+    }
     this.createParticles();
     this.overlayText = this.add
       .text(ARENA_WIDTH / 2, ARENA_HEIGHT / 2 - 24, "", {
@@ -334,18 +341,25 @@ export class ArenaScene extends Phaser.Scene {
       this.drawWrappedRect(x, y, PLAYER_WIDTH, PLAYER_HEIGHT, color, playerAlpha);
       this.drawQuiverDots(p.quiver, x, y, playerAlpha);
     });
+    this.arrowSprites?.beginFrame();
     for (const a of this.sim.state.arrows) {
+      if (a.phase !== "flying" && a.phase !== "stuck") continue;
       const prev = this.prev.arrows.get(a.id) ?? a;
       const x = lerpWrapped(prev.x, a.x, alpha, ARENA_WIDTH);
       const y = lerpWrapped(prev.y, a.y, alpha, ARENA_HEIGHT);
+      if (this.arrowSprites) {
+        this.arrowSprites.draw(a, x, y);
+        continue;
+      }
       const color = ARROW_COLORS[a.kind];
       if (a.phase === "flying") {
         const { hw, hh } = arrowHalves(a);
         this.drawWrappedRect(x, y, hw * 2, hh * 2, color);
-      } else if (a.phase === "stuck") {
+      } else {
         this.drawWrappedRect(x, y, 4, 4, color);
       }
     }
+    this.arrowSprites?.endFrame();
   }
 
   /** Ammo readout: one dot per arrow, colored by kind, above the head.
