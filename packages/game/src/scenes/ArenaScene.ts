@@ -157,6 +157,7 @@ export class ArenaScene extends Phaser.Scene {
     this.prev = this.snapshot();
     const events = this.sim.step(inputs);
     this.applyJuice(events);
+    this.archers?.onEvents(events);
     if (events.length > 0) {
       this.eventLog.push(...events);
       if (this.eventLog.length > 1000) {

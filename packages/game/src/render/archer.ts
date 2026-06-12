@@ -1,5 +1,11 @@
 import Phaser from "phaser";
-import { ARENA_HEIGHT, ARENA_WIDTH, PLAYER_HEIGHT, type PlayerState } from "@shoot-and-run/sim";
+import {
+  ARENA_HEIGHT,
+  ARENA_WIDTH,
+  PLAYER_HEIGHT,
+  type PlayerState,
+  type SimEvent
+} from "@shoot-and-run/sim";
 
 /**
  * Player sprite rendering (spec 006). One canonical archer atlas (P1 ramp);
@@ -70,17 +76,28 @@ export class ArcherRenderer {
     }
   }
 
+  /** Cosmetic one-shots driven by sim events (spec 006 T6.3): `shoot` plays
+   *  on every arrow_fired; death is driven from state in update(). */
+  onEvents(events: readonly SimEvent[]): void {
+    for (const e of events) {
+      if (e.type !== "arrow_fired") continue;
+      const idx = this.slots.findIndex((s) => s.slot === e.playerSlot);
+      this.quads[idx]?.[0]?.play(animKey(e.playerSlot, "shoot"));
+    }
+  }
+
   /** Per render frame. (x, y) is the interpolated hitbox center. */
   update(p: PlayerState, slotIndex: number, x: number, y: number, alpha: number): void {
     const quad = this.quads[slotIndex]!;
     const main = quad[0]!;
-    if (!p.alive) {
-      for (const s of quad) s.setVisible(false);
-      return;
-    }
+    const slot = this.slots[slotIndex]!.slot;
     const bottomY = y + PLAYER_HEIGHT / 2;
-    const desired = animKey(this.slots[slotIndex]!.slot, this.selectTag(p));
-    if (main.anims.currentAnim?.key !== desired) main.play(desired);
+    const desired = animKey(slot, this.selectTag(p));
+    const current = main.anims.currentAnim?.key;
+    // A playing shoot one-shot wins over locomotion; death wins over everything.
+    const holdShoot =
+      current === animKey(slot, "shoot") && main.anims.isPlaying && p.alive;
+    if (!holdShoot && current !== desired) main.play(desired);
     this.place(main, x, bottomY, p, alpha);
 
     const offsets: [number, number][] = [];
@@ -101,10 +118,6 @@ export class ArcherRenderer {
     }
   }
 
-  hideAll(): void {
-    for (const quad of this.quads) for (const s of quad) s.setVisible(false);
-  }
-
   private place(
     sprite: Phaser.GameObjects.Sprite,
     x: number,
@@ -115,8 +128,10 @@ export class ArcherRenderer {
     sprite.setPosition(x, bottomY).setFlipX(p.facing === -1).setAlpha(alpha).setVisible(true);
   }
 
-  /** Locomotion mapping (spec 006 fixed design points). */
+  /** Animation mapping (spec 006 fixed design points). The dead pose holds
+   *  its final lying frame as the corpse until the round restarts. */
   private selectTag(p: PlayerState): ArcherTag {
+    if (!p.alive) return "death";
     if (!p.grounded) return p.vy < 0 ? "jump" : "fall";
     return Math.abs(p.vx) > 1 ? "run" : "idle";
   }
