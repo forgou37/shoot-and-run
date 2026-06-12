@@ -78,6 +78,14 @@ test("sprites: archer atlas and per-slot animations loaded (spec 006)", async ({
   expect(probe.missingAnims).toEqual([]);
 });
 
+test("sprites: jungle environment and arrow atlases loaded (spec 007)", async ({ page }) => {
+  await boot(page);
+  const probe = await page.evaluate(() => window.__testApi!.getSpriteProbe());
+  for (const key of ["jungle-tiles", "jungle-bg", "chest", "arrow"]) {
+    expect(probe.textures).toContain(key);
+  }
+});
+
 test("stability: ~10s under rAF ticks the sim at ~60 Hz with no errors", async ({ page }) => {
   const errors = await boot(page);
   const t0 = await page.evaluate(() => window.__testApi!.getState().tick);

@@ -202,7 +202,7 @@ export class ArenaScene extends Phaser.Scene {
       getSpriteProbe: () => ({
         textures: this.textures
           .getTextureKeys()
-          .filter((k) => k.startsWith("archer"))
+          .filter((k) => /^(archer|jungle|chest|arrow)/.test(k))
           .sort(),
         missingAnims: this.slots.flatMap((s) =>
           ARCHER_TAGS.filter((t) => !this.anims.exists(animKey(s.slot, t))).map((t) =>

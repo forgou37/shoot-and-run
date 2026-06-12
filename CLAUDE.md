@@ -88,7 +88,8 @@ arcade-game/
 ├─ scripts/
 │  └─ export-art.mjs          # assets/*.aseprite → packages/game/public/assets/
 ├─ content/
-│  ├─ arenas/arena-001.json
+│  ├─ arenas/arena-001.json   # "crossfire" — sim-test + golden-log fixture
+│  ├─ arenas/arena-002.json   # "canopy" — jungle arena the shell boots into
 │  ├─ tuning.json
 │  └─ players.json
 ├─ packages/
@@ -114,7 +115,7 @@ arcade-game/
 │        ├─ main.ts
 │        ├─ loop.ts           # accumulator + interpolation driver
 │        ├─ input/            # device → input structs, slot↔device mapping
-│        └─ render/           # debug-rect renderer
+│        └─ render/           # sprite renderers (archer, arrows, jungle env); rect debug via ?rects=1
 └─ packages/pipeline/         # FUTURE (specs 003–004): bots, evals, generator. Do not create yet.
 ```
 
@@ -159,3 +160,4 @@ Format: `Date | Scope | Decision | Reasoning | Alternatives rejected`
 | 2026-06-12 | sim-events | player_killed carries the victim's position (x, y) | shell FX (kill burst placement) need it now; pipeline balance metrics need kill heatmaps later; events are the sim's only output channel, so position must be in the payload | shell reading victim position from state rejected: at the time the event is consumed the round may already have reset; golden log consciously regenerated once for the payload change |
 | 2026-06-12 | roadmap | Spec 002 re-scoped to treasure chests + special arrows (bomb/laser/bounce) + power-ups (invisibility/flight); gamepads/roster/menus deferred to 003; bots → 004, AI pipeline → 005 | owner direction: content/combat variety before input breadth; chests are also the first consumer of the seeded PRNG, proving the determinism design under randomness | keeping 002 as roster rejected by owner |
 | 2026-06-12 | art | Pixel art is generated in-session by Claude driving Aseprite (MCP), owner as art director; sources in `assets/*.aseprite`, committed exports (PNG + Aseprite-JSON atlas) in `packages/game/public/assets/` consumed by the shell; per-slot colors via runtime ramp recolor of one canonical 16×16 sheet (spec 006, proposed) | owner delegated generation after reviewing the archer (19 frames, 6 tags); committed exports keep CI/CD free of an Aseprite dependency; one sheet + recolor avoids 4× asset upkeep | owner hand-drawing deferred: iteration speed; per-slot pre-exported sheets rejected; sprite sizes other than 16×16 rejected — matches tile grid, overlays the 12×12 hitbox |
+| 2026-06-13 | art/content | Spec 007 (owner-directed, skipped pre-spec review): shell boots the new jungle arena-002 "canopy"; arena-001 stays the sim-test/golden fixture; tile variants chosen at render time by a wrap-aware exposure mask (8 frames + 2 vines, vines placed by a deterministic position hash); arrows rotate by `atan2(vy, vx)`, stuck arrows hold the last flight angle tracked shell-side | complete level art + a denser layout without touching the sim (golden log pinned to arena-001 stays byte-identical); autotiling keeps arenas pure collision data and the tileset tiny | per-tile art indices in arena JSON rejected: arenas remain collision data the generator pipeline can emit; storing stick angles in sim state rejected: cosmetic-only concern, sim purity wins |
