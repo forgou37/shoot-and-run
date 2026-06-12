@@ -8,25 +8,27 @@ Everything that is not in the current spec lives here. New ideas land here first
 |---|---|---|
 | 000 | Baseline first playable — **done** | — |
 | 001 | Game feel & match structure: juice, best-of-N, scores; shell e2e smoke suite — **done** (specs/001-feel-and-match.md) | 000 done and fun in 2P |
-| 002 | Full roster: gamepads, 3–4 players, modes, menus/lobby | 001 done |
-| — | Pixel-art pass (owner does art; can overlap 003+) | 000–002 done (hard rule 6) |
-| 003 | Scripted bots + headless eval harness | game is fun by hand |
-| 004 | AI arena-generation pipeline: generator + metrics + judge loop | 003 done |
+| 002 | Treasure chests, special arrows (bomb/laser/bounce), power-ups (invisibility/flight) — **current** (specs/002-chests-and-powers.md; re-scoped 2026-06-12, gamepads moved out) | 001 done |
+| 003 | Full roster: gamepads, 3–4 players, modes, menus/lobby | 002 done |
+| — | Pixel-art pass (owner does art; can overlap 004+) | 000–002 done (hard rule 6) |
+| 004 | Scripted bots + headless eval harness | game is fun by hand |
+| 005 | AI arena-generation pipeline: generator + metrics + judge loop | 004 done |
 
 ---
 
-## Combat & arrows
+## Combat & arrows (bomb/laser/bounce arrows + chests moved to spec 002)
 
-- Arrow variants (original designs, original names — e.g. explosive, piercing/drill, splitting, bouncing). Each variant is data-described where possible (speed/gravity/behavior flags in content, behavior code in sim).
+- More arrow variants: splitting, drill (through any number of walls), oversized. Data-described where possible.
+- Weighted/biased chest content tables; chest variety (big chests, cursed chests).
+- Tile destruction by bomb arrows (needs mutable arena state in sim — design carefully vs determinism/replays).
 - Arrow catching: grab an arrow mid-flight with precise timing.
 - Dodge/roll with brief invulnerability.
 - Shield pickup that absorbs one hit.
 - Arrow-vs-arrow collision (deflection).
-- Treasure chests that spawn pickups mid-round (uses sim PRNG — determinism preserved).
 
-## Power-ups
+## Power-ups (invisibility + flight moved to spec 002)
 
-- Wings (extended air control / glide), speed boost, oversized arrows, brief invisibility, mirror/decoy. All original takes, all parameters in content files.
+- Speed boost, mirror/decoy, shield. All original takes, all parameters in content files.
 
 ## Game feel / juice (hitstop, shake, kill/stick particles moved to spec 001)
 
@@ -42,18 +44,18 @@ Everything that is not in the current spec lives here. New ideas land here first
 - Draw handling polish (replay the round, or both gain nothing).
 - Match victory screen beyond the text overlay.
 
-## Input & roster (spec 002 candidates)
+## Input & roster (spec 003 candidates — moved from 002 at owner direction)
 
 - Gamepad API support: hot-plug detection, up to 4 controllers, deadzone handling in shell.
 - Slot↔device assignment UI ("press a button to join" lobby).
 - 3–4 player support end-to-end (spawns, colors from `content/players.json`, HUD scaling).
 - Key/button rebinding, persisted locally.
 
-## Game modes (spec 002 candidates)
+## Game modes (spec 003 candidates)
 
 - Free-for-all (baseline), 2v2 teams with friendly fire toggle, headhunter/score-by-kills variant, target-practice solo mode (doubles as input/feel test bed).
 
-## Menus & UX (spec 002 candidates)
+## Menus & UX (spec 003 candidates)
 
 - Title screen, lobby/character-select, arena select (reads whatever is in `content/arenas/`), pause menu, settings (volume, screen scale).
 
@@ -65,7 +67,7 @@ Everything that is not in the current spec lives here. New ideas land here first
 
 Game-rule e2e stays headless in `packages/sim`; browser e2e covers only shell glue and never re-tests game rules.
 
-- Gamepad e2e (spec 002): Playwright cannot synthesize gamepad input — inject a `navigator.getGamepads` shim in test mode.
+- Gamepad e2e (spec 003): Playwright cannot synthesize gamepad input — inject a `navigator.getGamepads` shim in test mode.
 - Visual regression screenshots — consider after the art pass, not before.
 
 ## Engineering / infrastructure
@@ -76,18 +78,18 @@ Game-rule e2e stays headless in `packages/sim`; browser e2e covers only shell gl
 - Crash-safe tuning hot-reload (validate before applying).
 - In-game debug overlay: hitboxes, sim tick, event ticker, input viewer.
 
-## Scripted bots (spec 003)
+## Scripted bots (spec 004)
 
-Prerequisite for the AI pipeline; also useful for solo playtesting.
+Prerequisite for the AI pipeline (spec 005); also useful for solo playtesting.
 
 - Bot policy interface: `(state, slot, rng) → PlayerInput`, pure and deterministic given the sim's PRNG stream. Lives in `packages/pipeline` (or `packages/bots`) — NOT in sim; sim only consumes inputs.
 - Behaviors in increasing order: patrol/random-walk, arrow-seeker (path to nearest pickup), hunter (chase + line-of-sight shot), survivor (evade + opportunistic stomp). No pathfinding gold-plating — single-screen arenas allow simple heuristics.
 - Difficulty knobs (reaction delay ticks, aim error via PRNG) as data.
 - Headless runner CLI: `run-rounds --arena X --bots A,B --rounds N --seed S` → JSONL event logs + summary stats. This is the eval harness substrate.
 
-## AI arena-generation pipeline (spec 004) — see "Future direction" in the project brief
+## AI arena-generation pipeline (spec 005) — see "Future direction" in the project brief
 
-Offline pipeline, target only after the game is fun to play by hand. Architecture is already shaped for it: arenas are data files validated by sim code, and the sim exposes `createSim(arena, tuning, players, seed) / step / events / state`.
+Offline pipeline, target only after the game is fun to play by hand (prereq: bots from spec 004). Architecture is already shaped for it: arenas are data files validated by sim code, and the sim exposes `createSim(arena, tuning, players, seed) / step / events / state`.
 
 1. **Generator.** LLM agent emits candidate arenas as structured JSON conforming to the arena schema (tile grid + spawns). Schema validation (already in `packages/sim`) rejects malformed output before any simulation is spent; structural pre-checks (connectivity given wrapping, spawn fairness by symmetry, open-space ratio) filter cheap failures.
 2. **Headless evals.** For each candidate: N rounds (varied seeds, varied bot pairings from spec 003) via the headless runner. Output: per-round event logs.
