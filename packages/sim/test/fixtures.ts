@@ -18,7 +18,9 @@ export const TEST_TUNING: Tuning = {
   roundRestartDelayMs: 1500,
   startingArrows: 3,
   roundsToWin: 3,
-  matchRestartDelayMs: 2000
+  matchRestartDelayMs: 2000,
+  bombRadiusPx: 28,
+  arrowBounceCount: 5
 };
 
 /** Flat full-width floor (rows 13–14), nothing else. For wrap-X tests. */
@@ -95,6 +97,35 @@ export const STOMP_ARENA: ArenaData = {
     { x: 100, y: 40 },
     { x: 100, y: 192 },
     { x: 200, y: 192 },
+    { x: 280, y: 192 }
+  ]
+};
+
+/** Full floor plus TWO walls (col 8 and col 15, rows 11–12). For laser
+ *  pierce-then-embed tests: the second obstacle arrives before the wrap. */
+export const TWO_WALL_ARENA: ArenaData = {
+  name: "test-two-walls",
+  tiles: [
+    "....................",
+    "....................",
+    "....................",
+    "....................",
+    "....................",
+    "....................",
+    "....................",
+    "....................",
+    "....................",
+    "....................",
+    "....................",
+    "........#......#....",
+    "........#......#....",
+    "####################",
+    "####################"
+  ],
+  spawns: [
+    { x: 60, y: 192 },
+    { x: 190, y: 192 },
+    { x: 100, y: 192 },
     { x: 280, y: 192 }
   ]
 };

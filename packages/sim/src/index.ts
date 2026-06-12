@@ -2,7 +2,7 @@ import type { ArenaData } from "./arena";
 import { collectPickups, handleShooting, updateArrows } from "./arrow";
 import type { SimEvent } from "./events";
 import type { PlayerInput } from "./input";
-import { checkArrowKills, checkStomps } from "./kills";
+import { checkArrowKills, checkStomps, resolveExplosions } from "./kills";
 import { updatePlayer } from "./player";
 import { createRng, type Rng } from "./rng";
 import { updateRound } from "./round";
@@ -116,7 +116,13 @@ export function createSim(config: SimConfig): Sim {
         handleShooting(state.players, inputs, state.arrows, allocId, tuning, events, state.tick);
         updateArrows(config.arena, state.arrows, tuning, events, state.tick);
         checkArrowKills(state.arrows, state.players, events, state.tick);
-        state.arrows = collectPickups(state.arrows, state.players, events, state.tick);
+        resolveExplosions(state.arrows, state.players, tuning, events, state.tick);
+        state.arrows = collectPickups(
+          state.arrows.filter((a) => a.phase !== "spent"),
+          state.players,
+          events,
+          state.tick
+        );
       }
       updateRound(state, config.arena, tuning, events);
       state.tick++;

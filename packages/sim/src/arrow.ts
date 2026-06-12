@@ -1,8 +1,8 @@
-import { ARENA_HEIGHT, ARENA_WIDTH, type ArenaData } from "./arena";
+import { ARENA_HEIGHT, ARENA_WIDTH, TILE_SIZE, type ArenaData } from "./arena";
 import { ARROW_HALF_LONG, ARROW_HALF_SHORT, DT, PICKUP_RADIUS } from "./constants";
 import type { SimEvent } from "./events";
 import type { PlayerInput } from "./input";
-import { moveAxisX, moveAxisY, wrapDelta } from "./physics";
+import { moveAxisX, moveAxisY, solidAt, wrapDelta, wrapMod } from "./physics";
 import type { ArrowState, PlayerState } from "./state";
 import type { DerivedTuning } from "./tuning";
 
@@ -54,6 +54,9 @@ export function handleShooting(
       kind,
       phase: "flying",
       firedTick: tick,
+      bouncesLeft: kind === "bounce" ? t.arrowBounceCount : 0,
+      pierced: false,
+      insideSolid: false,
       x: p.x,
       y: p.y,
       vx: nx * t.arrowSpeed,
@@ -64,7 +67,15 @@ export function handleShooting(
   });
 }
 
-/** Flight: slight gravity, wrap-aware swept movement, stick on first solid hit. */
+/**
+ * Flight per kind:
+ * - normal: slight gravity, sticks on first solid hit
+ * - bomb: like normal, but tile contact marks it exploding (resolved in kills.ts)
+ * - bounce: reflects off the contacted axis up to bouncesLeft times, then sticks
+ * - laser: straight line (no gravity), passes through the first contiguous
+ *   obstacle, embeds in the second (center-point sampling; arrow speed per
+ *   tick is well under a tile, so no tunneling)
+ */
 export function updateArrows(
   arena: ArenaData,
   arrows: ArrowState[],
@@ -74,20 +85,57 @@ export function updateArrows(
 ): void {
   for (const a of arrows) {
     if (a.phase !== "flying") continue;
+    if (a.kind === "laser") {
+      updateLaser(a, arena, events, tick);
+      continue;
+    }
     a.vy += t.arrowGravity * DT;
     const { hw, hh } = arrowHalves(a);
 
     const movedX = moveAxisX(arena, a.x, a.y, hw, hh, a.vx * DT);
     a.x = movedX.pos;
     if (movedX.hit) {
-      stick(a, events, tick);
-      continue;
+      if (a.kind === "bomb") {
+        a.phase = "exploding";
+        continue;
+      }
+      if (a.kind === "bounce" && a.bouncesLeft > 0) {
+        a.vx = -a.vx;
+        a.bouncesLeft--;
+      } else {
+        stick(a, events, tick);
+        continue;
+      }
     }
     const movedY = moveAxisY(arena, a.x, a.y, hw, hh, a.vy * DT);
     a.y = movedY.pos;
     if (movedY.hit) {
-      stick(a, events, tick);
+      if (a.kind === "bomb") {
+        a.phase = "exploding";
+        continue;
+      }
+      if (a.kind === "bounce" && a.bouncesLeft > 0) {
+        a.vy = -a.vy;
+        a.bouncesLeft--;
+      } else {
+        stick(a, events, tick);
+      }
     }
+  }
+}
+
+function updateLaser(a: ArrowState, arena: ArenaData, events: SimEvent[], tick: number): void {
+  a.x = wrapMod(a.x + a.vx * DT, ARENA_WIDTH);
+  a.y = wrapMod(a.y + a.vy * DT, ARENA_HEIGHT);
+  const solidNow = solidAt(arena, Math.floor(a.x / TILE_SIZE), Math.floor(a.y / TILE_SIZE));
+  if (a.pierced) {
+    if (solidNow) {
+      stick(a, events, tick); // embeds inside the second obstacle
+    }
+  } else if (a.insideSolid && !solidNow) {
+    a.pierced = true;
+  } else if (solidNow) {
+    a.insideSolid = true;
   }
 }
 

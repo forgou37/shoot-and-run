@@ -21,6 +21,10 @@ export interface Tuning {
   /** Round wins needed to take the match (best-of-N). */
   roundsToWin: number;
   matchRestartDelayMs: number;
+  /** Kill radius of a bomb-arrow explosion (player center distance, px). */
+  bombRadiusPx: number;
+  /** Wall/floor reflections a bouncing arrow makes before sticking. */
+  arrowBounceCount: number;
 }
 
 const TUNING_KEYS: readonly (keyof Tuning)[] = [
@@ -38,7 +42,9 @@ const TUNING_KEYS: readonly (keyof Tuning)[] = [
   "roundRestartDelayMs",
   "startingArrows",
   "roundsToWin",
-  "matchRestartDelayMs"
+  "matchRestartDelayMs",
+  "bombRadiusPx",
+  "arrowBounceCount"
 ];
 
 /** Validate untyped data (parsed content/tuning.json) as a Tuning object. */

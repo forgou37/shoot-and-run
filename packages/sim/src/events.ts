@@ -1,4 +1,4 @@
-export type KillCause = "arrow" | "stomp";
+export type KillCause = "arrow" | "stomp" | "bomb";
 
 /**
  * Every externally meaningful occurrence in the sim is a SimEvent.
@@ -12,6 +12,7 @@ export type SimEvent =
   | { tick: number; type: "round_started" }
   | { tick: number; type: "arrow_fired"; playerSlot: number; arrowId: number; kind: ArrowKind }
   | { tick: number; type: "arrow_stuck"; arrowId: number; x: number; y: number }
+  | { tick: number; type: "arrow_exploded"; arrowId: number; x: number; y: number }
   | { tick: number; type: "arrow_picked_up"; arrowId: number; playerSlot: number }
   | {
       tick: number;

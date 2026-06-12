@@ -26,7 +26,10 @@ export interface PlayerState {
   jumpCutAvailable: boolean;
 }
 
-export type ArrowPhase = "flying" | "stuck";
+/** "exploding" and "spent" are transient within a tick: a contacted bomb is
+ *  marked exploding, resolved (radius kills + event), then spent and removed
+ *  before the tick ends — the shell never sees either. */
+export type ArrowPhase = "flying" | "stuck" | "exploding" | "spent";
 
 export interface ArrowState {
   id: number;
@@ -35,6 +38,12 @@ export interface ArrowState {
   phase: ArrowPhase;
   /** Tick the arrow was fired on; drives muzzle immunity for the shooter. */
   firedTick: number;
+  /** Bounce kind: reflections remaining before the next contact sticks. */
+  bouncesLeft: number;
+  /** Laser kind: passed through its first contiguous obstacle. */
+  pierced: boolean;
+  /** Laser kind: currently inside the first obstacle. */
+  insideSolid: boolean;
   x: number;
   y: number;
   vx: number;
