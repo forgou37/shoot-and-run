@@ -1,4 +1,6 @@
 import {
+  CHEST_HEIGHT,
+  CHEST_WIDTH,
   MIN_SPAWNS,
   PLAYER_HEIGHT,
   PLAYER_WIDTH,
@@ -25,11 +27,13 @@ export interface SpawnPoint {
 /**
  * One arena, loaded from content/arenas/*.json.
  * `tiles` is ARENA_ROWS strings of ARENA_COLS chars: '#' solid, '.' empty.
+ * `chestSpots` is optional — arenas without it never spawn chests.
  */
 export interface ArenaData {
   name: string;
   tiles: string[];
   spawns: SpawnPoint[];
+  chestSpots?: SpawnPoint[];
 }
 
 export function isSolid(tiles: readonly string[], col: number, row: number): boolean {
@@ -47,11 +51,12 @@ function overlappedRange(center: number, halfExtent: number): { min: number; max
 
 function anySolidUnderAabb(
   tiles: readonly string[],
-  spawn: SpawnPoint,
+  x: number,
+  halfW: number,
   fromY: number,
   toY: number
 ): boolean {
-  const cols = overlappedRange(spawn.x, PLAYER_WIDTH / 2);
+  const cols = overlappedRange(x, halfW);
   const rowMin = Math.floor(fromY / TILE_SIZE);
   const rowMax = Math.floor((toY - EPS) / TILE_SIZE);
   for (let row = rowMin; row <= rowMax; row++) {
@@ -60,6 +65,42 @@ function anySolidUnderAabb(
     }
   }
   return false;
+}
+
+/** Shared placement rules for spawns and chest spots: hitbox in bounds, not
+ *  overlapping solid, solid ground within tolerance below the feet. */
+function validatePlacedPoint(
+  arenaName: string,
+  label: string,
+  i: number,
+  point: unknown,
+  tiles: string[],
+  halfW: number,
+  halfH: number
+): SpawnPoint {
+  if (typeof point !== "object" || point === null) {
+    throw new Error(`arena "${arenaName}": ${label} ${i} must be an object`);
+  }
+  const { x, y } = point as Record<string, unknown>;
+  if (typeof x !== "number" || !Number.isFinite(x) || typeof y !== "number" || !Number.isFinite(y)) {
+    throw new Error(`arena "${arenaName}": ${label} ${i} must have finite numeric x and y`);
+  }
+  if (x - halfW < 0 || x + halfW > ARENA_WIDTH || y - halfH < 0 || y + halfH > ARENA_HEIGHT) {
+    throw new Error(
+      `arena "${arenaName}": ${label} ${i} at (${x},${y}) places its hitbox outside the arena`
+    );
+  }
+  if (anySolidUnderAabb(tiles, x, halfW, y - halfH, y + halfH)) {
+    throw new Error(`arena "${arenaName}": ${label} ${i} at (${x},${y}) overlaps a solid tile`);
+  }
+  const feet = y + halfH;
+  if (!anySolidUnderAabb(tiles, x, halfW, feet, feet + SPAWN_GROUND_TOLERANCE)) {
+    throw new Error(
+      `arena "${arenaName}": ${label} ${i} at (${x},${y}) is not above ground ` +
+        `(no solid tile within ${SPAWN_GROUND_TOLERANCE}px below feet)`
+    );
+  }
+  return { x, y };
 }
 
 /**
@@ -106,36 +147,26 @@ export function parseArena(data: unknown): ArenaData {
   }
 
   const typedTiles = tiles as string[];
-  const halfW = PLAYER_WIDTH / 2;
-  const halfH = PLAYER_HEIGHT / 2;
 
-  const typedSpawns = spawns.map((s, i): SpawnPoint => {
-    if (typeof s !== "object" || s === null) {
-      throw new Error(`arena "${name}": spawn ${i} must be an object`);
-    }
-    const { x, y } = s as Record<string, unknown>;
-    if (typeof x !== "number" || !Number.isFinite(x) || typeof y !== "number" || !Number.isFinite(y)) {
-      throw new Error(`arena "${name}": spawn ${i} must have finite numeric x and y`);
-    }
-    if (x - halfW < 0 || x + halfW > ARENA_WIDTH || y - halfH < 0 || y + halfH > ARENA_HEIGHT) {
-      throw new Error(
-        `arena "${name}": spawn ${i} at (${x},${y}) places the player hitbox outside the arena`
-      );
-    }
-    // Spawn-inside-solid check: the player AABB must not overlap any solid tile.
-    if (anySolidUnderAabb(typedTiles, { x, y }, y - halfH, y + halfH)) {
-      throw new Error(`arena "${name}": spawn ${i} at (${x},${y}) overlaps a solid tile`);
-    }
-    // Spawn-on-ground check: solid ground within tolerance below the feet.
-    const feet = y + halfH;
-    if (!anySolidUnderAabb(typedTiles, { x, y }, feet, feet + SPAWN_GROUND_TOLERANCE)) {
-      throw new Error(
-        `arena "${name}": spawn ${i} at (${x},${y}) is not above ground ` +
-          `(no solid tile within ${SPAWN_GROUND_TOLERANCE}px below feet)`
-      );
-    }
-    return { x, y };
-  });
+  const typedSpawns = spawns.map((s, i) =>
+    validatePlacedPoint(name, "spawn", i, s, typedTiles, PLAYER_WIDTH / 2, PLAYER_HEIGHT / 2)
+  );
 
-  return { name, tiles: [...typedTiles], spawns: typedSpawns };
+  const { chestSpots } = data as Record<string, unknown>;
+  let typedChestSpots: SpawnPoint[] | undefined;
+  if (chestSpots !== undefined) {
+    if (!Array.isArray(chestSpots)) {
+      throw new Error(`arena "${name}": chestSpots must be an array when present`);
+    }
+    typedChestSpots = chestSpots.map((s, i) =>
+      validatePlacedPoint(name, "chestSpot", i, s, typedTiles, CHEST_WIDTH / 2, CHEST_HEIGHT / 2)
+    );
+  }
+
+  return {
+    name,
+    tiles: [...typedTiles],
+    spawns: typedSpawns,
+    ...(typedChestSpots ? { chestSpots: typedChestSpots } : {})
+  };
 }

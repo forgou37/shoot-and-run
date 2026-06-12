@@ -1,5 +1,6 @@
 import type { ArenaData } from "./arena";
 import { collectPickups, handleShooting, updateArrows } from "./arrow";
+import { updateChests } from "./chest";
 import type { SimEvent } from "./events";
 import type { PlayerInput } from "./input";
 import { checkArrowKills, checkStomps, resolveExplosions } from "./kills";
@@ -13,6 +14,7 @@ export const SIM_VERSION = "0.0.0";
 
 export * from "./arena";
 export * from "./arrow";
+export * from "./chest";
 export * from "./constants";
 export * from "./events";
 export * from "./input";
@@ -54,7 +56,7 @@ export function createSim(config: SimConfig): Sim {
   // The only randomness source in the sim (hard rule 4). Unused until
   // gameplay needs it, but seeded at init so the seed is part of the
   // sim's identity from tick 0.
-  const _rng: Rng = createRng(config.seed);
+  const rng: Rng = createRng(config.seed);
   let tuning = deriveTuning(config.tuning);
 
   let nextEntityId = 1;
@@ -92,7 +94,9 @@ export function createSim(config: SimConfig): Sim {
         flightTicksLeft: 0
       };
     }),
-    arrows: []
+    arrows: [],
+    chests: [],
+    nextChestTick: tuning.chestIntervalTicks
   };
 
   return {
@@ -125,6 +129,7 @@ export function createSim(config: SimConfig): Sim {
           events,
           state.tick
         );
+        updateChests(state, config.arena, rng, allocId, tuning, events);
       }
       updateRound(state, config.arena, tuning, events);
       state.tick++;

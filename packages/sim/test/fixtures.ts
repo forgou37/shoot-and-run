@@ -23,7 +23,10 @@ export const TEST_TUNING: Tuning = {
   arrowBounceCount: 5,
   invisibilityDurationMs: 10000,
   flightDurationMs: 10000,
-  flapVelocity: 220
+  flapVelocity: 220,
+  chestIntervalMs: 2000, // 120 ticks: fast for tests
+  maxChestsAlive: 2,
+  specialArrowsPerChest: 3
 };
 
 /** Flat full-width floor (rows 13–14), nothing else. For wrap-X tests. */
@@ -101,6 +104,27 @@ export const STOMP_ARENA: ArenaData = {
     { x: 100, y: 192 },
     { x: 200, y: 192 },
     { x: 280, y: 192 }
+  ]
+};
+
+/** Flat floor with three chest spots on it. For chest lifecycle tests. */
+export const CHEST_ARENA: ArenaData = {
+  name: "test-chests",
+  tiles: [
+    ...Array.from({ length: 13 }, () => "...................."),
+    "####################",
+    "####################"
+  ],
+  spawns: [
+    { x: 20, y: 192 },
+    { x: 300, y: 192 },
+    { x: 100, y: 192 },
+    { x: 220, y: 192 }
+  ],
+  chestSpots: [
+    { x: 60, y: 204 },
+    { x: 160, y: 204 },
+    { x: 260, y: 204 }
   ]
 };
 

@@ -70,7 +70,15 @@ describe("parseArena", () => {
     const bad = mutated((a) => {
       a.spawns[0] = { x: 4, y: 152 };
     });
-    expect(() => parseArena(bad)).toThrow(/places the player hitbox outside the arena/);
+    expect(() => parseArena(bad)).toThrow(/places its hitbox outside the arena/);
+  });
+
+  it("accepts arena-001's chestSpots and rejects a floating one", () => {
+    expect(parseArena(arena001).chestSpots).toHaveLength(3);
+    const bad = mutated((a) => {
+      (a as { chestSpots?: { x: number; y: number }[] }).chestSpots = [{ x: 160, y: 20 }];
+    });
+    expect(() => parseArena(bad)).toThrow(/chestSpot 0 at \(160,20\) is not above ground/);
   });
 
   it("rejects non-object input", () => {

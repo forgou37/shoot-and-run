@@ -29,6 +29,10 @@ export interface Tuning {
   flightDurationMs: number;
   /** Upward impulse per mid-air jump press while flight is active. */
   flapVelocity: number;
+  /** Interval between chest spawn attempts. */
+  chestIntervalMs: number;
+  maxChestsAlive: number;
+  specialArrowsPerChest: number;
 }
 
 const TUNING_KEYS: readonly (keyof Tuning)[] = [
@@ -51,7 +55,10 @@ const TUNING_KEYS: readonly (keyof Tuning)[] = [
   "arrowBounceCount",
   "invisibilityDurationMs",
   "flightDurationMs",
-  "flapVelocity"
+  "flapVelocity",
+  "chestIntervalMs",
+  "maxChestsAlive",
+  "specialArrowsPerChest"
 ];
 
 /** Validate untyped data (parsed content/tuning.json) as a Tuning object. */
@@ -76,6 +83,12 @@ export function parseTuning(data: unknown): Tuning {
   if (!Number.isInteger(t.roundsToWin) || t.roundsToWin < 1) {
     throw new Error("tuning: roundsToWin must be a positive integer");
   }
+  if (!Number.isInteger(t.maxChestsAlive) || t.maxChestsAlive < 0) {
+    throw new Error("tuning: maxChestsAlive must be a non-negative integer");
+  }
+  if (!Number.isInteger(t.specialArrowsPerChest) || t.specialArrowsPerChest < 1) {
+    throw new Error("tuning: specialArrowsPerChest must be a positive integer");
+  }
   return TUNING_KEYS.reduce((acc, key) => {
     acc[key] = t[key];
     return acc;
@@ -94,6 +107,7 @@ export interface DerivedTuning extends Tuning {
   matchRestartDelayTicks: number;
   invisibilityTicks: number;
   flightTicks: number;
+  chestIntervalTicks: number;
 }
 
 export function deriveTuning(t: Tuning): DerivedTuning {
@@ -104,6 +118,7 @@ export function deriveTuning(t: Tuning): DerivedTuning {
     roundRestartDelayTicks: msToTicks(t.roundRestartDelayMs),
     matchRestartDelayTicks: msToTicks(t.matchRestartDelayMs),
     invisibilityTicks: msToTicks(t.invisibilityDurationMs),
-    flightTicks: msToTicks(t.flightDurationMs)
+    flightTicks: msToTicks(t.flightDurationMs),
+    chestIntervalTicks: msToTicks(t.chestIntervalMs)
   };
 }

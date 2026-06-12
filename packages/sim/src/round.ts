@@ -57,6 +57,8 @@ export function updateRound(
     }
     state.players.forEach((p, index) => resetPlayer(p, index, arena, t));
     state.arrows = [];
+    state.chests = [];
+    state.nextChestTick = state.tick + t.chestIntervalTicks;
     state.round.phase = "running";
     state.round.winner = null;
     state.round.number++;

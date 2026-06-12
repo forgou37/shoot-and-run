@@ -65,6 +65,16 @@ export interface RoundState {
   number: number;
 }
 
+export type ChestContents = Exclude<ArrowKind, "normal"> | "invisibility" | "flight";
+
+export interface ChestState {
+  id: number;
+  x: number;
+  y: number;
+  /** Decided deterministically (sim PRNG) at spawn time. */
+  contents: ChestContents;
+}
+
 export interface MatchState {
   /** Round wins by player index (parallel to the players array). */
   scores: number[];
@@ -78,4 +88,7 @@ export interface SimState {
   match: MatchState;
   players: PlayerState[];
   arrows: ArrowState[];
+  chests: ChestState[];
+  /** Next tick a chest spawn is attempted (arena must have chestSpots). */
+  nextChestTick: number;
 }

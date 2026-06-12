@@ -19,6 +19,9 @@
   "invisibilityDurationMs": 10000,
   "flightDurationMs": 10000,
   "flapVelocity": 220,
+  "chestIntervalMs": 8000,
+  "maxChestsAlive": 2,
+  "specialArrowsPerChest": 3,
   "juice": {
     "hitstopMs": 80,
     "shakeDurationMs": 180,
