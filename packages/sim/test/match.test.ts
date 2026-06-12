@@ -74,7 +74,7 @@ describe("match structure (spec 001 T1.1)", () => {
     expect(sim.state.round).toMatchObject({ phase: "running", winner: null, number: 1 });
     sim.state.players.forEach((p) => {
       expect(p.alive).toBe(true);
-      expect(p.arrows).toBe(MATCH_TUNING.startingArrows);
+      expect(p.quiver).toHaveLength(MATCH_TUNING.startingArrows);
     });
   });
 

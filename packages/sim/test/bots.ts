@@ -29,7 +29,7 @@ export const hunterBot: BotPolicy = (state, tick, mySlot) => {
   if (tick % 120 === 100) input.jump = true;
 
   const aligned = Math.abs(dy) < 4 && Math.abs(dx) < 70;
-  if (aligned && me.arrows > 0 && tick % 20 === 0) input.shoot = true;
+  if (aligned && me.quiver.length > 0 && tick % 20 === 0) input.shoot = true;
   return input;
 };
 

@@ -51,8 +51,18 @@ describe("sim determinism (skeleton)", () => {
   it("players spawn at arena spawn points with starting arrows", () => {
     const sim = makeSim(1);
     expect(sim.state.players).toHaveLength(2);
-    expect(sim.state.players[0]).toMatchObject({ x: 40, y: 192, arrows: 3, alive: true });
-    expect(sim.state.players[1]).toMatchObject({ x: 280, y: 192, arrows: 3, alive: true });
+    expect(sim.state.players[0]).toMatchObject({
+      x: 40,
+      y: 192,
+      quiver: ["normal", "normal", "normal"],
+      alive: true
+    });
+    expect(sim.state.players[1]).toMatchObject({
+      x: 280,
+      y: 192,
+      quiver: ["normal", "normal", "normal"],
+      alive: true
+    });
   });
 
   it("emits round_started first on the first tick", () => {

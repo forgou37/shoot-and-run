@@ -1,3 +1,5 @@
+export type ArrowKind = "normal" | "bomb" | "laser" | "bounce";
+
 export interface PlayerState {
   /** Deterministic entity id, assigned by the sim's id counter at init. */
   id: number;
@@ -8,7 +10,8 @@ export interface PlayerState {
   vx: number;
   vy: number;
   facing: 1 | -1;
-  arrows: number;
+  /** Typed ammo, fired front-first. Specials are pushed to the front. */
+  quiver: ArrowKind[];
   alive: boolean;
   grounded: boolean;
   /** Ticks of post-ledge jump grace remaining (0 when grounded or consumed). */
@@ -28,6 +31,7 @@ export type ArrowPhase = "flying" | "stuck";
 export interface ArrowState {
   id: number;
   ownerSlot: number;
+  kind: ArrowKind;
   phase: ArrowPhase;
   /** Tick the arrow was fired on; drives muzzle immunity for the shooter. */
   firedTick: number;

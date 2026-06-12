@@ -80,7 +80,7 @@ export function createSim(config: SimConfig): Sim {
         vx: 0,
         vy: 0,
         facing: 1 as const,
-        arrows: config.tuning.startingArrows,
+        quiver: Array.from({ length: config.tuning.startingArrows }, () => "normal" as const),
         alive: true,
         grounded: false,
         coyoteTicksLeft: 0,

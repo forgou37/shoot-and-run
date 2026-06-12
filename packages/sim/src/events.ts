@@ -6,9 +6,11 @@ export type KillCause = "arrow" | "stomp";
  * balance metrics off these. Payloads must stay JSON-serializable —
  * the determinism proof compares serialized logs byte-for-byte.
  */
+import type { ArrowKind } from "./state";
+
 export type SimEvent =
   | { tick: number; type: "round_started" }
-  | { tick: number; type: "arrow_fired"; playerSlot: number; arrowId: number }
+  | { tick: number; type: "arrow_fired"; playerSlot: number; arrowId: number; kind: ArrowKind }
   | { tick: number; type: "arrow_stuck"; arrowId: number; x: number; y: number }
   | { tick: number; type: "arrow_picked_up"; arrowId: number; playerSlot: number }
   | {

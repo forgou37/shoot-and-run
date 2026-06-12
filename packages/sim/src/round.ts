@@ -71,7 +71,7 @@ function resetPlayer(p: PlayerState, index: number, arena: ArenaData, t: Derived
   p.vx = 0;
   p.vy = 0;
   p.facing = 1;
-  p.arrows = t.startingArrows;
+  p.quiver = Array.from({ length: t.startingArrows }, () => "normal" as const);
   p.alive = true;
   p.grounded = false;
   p.coyoteTicksLeft = 0;

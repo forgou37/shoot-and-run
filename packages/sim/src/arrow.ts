@@ -32,7 +32,7 @@ export function handleShooting(
     const input = inputs[i]!;
     const pressed = input.shoot && !p.prevShootHeld;
     p.prevShootHeld = input.shoot;
-    if (!pressed || p.arrows <= 0) return;
+    if (!pressed || p.quiver.length === 0) return;
 
     const dirX = (input.right ? 1 : 0) - (input.left ? 1 : 0);
     const dirY = (input.down ? 1 : 0) - (input.up ? 1 : 0);
@@ -47,10 +47,11 @@ export function handleShooting(
       ny = dirY / len;
     }
 
-    p.arrows--;
+    const kind = p.quiver.shift()!;
     const arrow: ArrowState = {
       id: allocId(),
       ownerSlot: p.slot,
+      kind,
       phase: "flying",
       firedTick: tick,
       x: p.x,
@@ -59,7 +60,7 @@ export function handleShooting(
       vy: ny * t.arrowSpeed
     };
     arrows.push(arrow);
-    events.push({ tick, type: "arrow_fired", playerSlot: p.slot, arrowId: arrow.id });
+    events.push({ tick, type: "arrow_fired", playerSlot: p.slot, arrowId: arrow.id, kind });
   });
 }
 
@@ -115,7 +116,8 @@ export function collectPickups(
       const dx = wrapDelta(p.x - a.x, ARENA_WIDTH);
       const dy = wrapDelta(p.y - a.y, ARENA_HEIGHT);
       if (dx * dx + dy * dy <= PICKUP_RADIUS * PICKUP_RADIUS) {
-        p.arrows++;
+        // Kind is preserved: a stuck laser is a laser again in the quiver.
+        p.quiver.unshift(a.kind);
         events.push({ tick, type: "arrow_picked_up", arrowId: a.id, playerSlot: p.slot });
         return false;
       }

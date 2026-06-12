@@ -58,7 +58,7 @@ describe("round flow (spec 000 T0.8)", () => {
     expect(sim.state.arrows).toHaveLength(0);
     sim.state.players.forEach((p, i) => {
       expect(p.alive).toBe(true);
-      expect(p.arrows).toBe(TEST_TUNING.startingArrows);
+      expect(p.quiver).toHaveLength(TEST_TUNING.startingArrows);
       expect(p.x).toBe(FLAT_ARENA.spawns[i]!.x);
       expect(p.y).toBe(FLAT_ARENA.spawns[i]!.y);
       expect(p.vx).toBe(0);

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ArenaData } from "../src/arena";
+import { collectPickups } from "../src/arrow";
 import { createSim, type Sim, type SimEvent } from "../src/index";
 import { emptyInput, type PlayerInput } from "../src/input";
 import { FLAT_ARENA, TEST_TUNING, WALL_ARENA } from "./fixtures";
@@ -28,7 +29,7 @@ describe("arrows (spec 000 T0.6)", () => {
   it("firing consumes ammo and emits arrow_fired", () => {
     const sim = makeSettledSim(FLAT_ARENA);
     const events = fire(sim);
-    expect(p0(sim).arrows).toBe(TEST_TUNING.startingArrows - 1);
+    expect(p0(sim).quiver).toHaveLength(TEST_TUNING.startingArrows - 1);
     expect(events.filter((e) => e.type === "arrow_fired")).toHaveLength(1);
     expect(sim.state.arrows).toHaveLength(1);
   });
@@ -36,7 +37,7 @@ describe("arrows (spec 000 T0.6)", () => {
   it("firing with 0 arrows is a no-op", () => {
     const sim = makeSettledSim(FLAT_ARENA);
     for (let i = 0; i < 3; i++) fire(sim, { up: true }); // shoot upward to keep them flying a while
-    expect(p0(sim).arrows).toBe(0);
+    expect(p0(sim).quiver).toHaveLength(0);
     const events = fire(sim, { up: true });
     expect(events.filter((e) => e.type === "arrow_fired")).toHaveLength(0);
     expect(sim.state.arrows.length).toBeLessThanOrEqual(3);
@@ -76,8 +77,32 @@ describe("arrows (spec 000 T0.6)", () => {
     // Walk into the wall; the player stops at 234, within pickup radius.
     for (let i = 0; i < 60; i++) allEvents.push(...sim.step([inp({ right: true })]));
     expect(allEvents.filter((e) => e.type === "arrow_picked_up")).toHaveLength(1);
-    expect(p0(sim).arrows).toBe(TEST_TUNING.startingArrows);
+    expect(p0(sim).quiver).toHaveLength(TEST_TUNING.startingArrows);
     expect(sim.state.arrows).toHaveLength(0);
+  });
+
+  it("picked-up arrows keep their kind and go to the quiver front", () => {
+    // Unit-level: exercise collectPickups directly with a stuck special.
+    const player = {
+      ...JSON.parse(JSON.stringify(makeSettledSim(FLAT_ARENA).state.players[0]!)),
+      quiver: ["normal"] as import("../src/state").ArrowKind[]
+    };
+    const stuckBomb = {
+      id: 99,
+      ownerSlot: 1,
+      kind: "bomb" as const,
+      phase: "stuck" as const,
+      firedTick: 0,
+      x: player.x,
+      y: player.y,
+      vx: 0,
+      vy: 0
+    };
+    const events: SimEvent[] = [];
+    const survivors = collectPickups([stuckBomb], [player], events, 100);
+    expect(survivors).toHaveLength(0);
+    expect(player.quiver).toEqual(["bomb", "normal"]);
+    expect(events[0]).toMatchObject({ type: "arrow_picked_up", arrowId: 99 });
   });
 
   it("an arrow fired across the wrap edge continues and sticks on the other side", () => {
