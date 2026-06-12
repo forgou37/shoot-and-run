@@ -49,12 +49,15 @@ export function updatePlayer(
   }
 
   let jumpedThisTick = false;
-  if (p.jumpBufferTicksLeft > 0 && (p.grounded || p.coyoteTicksLeft > 0)) {
-    p.vy = -t.jumpVelocity;
+  const groundJump = p.grounded || p.coyoteTicksLeft > 0;
+  if (p.jumpBufferTicksLeft > 0 && (groundJump || p.flightTicksLeft > 0)) {
+    // Flight: mid-air presses flap with flapVelocity; from the ground it's a
+    // normal jump even while the power-up is active.
+    p.vy = groundJump ? -t.jumpVelocity : -t.flapVelocity;
     p.grounded = false;
     p.coyoteTicksLeft = 0;
     p.jumpBufferTicksLeft = 0;
-    p.jumpCutAvailable = true;
+    p.jumpCutAvailable = groundJump;
     jumpedThisTick = true;
   }
 
@@ -93,6 +96,8 @@ export function updatePlayer(
   if (p.jumpBufferTicksLeft > 0) {
     p.jumpBufferTicksLeft--;
   }
+  if (p.invisibleTicksLeft > 0) p.invisibleTicksLeft--;
+  if (p.flightTicksLeft > 0) p.flightTicksLeft--;
 
   p.prevJumpHeld = input.jump;
 }

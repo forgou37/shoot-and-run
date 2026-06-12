@@ -24,6 +24,9 @@ export interface PlayerState {
   prevShootHeld: boolean;
   /** Whether releasing jump still shortens the current jump (variable height). */
   jumpCutAvailable: boolean;
+  /** Power-up timers (ticks). 0 = inactive. Reset on round reset. */
+  invisibleTicksLeft: number;
+  flightTicksLeft: number;
 }
 
 /** "exploding" and "spent" are transient within a tick: a contacted bomb is

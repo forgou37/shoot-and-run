@@ -20,7 +20,10 @@ export const TEST_TUNING: Tuning = {
   roundsToWin: 3,
   matchRestartDelayMs: 2000,
   bombRadiusPx: 28,
-  arrowBounceCount: 5
+  arrowBounceCount: 5,
+  invisibilityDurationMs: 10000,
+  flightDurationMs: 10000,
+  flapVelocity: 220
 };
 
 /** Flat full-width floor (rows 13–14), nothing else. For wrap-X tests. */

@@ -16,6 +16,9 @@
   "matchRestartDelayMs": 4000,
   "bombRadiusPx": 28,
   "arrowBounceCount": 5,
+  "invisibilityDurationMs": 10000,
+  "flightDurationMs": 10000,
+  "flapVelocity": 220,
   "juice": {
     "hitstopMs": 80,
     "shakeDurationMs": 180,

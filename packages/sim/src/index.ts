@@ -87,7 +87,9 @@ export function createSim(config: SimConfig): Sim {
         jumpBufferTicksLeft: 0,
         prevJumpHeld: false,
         prevShootHeld: false,
-        jumpCutAvailable: false
+        jumpCutAvailable: false,
+        invisibleTicksLeft: 0,
+        flightTicksLeft: 0
       };
     }),
     arrows: []

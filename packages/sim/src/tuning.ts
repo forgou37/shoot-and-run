@@ -25,6 +25,10 @@ export interface Tuning {
   bombRadiusPx: number;
   /** Wall/floor reflections a bouncing arrow makes before sticking. */
   arrowBounceCount: number;
+  invisibilityDurationMs: number;
+  flightDurationMs: number;
+  /** Upward impulse per mid-air jump press while flight is active. */
+  flapVelocity: number;
 }
 
 const TUNING_KEYS: readonly (keyof Tuning)[] = [
@@ -44,7 +48,10 @@ const TUNING_KEYS: readonly (keyof Tuning)[] = [
   "roundsToWin",
   "matchRestartDelayMs",
   "bombRadiusPx",
-  "arrowBounceCount"
+  "arrowBounceCount",
+  "invisibilityDurationMs",
+  "flightDurationMs",
+  "flapVelocity"
 ];
 
 /** Validate untyped data (parsed content/tuning.json) as a Tuning object. */
@@ -85,6 +92,8 @@ export interface DerivedTuning extends Tuning {
   jumpBufferTicks: number;
   roundRestartDelayTicks: number;
   matchRestartDelayTicks: number;
+  invisibilityTicks: number;
+  flightTicks: number;
 }
 
 export function deriveTuning(t: Tuning): DerivedTuning {
@@ -93,6 +102,8 @@ export function deriveTuning(t: Tuning): DerivedTuning {
     coyoteTicks: msToTicks(t.coyoteTimeMs),
     jumpBufferTicks: msToTicks(t.jumpBufferMs),
     roundRestartDelayTicks: msToTicks(t.roundRestartDelayMs),
-    matchRestartDelayTicks: msToTicks(t.matchRestartDelayMs)
+    matchRestartDelayTicks: msToTicks(t.matchRestartDelayMs),
+    invisibilityTicks: msToTicks(t.invisibilityDurationMs),
+    flightTicks: msToTicks(t.flightDurationMs)
   };
 }
