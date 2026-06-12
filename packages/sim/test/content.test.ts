@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import arena001 from "../../../content/arenas/arena-001.json";
+import arena002 from "../../../content/arenas/arena-002.json";
 import tuningJson from "../../../content/tuning.json";
 import { parseArena } from "../src/arena";
 import { parseTuning } from "../src/tuning";
@@ -9,6 +10,10 @@ import { parseTuning } from "../src/tuning";
 describe("content files validate", () => {
   it("content/arenas/arena-001.json", () => {
     expect(() => parseArena(arena001)).not.toThrow();
+  });
+
+  it("content/arenas/arena-002.json", () => {
+    expect(() => parseArena(arena002)).not.toThrow();
   });
 
   it("content/tuning.json", () => {
