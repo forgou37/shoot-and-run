@@ -95,9 +95,11 @@ arcade-game/
 │  │  │  ├─ rng.ts            # seeded PRNG (mulberry32)
 │  │  │  ├─ arena.ts          # arena types + schema validation
 │  │  │  ├─ physics.ts        # wrap-aware AABB vs tile grid
-│  │  │  ├─ player.ts         # movement, jump, stomp
-│  │  │  ├─ arrow.ts          # flight, sticking, pickup
-│  │  │  ├─ round.ts          # round state machine
+│  │  │  ├─ player.ts         # movement, jump, stomp, power-up timers
+│  │  │  ├─ arrow.ts          # flight per kind, sticking, pickup
+│  │  │  ├─ kills.ts          # arrow/stomp/bomb kills
+│  │  │  ├─ chest.ts          # chest spawn/open (PRNG-driven)
+│  │  │  ├─ round.ts          # round + match state machine
 │  │  │  └─ events.ts         # SimEvent definitions
 │  │  └─ test/
 │  │     └─ determinism.test.ts
