@@ -38,7 +38,7 @@ test("content: arena and tuning flowed through Vite into the sim", async ({ page
       scores: state.match.scores
     };
   });
-  expect(info.arena).toBe("crossfire");
+  expect(info.arena).toBe("canopy"); // spec 007: the shell boots into arena-002
   expect(info.playerCount).toBe(2);
   expect(info.startingArrows).toBe(3); // from content/tuning.json
   expect(info.scores).toHaveLength(2);

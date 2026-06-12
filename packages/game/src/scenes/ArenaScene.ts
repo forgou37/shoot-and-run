@@ -17,7 +17,7 @@ import {
   type Sim,
   type SimEvent
 } from "@shoot-and-run/sim";
-import arenaJson from "../../../../content/arenas/arena-001.json";
+import arenaJson from "../../../../content/arenas/arena-002.json";
 import playersJson from "../../../../content/players.json";
 import tuningJson from "../../../../content/tuning.json";
 import { KeyboardInput } from "../input/keyboard";
@@ -25,6 +25,7 @@ import { parsePlayersConfig, type PlayerSlotConfig } from "../input/players-conf
 import { parseJuice, type JuiceConfig } from "../juice";
 import { FixedStepDriver } from "../loop";
 import { ARCHER_TAGS, ArcherRenderer, animKey, loadArcherAssets } from "../render/archer";
+import { EnvironmentRenderer, loadEnvironmentAssets } from "../render/environment";
 
 const TILE_COLOR = 0x5a5a6e;
 const CHEST_COLOR = 0xd4a017;
@@ -66,6 +67,8 @@ export class ArenaScene extends Phaser.Scene {
   private bombEmitter!: Phaser.GameObjects.Particles.ParticleEmitter;
   /** Sprite renderer (spec 006); null in `?rects=1` debug mode. */
   private archers: ArcherRenderer | null = null;
+  /** Jungle environment renderer (spec 007); null in `?rects=1` debug mode. */
+  private env: EnvironmentRenderer | null = null;
 
   constructor() {
     super("arena");
@@ -73,6 +76,7 @@ export class ArenaScene extends Phaser.Scene {
 
   preload(): void {
     loadArcherAssets(this.load);
+    loadEnvironmentAssets(this.load);
   }
 
   create(): void {
@@ -90,9 +94,13 @@ export class ArenaScene extends Phaser.Scene {
 
     this.juice = parseJuice(tuningJson);
     this.keyboard = new KeyboardInput(window);
-    this.drawTiles(arena);
-    this.entityGfx = this.add.graphics();
     const rectsMode = new URLSearchParams(window.location.search).get("rects") === "1";
+    if (rectsMode) {
+      this.drawTiles(arena);
+    } else {
+      this.env = new EnvironmentRenderer(this, arena);
+    }
+    this.entityGfx = this.add.graphics();
     if (!rectsMode) this.archers = new ArcherRenderer(this, this.slots);
     this.createParticles();
     this.overlayText = this.add
@@ -102,6 +110,7 @@ export class ArenaScene extends Phaser.Scene {
         color: "#ffffff"
       })
       .setOrigin(0.5)
+      .setDepth(20)
       .setVisible(false);
     this.scoreTexts = this.slots.map((s, i) =>
       this.add
@@ -111,6 +120,7 @@ export class ArenaScene extends Phaser.Scene {
           color: s.color
         })
         .setOrigin(i === 0 ? 0 : 1, 0)
+        .setDepth(20)
     );
 
     // Dev-only tuning hot-reload (A9): Vite HMR pushes the edited JSON into
@@ -236,25 +246,31 @@ export class ArenaScene extends Phaser.Scene {
       gravityY: 300,
       emitting: false
     };
-    this.stickEmitter = this.add.particles(0, 0, "px", {
-      ...base,
-      speed: { min: 20, max: 60 },
-      tint: 0xaaaaaa
-    });
-    this.bombEmitter = this.add.particles(0, 0, "px", {
-      ...base,
-      speed: { min: 80, max: 240 },
-      lifespan: { min: 200, max: 500 },
-      tint: [0xffa726, 0xff5252, 0xffffff]
-    });
+    this.stickEmitter = this.add
+      .particles(0, 0, "px", {
+        ...base,
+        speed: { min: 20, max: 60 },
+        tint: 0xaaaaaa
+      })
+      .setDepth(10);
+    this.bombEmitter = this.add
+      .particles(0, 0, "px", {
+        ...base,
+        speed: { min: 80, max: 240 },
+        lifespan: { min: 200, max: 500 },
+        tint: [0xffa726, 0xff5252, 0xffffff]
+      })
+      .setDepth(10);
     for (const s of this.slots) {
       this.killEmitters.set(
         s.slot,
-        this.add.particles(0, 0, "px", {
-          ...base,
-          speed: { min: 60, max: 180 },
-          tint: Phaser.Display.Color.HexStringToColor(s.color).color
-        })
+        this.add
+          .particles(0, 0, "px", {
+            ...base,
+            speed: { min: 60, max: 180 },
+            tint: Phaser.Display.Color.HexStringToColor(s.color).color
+          })
+          .setDepth(10)
       );
     }
   }
@@ -296,8 +312,12 @@ export class ArenaScene extends Phaser.Scene {
       if (text.text !== label) text.setText(label);
     });
     this.entityGfx.clear();
-    for (const chest of this.sim.state.chests) {
-      this.drawWrappedRect(chest.x, chest.y, CHEST_WIDTH, CHEST_HEIGHT, CHEST_COLOR);
+    if (this.env) {
+      this.env.updateChests(this.sim.state.chests);
+    } else {
+      for (const chest of this.sim.state.chests) {
+        this.drawWrappedRect(chest.x, chest.y, CHEST_WIDTH, CHEST_HEIGHT, CHEST_COLOR);
+      }
     }
     this.sim.state.players.forEach((p, i) => {
       const prev = this.prev.players[i] ?? p;

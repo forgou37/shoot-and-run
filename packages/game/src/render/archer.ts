@@ -6,6 +6,7 @@ import {
   type PlayerState,
   type SimEvent
 } from "@shoot-and-run/sim";
+import { orderedFrameNames, type AsepriteData } from "./aseprite-data";
 
 /**
  * Player sprite rendering (spec 006). One canonical archer atlas (P1 ramp);
@@ -41,11 +42,6 @@ const PLAYBACK: Record<ArcherTag, { repeat: number; yoyo: boolean }> = {
   shoot: { repeat: 0, yoyo: false },
   death: { repeat: 0, yoyo: false }
 };
-
-interface AsepriteData {
-  frames: Record<string, { duration: number }>;
-  meta: { frameTags: { name: string; from: number; to: number }[] };
-}
 
 export function loadArcherAssets(loader: Phaser.Loader.LoaderPlugin): void {
   loader.atlas(ATLAS_KEY, "assets/archer.png", "assets/archer.json");
@@ -201,14 +197,6 @@ export class ArcherRenderer {
 
 export function animKey(slot: number, tag: ArcherTag): string {
   return `archer-${String(slot)}-${tag}`;
-}
-
-function orderedFrameNames(data: AsepriteData): string[] {
-  return Object.keys(data.frames)
-    .map((name) => ({ name, index: Number(/(\d+)\.aseprite$/.exec(name)?.[1] ?? Number.NaN) }))
-    .filter((e) => Number.isFinite(e.index))
-    .sort((a, b) => a.index - b.index)
-    .map((e) => e.name);
 }
 
 function slotRamp(color: string): [number, number, number][] {
