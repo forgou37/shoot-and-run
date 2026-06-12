@@ -2,6 +2,8 @@ import Phaser from "phaser";
 import {
   ARENA_HEIGHT,
   ARENA_WIDTH,
+  CHEST_HEIGHT,
+  CHEST_WIDTH,
   PLAYER_HEIGHT,
   PLAYER_WIDTH,
   TILE_SIZE,
@@ -11,6 +13,7 @@ import {
   parseTuning,
   wrapMod,
   type ArenaData,
+  type ArrowKind,
   type Sim,
   type SimEvent
 } from "@shoot-and-run/sim";
@@ -23,7 +26,13 @@ import { parseJuice, type JuiceConfig } from "../juice";
 import { FixedStepDriver } from "../loop";
 
 const TILE_COLOR = 0x5a5a6e;
-const ARROW_COLOR = 0xf0e6c8;
+const CHEST_COLOR = 0xd4a017;
+const ARROW_COLORS: Record<ArrowKind, number> = {
+  normal: 0xf0e6c8,
+  bomb: 0xff5252,
+  laser: 0x40e8ff,
+  bounce: 0xffd740
+};
 const SIM_SEED = 1;
 
 interface PrevPositions {
@@ -53,6 +62,7 @@ export class ArenaScene extends Phaser.Scene {
   private readonly eventLog: SimEvent[] = [];
   private killEmitters = new Map<number, Phaser.GameObjects.Particles.ParticleEmitter>();
   private stickEmitter!: Phaser.GameObjects.Particles.ParticleEmitter;
+  private bombEmitter!: Phaser.GameObjects.Particles.ParticleEmitter;
 
   constructor() {
     super("arena");
@@ -178,6 +188,12 @@ export class ArenaScene extends Phaser.Scene {
         this.killEmitters.get(e.victim)?.explode(this.juice.killBurstParticles, e.x, e.y);
       } else if (e.type === "arrow_stuck") {
         this.stickEmitter.explode(this.juice.stickPuffParticles, e.x, e.y);
+      } else if (e.type === "arrow_exploded") {
+        this.bombEmitter.explode(this.juice.bombBurstParticles, e.x, e.y);
+        this.cameras.main.shake(
+          this.juice.shakeDurationMs * 1.5,
+          (this.juice.shakeMagnitudePx * 2) / ARENA_WIDTH
+        );
       }
     }
   }
@@ -199,6 +215,12 @@ export class ArenaScene extends Phaser.Scene {
       ...base,
       speed: { min: 20, max: 60 },
       tint: 0xaaaaaa
+    });
+    this.bombEmitter = this.add.particles(0, 0, "px", {
+      ...base,
+      speed: { min: 80, max: 240 },
+      lifespan: { min: 200, max: 500 },
+      tint: [0xffa726, 0xff5252, 0xffffff]
     });
     for (const s of this.slots) {
       this.killEmitters.set(
@@ -249,24 +271,46 @@ export class ArenaScene extends Phaser.Scene {
       if (text.text !== label) text.setText(label);
     });
     this.entityGfx.clear();
+    for (const chest of this.sim.state.chests) {
+      this.drawWrappedRect(chest.x, chest.y, CHEST_WIDTH, CHEST_HEIGHT, CHEST_COLOR);
+    }
     this.sim.state.players.forEach((p, i) => {
       if (!p.alive) return;
       const prev = this.prev.players[i] ?? p;
       const x = lerpWrapped(prev.x, p.x, alpha, ARENA_WIDTH);
       const y = lerpWrapped(prev.y, p.y, alpha, ARENA_HEIGHT);
       const color = Phaser.Display.Color.HexStringToColor(this.slots[i]!.color).color;
-      this.drawWrappedRect(x, y, PLAYER_WIDTH, PLAYER_HEIGHT, color);
+      const playerAlpha = p.invisibleTicksLeft > 0 ? this.juice.invisibilityOpacity : 1;
+      this.drawWrappedRect(x, y, PLAYER_WIDTH, PLAYER_HEIGHT, color, playerAlpha);
+      this.drawQuiverDots(p.quiver, x, y, playerAlpha);
     });
     for (const a of this.sim.state.arrows) {
       const prev = this.prev.arrows.get(a.id) ?? a;
       const x = lerpWrapped(prev.x, a.x, alpha, ARENA_WIDTH);
       const y = lerpWrapped(prev.y, a.y, alpha, ARENA_HEIGHT);
+      const color = ARROW_COLORS[a.kind];
       if (a.phase === "flying") {
         const { hw, hh } = arrowHalves(a);
-        this.drawWrappedRect(x, y, hw * 2, hh * 2, ARROW_COLOR);
-      } else {
-        this.drawWrappedRect(x, y, 4, 4, ARROW_COLOR);
+        this.drawWrappedRect(x, y, hw * 2, hh * 2, color);
+      } else if (a.phase === "stuck") {
+        this.drawWrappedRect(x, y, 4, 4, color);
       }
+    }
+  }
+
+  /** Ammo readout: one dot per arrow, colored by kind, above the head.
+   *  Shares the player's alpha so invisibility hides it too. */
+  private drawQuiverDots(quiver: readonly ArrowKind[], x: number, y: number, alpha: number): void {
+    const shown = Math.min(quiver.length, 6);
+    const totalWidth = shown * 3 - 1;
+    for (let i = 0; i < shown; i++) {
+      this.entityGfx.fillStyle(ARROW_COLORS[quiver[i]!], alpha);
+      this.entityGfx.fillRect(
+        x - totalWidth / 2 + i * 3,
+        y - PLAYER_HEIGHT / 2 - 5,
+        2,
+        2
+      );
     }
   }
 
@@ -275,14 +319,21 @@ export class ArenaScene extends Phaser.Scene {
   }
 
   /** Draw a centered rect, plus mirror copies when it straddles arena edges. */
-  private drawWrappedRect(cx: number, cy: number, w: number, h: number, color: number): void {
+  private drawWrappedRect(
+    cx: number,
+    cy: number,
+    w: number,
+    h: number,
+    color: number,
+    alpha = 1
+  ): void {
     const xs = [0];
     const ys = [0];
     if (cx - w / 2 < 0) xs.push(ARENA_WIDTH);
     if (cx + w / 2 > ARENA_WIDTH) xs.push(-ARENA_WIDTH);
     if (cy - h / 2 < 0) ys.push(ARENA_HEIGHT);
     if (cy + h / 2 > ARENA_HEIGHT) ys.push(-ARENA_HEIGHT);
-    this.entityGfx.fillStyle(color);
+    this.entityGfx.fillStyle(color, alpha);
     for (const dx of xs) {
       for (const dy of ys) {
         this.entityGfx.fillRect(cx + dx - w / 2, cy + dy - h / 2, w, h);

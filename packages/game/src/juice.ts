@@ -7,7 +7,9 @@ const JUICE_KEYS = [
   "shakeDurationMs",
   "shakeMagnitudePx",
   "killBurstParticles",
-  "stickPuffParticles"
+  "stickPuffParticles",
+  "bombBurstParticles",
+  "invisibilityOpacity"
 ] as const;
 
 export type JuiceConfig = Record<(typeof JUICE_KEYS)[number], number>;

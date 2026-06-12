@@ -27,6 +27,8 @@
     "shakeDurationMs": 180,
     "shakeMagnitudePx": 3,
     "killBurstParticles": 24,
-    "stickPuffParticles": 6
+    "stickPuffParticles": 6,
+    "bombBurstParticles": 48,
+    "invisibilityOpacity": 0.2
   }
 }
