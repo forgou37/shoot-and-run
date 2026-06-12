@@ -23,6 +23,13 @@ export default tseslint.config(
     }
   },
   {
+    // Repo tooling scripts run under Node (e.g. scripts/export-art.mjs).
+    files: ["scripts/**/*.mjs"],
+    languageOptions: {
+      globals: { process: "readonly", console: "readonly" }
+    }
+  },
+  {
     // Hard rules 2 and 4 (CLAUDE.md): sim is engine-free and deterministic.
     // The missing DOM lib in packages/sim/tsconfig.json is the primary guard;
     // these rules catch the cases tsc lets through.

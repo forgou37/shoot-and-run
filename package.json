@@ -13,7 +13,8 @@
     "test": "vitest run",
     "e2e": "playwright test",
     "lint": "eslint .",
-    "check:deps": "depcruise --config .dependency-cruiser.cjs packages/sim/src"
+    "check:deps": "depcruise --config .dependency-cruiser.cjs packages/sim/src",
+    "export:art": "node scripts/export-art.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
