@@ -134,3 +134,21 @@ export function isSupported(
   const probeRow = Math.floor((y + halfH + 1) / TILE_SIZE);
   return colsSolidAtRow(arena, probeRow, cols.min, cols.max);
 }
+
+/** Solid wall within 1px of the AABB's side on `dir` (>0 right, <0 left),
+ *  wrap-aware. Used to engage wall-sliding. */
+export function isAgainstWall(
+  arena: ArenaData,
+  x: number,
+  y: number,
+  halfW: number,
+  halfH: number,
+  dir: number
+): boolean {
+  const rows = tileSpan(y, halfH);
+  const probeCol =
+    dir > 0
+      ? Math.floor((x + halfW + 1) / TILE_SIZE)
+      : Math.floor((x - halfW - 1) / TILE_SIZE);
+  return rowsSolidAtCol(arena, probeCol, rows.min, rows.max);
+}

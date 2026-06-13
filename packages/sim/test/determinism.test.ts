@@ -16,7 +16,8 @@ function cannedInput(tick: number, slot: number): PlayerInput {
     up: (tick + slot) % 13 === 0,
     down: tick % 7 === 0,
     jump: tick % 5 === slot,
-    shoot: tick % 11 === 0
+    shoot: tick % 11 === 0,
+    dash: tick % 9 === slot
   };
 }
 

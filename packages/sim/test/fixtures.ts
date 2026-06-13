@@ -12,6 +12,10 @@ export const TEST_TUNING: Tuning = {
   jumpCutFactor: 0.4,
   coyoteTimeMs: 80,
   jumpBufferMs: 100,
+  wallSlideSpeed: 40,
+  dashSpeed: 300,
+  dashDurationMs: 130,
+  dashCooldownMs: 450,
   arrowSpeed: 350,
   arrowGravity: 180,
   stompBounceVelocity: 180,
@@ -87,6 +91,36 @@ export const WALL_ARENA: ArenaData = {
     { x: 40, y: 192 },
     { x: 100, y: 192 },
     { x: 60, y: 192 }
+  ]
+};
+
+/** Floor plus a TALL wall (col 10, rows 2–12). Spawn 0 floats in the air with
+ *  its right edge against the wall's left face. For wall-slide tests (bypasses
+ *  parseArena's spawn-on-ground check; createSim trusts its input). */
+export const TALL_WALL_ARENA: ArenaData = {
+  name: "test-tall-wall",
+  tiles: [
+    "..........#.........",
+    "..........#.........",
+    "..........#.........",
+    "..........#.........",
+    "..........#.........",
+    "..........#.........",
+    "..........#.........",
+    "..........#.........",
+    "..........#.........",
+    "..........#.........",
+    "..........#.........",
+    "..........#.........",
+    "..........#.........",
+    "####################",
+    "####################"
+  ],
+  spawns: [
+    { x: 154, y: 40 },
+    { x: 40, y: 192 },
+    { x: 60, y: 192 },
+    { x: 80, y: 192 }
   ]
 };
 

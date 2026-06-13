@@ -37,7 +37,8 @@ export class KeyboardInput {
       up: this.isDown(keys.up),
       down: this.isDown(keys.down),
       jump: this.isDown(keys.jump),
-      shoot: this.isDown(keys.shoot)
+      shoot: this.isDown(keys.shoot),
+      dash: this.isDown(keys.dash)
     };
   }
 

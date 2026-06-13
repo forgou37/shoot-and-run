@@ -7,6 +7,7 @@ import {
   DROP_ARENA,
   FLAT_ARENA,
   LEDGE_ARENA,
+  TALL_WALL_ARENA,
   TEST_TUNING,
   VOID_COLUMN_ARENA,
   WALL_ARENA
@@ -162,5 +163,71 @@ describe("movement acceptance (spec 000 T0.4)", () => {
     }
     expect(p0(sim).x).toBeCloseTo(234, 6);
     expect(p0(sim).grounded).toBe(true);
+  });
+});
+
+describe("movement adjustments (owner-directed)", () => {
+  it("wall slide: holding into a wall while airborne caps the descent speed", () => {
+    const sim = createSim({
+      arena: TALL_WALL_ARENA,
+      tuning: TEST_TUNING,
+      players: [{ slot: 0 }],
+      seed: 1
+    });
+    // Spawn 0 floats with its right edge against the wall. Hold right (into it).
+    for (let t = 0; t < 15; t++) sim.step([inp({ right: true })]);
+    const sliding = p0(sim);
+    expect(sliding.grounded).toBe(false);
+    expect(sliding.vy).toBeCloseTo(TEST_TUNING.wallSlideSpeed, 6);
+
+    // Releasing the into-wall input drops the cling: free-fall resumes.
+    for (let t = 0; t < 10; t++) sim.step([emptyInput()]);
+    expect(p0(sim).vy).toBeGreaterThan(TEST_TUNING.wallSlideSpeed);
+  });
+
+  it("edge fall: walking off a ledge sheds run momentum and drops straight down", () => {
+    const sim = makeSettledSim(LEDGE_ARENA, 10); // spawn 0 stands on the platform
+    expect(p0(sim).grounded).toBe(true);
+
+    let walked = 0;
+    while (p0(sim).grounded && walked < 300) {
+      sim.step([inp({ right: true })]);
+      walked++;
+    }
+    expect(p0(sim).grounded).toBe(false);
+    expect(p0(sim).vx).toBe(0); // carried horizontal velocity is zeroed at the ledge
+
+    // With no horizontal input it falls in place (same column), gaining only vy.
+    const xAfter = p0(sim).x;
+    for (let t = 0; t < 10; t++) sim.step([emptyInput()]);
+    expect(p0(sim).x).toBeCloseTo(xAfter, 6);
+    expect(p0(sim).vy).toBeGreaterThan(0);
+  });
+
+  it("dash (ground): a fast horizontal burst over a short distance", () => {
+    const sim = makeSettledSim(FLAT_ARENA);
+    const x0 = p0(sim).x;
+    expect(p0(sim).facing).toBe(1); // faces right by default
+
+    sim.step([inp({ dash: true })]); // dash in the facing direction
+    expect(Math.abs(p0(sim).vx)).toBeCloseTo(TEST_TUNING.dashSpeed, 6);
+
+    const dashTicks = msToTicks(TEST_TUNING.dashDurationMs);
+    for (let t = 0; t < dashTicks; t++) sim.step([emptyInput()]);
+    const dist = p0(sim).x - x0;
+    expect(dist).toBeGreaterThan(20);
+    expect(dist).toBeLessThan(80); // short, not a full sprint
+  });
+
+  it("dash (air): bursts in the held direction while airborne, suspending gravity", () => {
+    const sim = makeSettledSim(FLAT_ARENA);
+    sim.step([inp({ jump: true })]);
+    for (let t = 0; t < 6; t++) sim.step([emptyInput()]); // rise into the air
+    expect(p0(sim).grounded).toBe(false);
+
+    sim.step([inp({ dash: true, left: true })]);
+    expect(p0(sim).vx).toBeCloseTo(-TEST_TUNING.dashSpeed, 6);
+    expect(p0(sim).vy).toBe(0); // dash suspends gravity for the burst
+    expect(p0(sim).grounded).toBe(false);
   });
 });

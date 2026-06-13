@@ -9,8 +9,10 @@ export interface PlayerInput {
   down: boolean;
   jump: boolean;
   shoot: boolean;
+  /** Dash: a short fast horizontal burst (ground or air), edge-triggered. */
+  dash: boolean;
 }
 
 export function emptyInput(): PlayerInput {
-  return { left: false, right: false, up: false, down: false, jump: false, shoot: false };
+  return { left: false, right: false, up: false, down: false, jump: false, shoot: false, dash: false };
 }

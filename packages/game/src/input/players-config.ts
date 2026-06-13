@@ -3,7 +3,7 @@
  *  live in the sim. Spec 003 reshaped the file to separate slot identity
  *  (name/color, up to 4 players) from the shared keyboard binding profiles. */
 
-const ACTION_KEYS = ["left", "right", "up", "down", "jump", "shoot"] as const;
+const ACTION_KEYS = ["left", "right", "up", "down", "jump", "shoot", "dash"] as const;
 type Action = (typeof ACTION_KEYS)[number];
 
 export type KeyBindings = Record<Action, string>;

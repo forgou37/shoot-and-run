@@ -1,7 +1,7 @@
 import type { ArenaData } from "./arena";
 import { DT, PLAYER_HEIGHT, PLAYER_WIDTH } from "./constants";
 import type { PlayerInput } from "./input";
-import { isSupported, moveAxisX, moveAxisY } from "./physics";
+import { isAgainstWall, isSupported, moveAxisX, moveAxisY } from "./physics";
 import type { PlayerState } from "./state";
 import type { DerivedTuning } from "./tuning";
 
@@ -12,8 +12,9 @@ const HALF_H = PLAYER_HEIGHT / 2;
  * One tick of movement for one player. Mutates `p` in place.
  *
  * Order matters and is part of the determinism contract:
- * input edges → horizontal velocity → gravity → jump (buffer + coyote) →
- * jump cut → integrate X → integrate Y → grounded/coyote bookkeeping.
+ * input edges → dash start → horizontal velocity / gravity / wall-slide →
+ * jump (buffer + coyote) → jump cut → integrate X → integrate Y →
+ * grounded/coyote bookkeeping → dash timers.
  */
 export function updatePlayer(
   p: PlayerState,
@@ -23,6 +24,7 @@ export function updatePlayer(
 ): void {
   const jumpPressed = input.jump && !p.prevJumpHeld;
   const jumpReleased = !input.jump && p.prevJumpHeld;
+  const dashPressed = input.dash && !p.prevDashHeld;
 
   if (jumpPressed) {
     p.jumpBufferTicksLeft = t.jumpBufferTicks;
@@ -33,19 +35,38 @@ export function updatePlayer(
     p.facing = dir as 1 | -1;
   }
 
-  if (p.grounded) {
-    // Instant accelerate/stop on the ground: tight controls.
-    p.vx = dir * t.runSpeed;
-  } else if (dir !== 0) {
-    // Air control: accelerate toward the held direction, keep momentum otherwise.
-    p.vx += dir * t.airAccel * DT;
-    if (p.vx > t.runSpeed) p.vx = t.runSpeed;
-    if (p.vx < -t.runSpeed) p.vx = -t.runSpeed;
+  // Dash: a short fast horizontal burst, available on the ground or in the air.
+  // It locks a direction (held dir, else facing), overrides run/air control and
+  // suspends gravity so the slide stays flat and fixed-length.
+  if (dashPressed && p.dashTicksLeft === 0 && p.dashCooldownTicksLeft === 0) {
+    p.dashTicksLeft = t.dashTicks;
+    p.dashDir = (dir !== 0 ? dir : p.facing) as 1 | -1;
   }
+  const dashing = p.dashTicksLeft > 0;
 
-  if (!p.grounded) {
-    p.vy += t.gravity * DT;
-    if (p.vy > t.maxFallSpeed) p.vy = t.maxFallSpeed;
+  if (dashing) {
+    p.vx = p.dashDir * t.dashSpeed;
+    p.vy = 0;
+  } else {
+    if (p.grounded) {
+      // Instant accelerate/stop on the ground: tight controls.
+      p.vx = dir * t.runSpeed;
+    } else if (dir !== 0) {
+      // Air control: accelerate toward the held direction, keep momentum otherwise.
+      p.vx += dir * t.airAccel * DT;
+      if (p.vx > t.runSpeed) p.vx = t.runSpeed;
+      if (p.vx < -t.runSpeed) p.vx = -t.runSpeed;
+    }
+
+    if (!p.grounded) {
+      p.vy += t.gravity * DT;
+      if (p.vy > t.maxFallSpeed) p.vy = t.maxFallSpeed;
+      // Wall slide: while falling and pressing into an adjacent wall, cling and
+      // slide down at a capped speed instead of free-falling.
+      if (p.vy > t.wallSlideSpeed && dir !== 0 && isAgainstWall(arena, p.x, p.y, HALF_W, HALF_H, dir)) {
+        p.vy = t.wallSlideSpeed;
+      }
+    }
   }
 
   let jumpedThisTick = false;
@@ -59,6 +80,11 @@ export function updatePlayer(
     p.jumpBufferTicksLeft = 0;
     p.jumpCutAvailable = groundJump;
     jumpedThisTick = true;
+    // A jump cancels an in-progress dash (and arms its cooldown).
+    if (p.dashTicksLeft > 0) {
+      p.dashTicksLeft = 0;
+      p.dashCooldownTicksLeft = t.dashCooldownTicks;
+    }
   }
 
   // Variable jump height: releasing jump while still rising cuts the ascent.
@@ -87,10 +113,21 @@ export function updatePlayer(
   if (p.grounded) {
     p.coyoteTicksLeft = 0;
   } else if (wasGrounded && !jumpedThisTick) {
-    // Walked off a ledge this tick: open the coyote window.
+    // Walked off a ledge this tick: drop straight down by shedding carried run
+    // momentum (no parabolic launch), and open the coyote window. Holding a
+    // direction still steers via air control; a dash off the edge is preserved.
+    if (!dashing) p.vx = 0;
     p.coyoteTicksLeft = t.coyoteTicks;
   } else if (p.coyoteTicksLeft > 0) {
     p.coyoteTicksLeft--;
+  }
+
+  // Dash timers: count the active burst down, then hold the cooldown.
+  if (p.dashTicksLeft > 0) {
+    p.dashTicksLeft--;
+    if (p.dashTicksLeft === 0) p.dashCooldownTicksLeft = t.dashCooldownTicks;
+  } else if (p.dashCooldownTicksLeft > 0) {
+    p.dashCooldownTicksLeft--;
   }
 
   if (p.jumpBufferTicksLeft > 0) {
@@ -100,4 +137,5 @@ export function updatePlayer(
   if (p.flightTicksLeft > 0) p.flightTicksLeft--;
 
   p.prevJumpHeld = input.jump;
+  p.prevDashHeld = input.dash;
 }

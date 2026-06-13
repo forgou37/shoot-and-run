@@ -6,7 +6,7 @@
     { "slot": 3, "name": "P4", "color": "#ba68c8" }
   ],
   "keyboards": [
-    { "left": "KeyA", "right": "KeyD", "up": "KeyW", "down": "KeyS", "jump": "KeyG", "shoot": "KeyF" },
-    { "left": "ArrowLeft", "right": "ArrowRight", "up": "ArrowUp", "down": "ArrowDown", "jump": "Period", "shoot": "Slash" }
+    { "left": "KeyA", "right": "KeyD", "up": "KeyW", "down": "KeyS", "jump": "KeyG", "shoot": "KeyF", "dash": "ShiftLeft" },
+    { "left": "ArrowLeft", "right": "ArrowRight", "up": "ArrowUp", "down": "ArrowDown", "jump": "Period", "shoot": "Slash", "dash": "ShiftRight" }
   ]
 }

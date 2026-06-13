@@ -24,6 +24,14 @@ export interface PlayerState {
   prevJumpHeld: boolean;
   /** Previous tick's shoot-held state, for press edge detection. */
   prevShootHeld: boolean;
+  /** Previous tick's dash-held state, for press edge detection. */
+  prevDashHeld: boolean;
+  /** Ticks left in the active dash burst (0 = not dashing). */
+  dashTicksLeft: number;
+  /** Cooldown ticks before the next dash is allowed (0 = ready). */
+  dashCooldownTicksLeft: number;
+  /** Locked horizontal direction of the active dash. */
+  dashDir: 1 | -1;
   /** Whether releasing jump still shortens the current jump (variable height). */
   jumpCutAvailable: boolean;
   /** Power-up timers (ticks). 0 = inactive. Reset on round reset. */

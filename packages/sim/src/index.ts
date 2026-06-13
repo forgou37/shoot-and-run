@@ -119,6 +119,10 @@ export function createSim(config: SimConfig): Sim {
         jumpBufferTicksLeft: 0,
         prevJumpHeld: false,
         prevShootHeld: false,
+        prevDashHeld: false,
+        dashTicksLeft: 0,
+        dashCooldownTicksLeft: 0,
+        dashDir: 1 as const,
         jumpCutAvailable: false,
         invisibleTicksLeft: 0,
         flightTicksLeft: 0

@@ -68,7 +68,7 @@ describe("parsePlayersConfig (spec 003 reshape)", () => {
 describe("readStandardGamepad (standard mapping, A3.2)", () => {
   it("ignores stick movement within the deadzone", () => {
     const input = readStandardGamepad(fakePad({ axes: [0.2, -0.2] }), DEADZONE);
-    expect(input).toEqual({ left: false, right: false, up: false, down: false, jump: false, shoot: false });
+    expect(input).toEqual({ left: false, right: false, up: false, down: false, jump: false, shoot: false, dash: false });
   });
 
   it("maps the left stick past the deadzone to directions", () => {
@@ -85,9 +85,10 @@ describe("readStandardGamepad (standard mapping, A3.2)", () => {
     expect(readStandardGamepad(fakePad({ pressed: [15] }), DEADZONE).right).toBe(true);
   });
 
-  it("maps A→jump (0), X→shoot (2), Start→pause (9)", () => {
+  it("maps A→jump (0), X→shoot (2), RB→dash (5), Start→pause (9)", () => {
     expect(readStandardGamepad(fakePad({ pressed: [0] }), DEADZONE).jump).toBe(true);
     expect(readStandardGamepad(fakePad({ pressed: [2] }), DEADZONE).shoot).toBe(true);
+    expect(readStandardGamepad(fakePad({ pressed: [5] }), DEADZONE).dash).toBe(true);
     expect(readPausePressed(fakePad({ pressed: [9] }))).toBe(true);
     expect(readPausePressed(fakePad())).toBe(false);
   });
@@ -102,7 +103,7 @@ describe("GamepadDevice", () => {
 
     pad = null; // unplugged
     expect(dev.connected).toBe(false);
-    expect(dev.sample()).toEqual({ left: false, right: false, up: false, down: false, jump: false, shoot: false });
+    expect(dev.sample()).toEqual({ left: false, right: false, up: false, down: false, jump: false, shoot: false, dash: false });
     expect(dev.pausePressed()).toBe(false);
   });
 });
