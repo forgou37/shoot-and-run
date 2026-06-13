@@ -319,31 +319,40 @@ export class ArenaScene extends Phaser.Scene {
 
   private installTestApi(): void {
     if (!import.meta.env.DEV) return;
-    window.__testApi = {
-      getState: () => this.sim.state,
-      getArenaName: () => this.arenaName,
-      getEvents: () => [...this.eventLog],
-      setManual: (on: boolean) => {
-        this.manualMode = on;
-      },
-      stepTicks: (n: number) => {
-        for (let i = 0; i < n; i++) this.doTick();
-        this.render(1);
-      },
-      getSpriteProbe: () => ({
-        textures: this.textures
-          .getTextureKeys()
-          .filter((k) => /^(archer|jungle|chest|arrow)/.test(k))
-          .sort(),
-        missingAnims: this.slots.flatMap((s) =>
-          ARCHER_TAGS.filter((t) => !this.anims.exists(animKey(s.slot, t))).map((t) =>
-            animKey(s.slot, t)
-          )
-        )
-      })
+    // Augment the base hook (BootScene installed getPhase) with the match-only
+    // methods, and strip them again on shutdown so getPhase keeps working.
+    const api = window.__testApi;
+    if (!api) return;
+    api.getState = () => this.sim.state;
+    api.getArenaName = () => this.arenaName;
+    api.getEvents = () => [...this.eventLog];
+    api.setManual = (on: boolean) => {
+      this.manualMode = on;
     };
+    api.stepTicks = (n: number) => {
+      for (let i = 0; i < n; i++) this.doTick();
+      this.render(1);
+    };
+    api.getSpriteProbe = () => ({
+      textures: this.textures
+        .getTextureKeys()
+        .filter((k) => /^(archer|jungle|chest|arrow)/.test(k))
+        .sort(),
+      missingAnims: this.slots.flatMap((s) =>
+        ARCHER_TAGS.filter((t) => !this.anims.exists(animKey(s.slot, t))).map((t) =>
+          animKey(s.slot, t)
+        )
+      )
+    });
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
-      delete window.__testApi;
+      const a = window.__testApi;
+      if (!a) return;
+      delete a.getState;
+      delete a.getArenaName;
+      delete a.getEvents;
+      delete a.setManual;
+      delete a.stepTicks;
+      delete a.getSpriteProbe;
     });
   }
 

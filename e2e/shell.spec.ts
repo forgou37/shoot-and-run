@@ -14,8 +14,10 @@ async function boot(page: Page): Promise<string[]> {
   });
   // Spec 003: the default boot now lands on the title screen; ?quickstart=1
   // skips straight into the 2-keyboard FFA match these smoke tests assert on.
+  // The base hook (getPhase) installs at boot; wait for ArenaScene to wire the
+  // match-only methods before the tests call them.
   await page.goto("/?quickstart=1");
-  await page.waitForFunction(() => Boolean(window.__testApi));
+  await page.waitForFunction(() => typeof window.__testApi?.getState === "function");
   return errors;
 }
 

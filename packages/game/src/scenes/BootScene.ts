@@ -7,6 +7,7 @@ import { KeyboardInput } from "../input/keyboard";
 import { parsePlayersConfig } from "../input/players-config";
 import { parseInputSettings, parseUiSettings } from "../input/settings";
 import { quickstartConfig } from "../match-config";
+import { installBaseTestApi } from "../test-api";
 
 /** Fixed seed for the dev/e2e quickstart match so its boot is reproducible. */
 const QUICKSTART_SEED = 1;
@@ -37,6 +38,7 @@ export class BootScene extends Phaser.Scene {
       slots: players.slots,
       lobbyCountdownMs: parseUiSettings(tuningJson).lobbyCountdownMs
     });
+    installBaseTestApi(this.game);
 
     const quickstart = new URLSearchParams(window.location.search).get("quickstart") === "1";
     if (quickstart) {
