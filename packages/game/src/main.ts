@@ -14,6 +14,7 @@ void loadFont().finally(() => {
     width: ARENA_WIDTH,
     height: ARENA_HEIGHT,
     pixelArt: true,
+    roundPixels: true, // snap draws to integer pixels so text stays crisp
     backgroundColor: "#1a1a2e",
     scale: {
       mode: Phaser.Scale.FIT,

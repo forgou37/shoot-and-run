@@ -3,7 +3,7 @@ import { getAppContext, type AppContext } from "../app-context";
 import type { InputDevice } from "../input/device";
 import { EdgeReader } from "../input/menu-input";
 import type { MatchConfig, RosterEntry } from "../match-config";
-import { FONT_FAMILY } from "../theme";
+import { addPixelText } from "../theme";
 
 type Mode = "ffa" | "teams";
 
@@ -49,12 +49,7 @@ export class LobbyScene extends Phaser.Scene {
     this.friendlyFire = false;
     this.countdownMsLeft = null;
     this.cameras.main.setBackgroundColor("#10121f");
-    this.text = this.add.text(10, 8, "", {
-      fontFamily: FONT_FAMILY,
-      fontSize: "10px",
-      color: "#f0e6c8",
-      lineSpacing: 3
-    });
+    this.text = addPixelText(this, 10, 8, "", 10, "#f0e6c8", { lineSpacing: 3 });
     this.render();
   }
 

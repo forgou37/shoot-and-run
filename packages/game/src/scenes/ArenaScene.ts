@@ -25,7 +25,7 @@ import { EdgeReader, type DeviceEdges } from "../input/menu-input";
 import type { SlotConfig } from "../input/players-config";
 import type { MatchConfig } from "../match-config";
 import { parseJuice, type JuiceConfig } from "../juice";
-import { FONT_FAMILY } from "../theme";
+import { addPixelText } from "../theme";
 import { FixedStepDriver } from "../loop";
 import { ARCHER_TAGS, ArcherRenderer, animKey, loadArcherAssets } from "../render/archer";
 import { ArrowRenderer, loadArrowAssets } from "../render/arrows";
@@ -145,12 +145,7 @@ export class ArenaScene extends Phaser.Scene {
       this.arrowSprites = new ArrowRenderer(this);
     }
     this.createParticles();
-    this.overlayText = this.add
-      .text(ARENA_WIDTH / 2, ARENA_HEIGHT / 2 - 24, "", {
-        fontFamily: FONT_FAMILY,
-        fontSize: "16px",
-        color: "#ffffff"
-      })
+    this.overlayText = addPixelText(this, ARENA_WIDTH / 2, ARENA_HEIGHT / 2 - 24, "", 16, "#ffffff")
       .setOrigin(0.5)
       .setDepth(20)
       .setVisible(false);
@@ -160,12 +155,7 @@ export class ArenaScene extends Phaser.Scene {
     const n = this.slots.length;
     const chipY = this.teamsMode ? 15 : 3;
     this.scoreTexts = this.slots.map((s, i) =>
-      this.add
-        .text(((i + 0.5) * ARENA_WIDTH) / n, chipY, "", {
-          fontFamily: FONT_FAMILY,
-          fontSize: "10px",
-          color: s.color
-        })
+      addPixelText(this, ((i + 0.5) * ARENA_WIDTH) / n, chipY, "", 10, s.color)
         .setOrigin(0.5, 0)
         .setDepth(20)
     );
@@ -174,25 +164,16 @@ export class ArenaScene extends Phaser.Scene {
       const teamColor = (team: number): string =>
         this.matchConfig.roster.find((r) => r.team === team)?.slot.color ?? "#ffffff";
       this.teamTexts = [0, 1].map((team) =>
-        this.add
-          .text(team === 0 ? 4 : ARENA_WIDTH - 4, 2, "", {
-            fontFamily: FONT_FAMILY,
-            fontSize: "10px",
-            color: teamColor(team)
-          })
+        addPixelText(this, team === 0 ? 4 : ARENA_WIDTH - 4, 2, "", 10, teamColor(team))
           .setOrigin(team === 0 ? 0 : 1, 0)
           .setDepth(20)
       );
     }
-    this.pauseText = this.add
-      .text(ARENA_WIDTH / 2, ARENA_HEIGHT / 2, "", {
-        fontFamily: FONT_FAMILY,
-        fontSize: "11px",
-        color: "#ffffff",
-        align: "center",
-        backgroundColor: "#000000a0",
-        padding: { x: 8, y: 6 }
-      })
+    this.pauseText = addPixelText(this, ARENA_WIDTH / 2, ARENA_HEIGHT / 2, "", 11, "#ffffff", {
+      align: "center",
+      backgroundColor: "#000000a0",
+      padding: { x: 8, y: 6 }
+    })
       .setOrigin(0.5)
       .setDepth(30)
       .setVisible(false);
