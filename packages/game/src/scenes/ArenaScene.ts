@@ -67,6 +67,9 @@ export class ArenaScene extends Phaser.Scene {
   private entityGfx!: Phaser.GameObjects.Graphics;
   private overlayText!: Phaser.GameObjects.Text;
   private scoreTexts: Phaser.GameObjects.Text[] = [];
+  /** Team round-win readouts, populated only in teams mode. */
+  private teamTexts: Phaser.GameObjects.Text[] = [];
+  private teamsMode = false;
   private prev!: PrevPositions;
   private juice!: JuiceConfig;
   private hitstopRemainingMs = 0;
@@ -150,16 +153,36 @@ export class ArenaScene extends Phaser.Scene {
       .setOrigin(0.5)
       .setDepth(20)
       .setVisible(false);
+    // Per-player score chips, evenly spaced along the top edge in slot colors
+    // (A3.5). In teams mode they drop a row to clear the team tally above.
+    this.teamsMode = this.matchConfig.roster.some((r) => r.team !== null);
+    const n = this.slots.length;
+    const chipY = this.teamsMode ? 15 : 3;
     this.scoreTexts = this.slots.map((s, i) =>
       this.add
-        .text(i === 0 ? 4 : ARENA_WIDTH - 4, 3, "", {
+        .text(((i + 0.5) * ARENA_WIDTH) / n, chipY, "", {
           fontFamily: "monospace",
           fontSize: "10px",
           color: s.color
         })
-        .setOrigin(i === 0 ? 0 : 1, 0)
+        .setOrigin(0.5, 0)
         .setDepth(20)
     );
+    this.teamTexts = [];
+    if (this.teamsMode) {
+      const teamColor = (team: number): string =>
+        this.matchConfig.roster.find((r) => r.team === team)?.slot.color ?? "#ffffff";
+      this.teamTexts = [0, 1].map((team) =>
+        this.add
+          .text(team === 0 ? 4 : ARENA_WIDTH - 4, 2, "", {
+            fontFamily: "monospace",
+            fontSize: "10px",
+            color: teamColor(team)
+          })
+          .setOrigin(team === 0 ? 0 : 1, 0)
+          .setDepth(20)
+      );
+    }
     this.pauseText = this.add
       .text(ARENA_WIDTH / 2, ARENA_HEIGHT / 2, "", {
         fontFamily: "monospace",
@@ -205,7 +228,10 @@ export class ArenaScene extends Phaser.Scene {
       this.render(this.lastAlpha);
       return;
     }
-    if (escEdge || edges.some((e) => e.pause)) {
+    // An assigned pad dropping out mid-match auto-pauses (A3.2); a disconnected
+    // pad also samples neutral, so play can't continue on a dead device.
+    const padLost = this.devices.some((d) => d.kind === "pad" && !d.connected);
+    if (escEdge || edges.some((e) => e.pause) || padLost) {
       this.openPause();
       this.render(this.lastAlpha);
       return;
@@ -413,13 +439,7 @@ export class ArenaScene extends Phaser.Scene {
   private render(alpha: number): void {
     const { round, match } = this.sim.state;
     if (round.phase === "ended") {
-      const label =
-        match.winner !== null
-          ? `${this.slotName(match.winner)} wins the match!`
-          : round.winner === "draw"
-            ? "Draw"
-            : `${this.slotName(round.winner!)} wins!`;
-      this.overlayText.setText(label).setVisible(true);
+      this.overlayText.setText(this.endLabel(match.winner, round.winner)).setVisible(true);
     } else {
       this.overlayText.setVisible(false);
     }
@@ -427,6 +447,13 @@ export class ArenaScene extends Phaser.Scene {
       const label = `${this.slots[i]!.name} ${String(match.scores[i] ?? 0)}`;
       if (text.text !== label) text.setText(label);
     });
+    if (this.teamsMode) {
+      const teamScores = match.teamScores ?? [0, 0];
+      this.teamTexts.forEach((text, team) => {
+        const label = `T${String(team + 1)} ${String(teamScores[team] ?? 0)}`;
+        if (text.text !== label) text.setText(label);
+      });
+    }
     this.entityGfx.clear();
     if (this.env) {
       this.env.updateChests(this.sim.state.chests);
@@ -489,6 +516,19 @@ export class ArenaScene extends Phaser.Scene {
 
   private slotName(slot: number): string {
     return this.slots.find((s) => s.slot === slot)?.name ?? `P${String(slot)}`;
+  }
+
+  /** Round/match end overlay text. In teams mode the winner id is a team. */
+  private endLabel(matchWinner: number | null, roundWinner: number | "draw" | null): string {
+    if (matchWinner !== null) {
+      return this.teamsMode
+        ? `Team ${String(matchWinner + 1)} wins the match!`
+        : `${this.slotName(matchWinner)} wins the match!`;
+    }
+    if (roundWinner === "draw" || roundWinner === null) return "Draw";
+    return this.teamsMode
+      ? `Team ${String(roundWinner + 1)} wins!`
+      : `${this.slotName(roundWinner)} wins!`;
   }
 
   /** Draw a centered rect, plus mirror copies when it straddles arena edges. */
