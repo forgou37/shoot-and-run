@@ -138,6 +138,10 @@ export class ArcherRenderer {
   private buildSlotTexture(slot: number, color: string): string {
     if (slot === 0) return ATLAS_KEY;
     const key = `${ATLAS_KEY}-${String(slot)}`;
+    // Textures are game-global and survive scene restarts (e.g. returning to a
+    // match from the lobby), so reuse the recolor built for this slot earlier
+    // rather than colliding on the key.
+    if (this.scene.textures.exists(key)) return key;
     const canonical = this.scene.textures.get(ATLAS_KEY);
     const source = canonical.getSourceImage() as HTMLImageElement | HTMLCanvasElement;
     const canvas = this.scene.textures.createCanvas(key, source.width, source.height);
@@ -177,6 +181,9 @@ export class ArcherRenderer {
     for (const tag of data.meta.frameTags) {
       const playback = PLAYBACK[tag.name as ArcherTag];
       if (!playback) continue;
+      // Anims, like textures, are game-global and outlive the scene; skip ones
+      // already built for this slot on an earlier match.
+      if (this.scene.anims.exists(animKey(slot, tag.name as ArcherTag))) continue;
       const names = frameNames.slice(tag.from, tag.to + 1);
       const durations = names.map((n) => data.frames[n]?.duration ?? 100);
       const minDuration = Math.min(...durations);

@@ -18,11 +18,12 @@ import {
   type SimEvent
 } from "@shoot-and-run/sim";
 import arenaJson from "../../../../content/arenas/arena-002.json";
-import playersJson from "../../../../content/players.json";
 import tuningJson from "../../../../content/tuning.json";
-import { KeyboardDevice, type InputDevice } from "../input/device";
-import { KeyboardInput } from "../input/keyboard";
-import { parsePlayersConfig, type SlotConfig } from "../input/players-config";
+import { getAppContext, type AppContext } from "../app-context";
+import type { InputDevice } from "../input/device";
+import { EdgeReader, type DeviceEdges } from "../input/menu-input";
+import type { SlotConfig } from "../input/players-config";
+import type { MatchConfig } from "../match-config";
 import { parseJuice, type JuiceConfig } from "../juice";
 import { FixedStepDriver } from "../loop";
 import { ARCHER_TAGS, ArcherRenderer, animKey, loadArcherAssets } from "../render/archer";
@@ -37,7 +38,7 @@ const ARROW_COLORS: Record<ArrowKind, number> = {
   laser: 0x40e8ff,
   bounce: 0xffd740
 };
-const SIM_SEED = 1;
+const PAUSE_OPTIONS = ["Resume", "To Lobby", "To Title"] as const;
 
 interface PrevPositions {
   players: { x: number; y: number }[];
@@ -51,11 +52,17 @@ interface PrevPositions {
  */
 export class ArenaScene extends Phaser.Scene {
   private sim!: Sim;
+  private matchConfig!: MatchConfig;
+  private app!: AppContext;
   private slots!: SlotConfig[];
-  private keyboard!: KeyboardInput;
-  /** One input device per slot (spec 003). Two keyboard profiles until the
-   *  lobby (T3.3) wires gamepads and the join flow. */
+  /** One input device per slot, assembled by the lobby (or quickstart). */
   private devices!: InputDevice[];
+  /** Edge reader for pause-menu navigation (pad Start, jump/shoot/up/down). */
+  private edges!: EdgeReader;
+  private paused = false;
+  private pauseIndex = 0;
+  private prevEsc = false;
+  private pauseText!: Phaser.GameObjects.Text;
   private readonly driver = new FixedStepDriver();
   private entityGfx!: Phaser.GameObjects.Graphics;
   private overlayText!: Phaser.GameObjects.Text;
@@ -81,6 +88,21 @@ export class ArenaScene extends Phaser.Scene {
     super("arena");
   }
 
+  /** Scenes are singletons reused across matches, so reset all per-match state
+   *  here (runs before create on every scene.start). */
+  init(data: MatchConfig): void {
+    this.matchConfig = data;
+    this.edges = new EdgeReader();
+    this.paused = false;
+    this.pauseIndex = 0;
+    this.prevEsc = false;
+    this.hitstopRemainingMs = 0;
+    this.lastAlpha = 0;
+    this.manualMode = false;
+    this.eventLog.length = 0;
+    this.killEmitters.clear();
+  }
+
   preload(): void {
     loadArcherAssets(this.load);
     loadEnvironmentAssets(this.load);
@@ -88,20 +110,21 @@ export class ArenaScene extends Phaser.Scene {
   }
 
   create(): void {
+    this.app = getAppContext(this);
     const arena = parseArena(arenaJson);
     this.arenaName = arena.name;
-    // Spec 000/003: two keyboard players until the lobby lands (T3.3).
-    const cfg = parsePlayersConfig(playersJson);
-    this.slots = cfg.slots.slice(0, 2);
-    this.keyboard = new KeyboardInput(window);
-    this.devices = this.slots.map(
-      (_, i) => new KeyboardDevice(i, this.keyboard, cfg.keyboards[i]!)
-    );
+    // Roster comes from the lobby (or the quickstart default): slots, devices,
+    // teams and friendly fire all flow in through the MatchConfig.
+    this.slots = this.matchConfig.roster.map((r) => r.slot);
+    this.devices = this.matchConfig.roster.map((r) => r.device);
     this.sim = createSim({
       arena,
       tuning: parseTuning(tuningJson),
-      players: this.slots.map((s) => ({ slot: s.slot })),
-      seed: SIM_SEED
+      players: this.matchConfig.roster.map((r) =>
+        r.team !== null ? { slot: r.slot.slot, team: r.team } : { slot: r.slot.slot }
+      ),
+      seed: this.matchConfig.seed,
+      friendlyFire: this.matchConfig.friendlyFire
     });
     this.prev = this.snapshot();
 
@@ -137,6 +160,18 @@ export class ArenaScene extends Phaser.Scene {
         .setOrigin(i === 0 ? 0 : 1, 0)
         .setDepth(20)
     );
+    this.pauseText = this.add
+      .text(ARENA_WIDTH / 2, ARENA_HEIGHT / 2, "", {
+        fontFamily: "monospace",
+        fontSize: "11px",
+        color: "#ffffff",
+        align: "center",
+        backgroundColor: "#000000a0",
+        padding: { x: 8, y: 6 }
+      })
+      .setOrigin(0.5)
+      .setDepth(30)
+      .setVisible(false);
 
     // Dev-only tuning hot-reload (A9): Vite HMR pushes the edited JSON into
     // the running sim without a page refresh.
@@ -153,13 +188,26 @@ export class ArenaScene extends Phaser.Scene {
       });
     }
 
-    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.keyboard.dispose());
     this.installTestApi();
   }
 
   override update(_time: number, delta: number): void {
     if (this.manualMode) {
       this.render(1);
+      return;
+    }
+    // Pause (Esc / pad Start) is purely shell-side: the accumulator stops
+    // advancing, so the sim is untouched and determinism is unaffected.
+    const edges = this.edges.read(this.devices);
+    const escEdge = this.escEdge();
+    if (this.paused) {
+      this.updatePauseMenu(edges, escEdge);
+      this.render(this.lastAlpha);
+      return;
+    }
+    if (escEdge || edges.some((e) => e.pause)) {
+      this.openPause();
+      this.render(this.lastAlpha);
       return;
     }
     if (this.hitstopRemainingMs > 0) {
@@ -173,6 +221,55 @@ export class ArenaScene extends Phaser.Scene {
     const alpha = this.driver.advance(delta, this.doTick);
     this.lastAlpha = alpha;
     this.render(alpha);
+  }
+
+  /** Rising edge of the Escape key (keyboard pause; pads use Start). */
+  private escEdge(): boolean {
+    const down = this.app.keyboard.isDown("Escape");
+    const edge = down && !this.prevEsc;
+    this.prevEsc = down;
+    return edge;
+  }
+
+  private openPause(): void {
+    this.paused = true;
+    this.pauseIndex = 0;
+    this.anims.pauseAll(); // freeze sprite anims with the sim
+    this.pauseText.setVisible(true);
+    this.renderPauseMenu();
+  }
+
+  private resumePause(): void {
+    this.paused = false;
+    this.anims.resumeAll();
+    this.pauseText.setVisible(false);
+  }
+
+  private updatePauseMenu(edges: DeviceEdges[], escEdge: boolean): void {
+    if (escEdge || edges.some((e) => e.back)) {
+      this.resumePause();
+      return;
+    }
+    const n = PAUSE_OPTIONS.length;
+    if (edges.some((e) => e.up)) this.pauseIndex = (this.pauseIndex + n - 1) % n;
+    if (edges.some((e) => e.down)) this.pauseIndex = (this.pauseIndex + 1) % n;
+    if (edges.some((e) => e.joinOrConfirm)) {
+      this.confirmPause();
+      return;
+    }
+    this.renderPauseMenu();
+  }
+
+  private confirmPause(): void {
+    const choice = PAUSE_OPTIONS[this.pauseIndex];
+    if (choice === "Resume") this.resumePause();
+    else if (choice === "To Lobby") this.scene.start("lobby");
+    else this.scene.start("title");
+  }
+
+  private renderPauseMenu(): void {
+    const menu = PAUSE_OPTIONS.map((o, i) => (i === this.pauseIndex ? `> ${o}` : `  ${o}`));
+    this.pauseText.setText(["— PAUSED —", "", ...menu].join("\n"));
   }
 
   /** One sim tick: sample devices, step, apply FX, record events. The only
@@ -249,11 +346,15 @@ export class ArenaScene extends Phaser.Scene {
   }
 
   private createParticles(): void {
-    const gfx = this.make.graphics();
-    gfx.fillStyle(0xffffff);
-    gfx.fillRect(0, 0, 2, 2);
-    gfx.generateTexture("px", 2, 2);
-    gfx.destroy();
+    // The 1-color particle texture is game-global; only generate it once (it
+    // survives scene restarts when returning to a match from the lobby).
+    if (!this.textures.exists("px")) {
+      const gfx = this.make.graphics();
+      gfx.fillStyle(0xffffff);
+      gfx.fillRect(0, 0, 2, 2);
+      gfx.generateTexture("px", 2, 2);
+      gfx.destroy();
+    }
 
     const base = {
       lifespan: { min: 150, max: 400 },

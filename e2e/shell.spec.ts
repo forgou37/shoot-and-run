@@ -12,7 +12,9 @@ async function boot(page: Page): Promise<string[]> {
   page.on("console", (msg) => {
     if (msg.type() === "error") errors.push(msg.text());
   });
-  await page.goto("/");
+  // Spec 003: the default boot now lands on the title screen; ?quickstart=1
+  // skips straight into the 2-keyboard FFA match these smoke tests assert on.
+  await page.goto("/?quickstart=1");
   await page.waitForFunction(() => Boolean(window.__testApi));
   return errors;
 }
