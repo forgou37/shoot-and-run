@@ -68,8 +68,8 @@ Everything a designer (or a future LLM generator) might touch is a data file, ne
 | File | Contents |
 |---|---|
 | `content/arenas/*.json` | One arena per file: tile grid, spawn points, metadata. Conforms to the arena schema in `packages/sim`. |
-| `content/tuning.json` | Every game-feel number. The only place tunables exist. |
-| `content/players.json` | Player slot definitions: colors, default device/binding per slot. |
+| `content/tuning.json` | Every game-feel number. The only place tunables exist. Shell-only blocks `juice`, `input` (stickDeadzone), `ui` (lobbyCountdownMs) live here too — the sim ignores them. |
+| `content/players.json` | `{ slots: [{slot,name,color} ×4], keyboards: [KeyBindings ×2] }` — slot identities plus the two keyboard binding profiles. Devices bind to slots in the lobby, not here. |
 
 Hot-reload: the Phaser shell watches `content/tuning.json` via Vite HMR in dev and pushes the new tuning object into the running sim. Note: hot-reloading mid-round breaks determinism for that run — fine in dev; replays/tests always pin the tuning snapshot at init.
 
@@ -112,11 +112,15 @@ arcade-game/
 │     ├─ vite.config.ts
 │     ├─ public/assets/       # committed sprite atlases (PNG + Aseprite JSON), via export:art
 │     └─ src/
-│        ├─ main.ts
+│        ├─ main.ts           # Phaser game: registers boot→title→lobby→arena scenes
 │        ├─ loop.ts           # accumulator + interpolation driver
-│        ├─ input/            # device → input structs, slot↔device mapping
+│        ├─ app-context.ts    # app-wide singletons (DeviceManager, keyboard) in the registry
+│        ├─ match-config.ts   # roster (slot+device+team) the lobby hands to the match
+│        ├─ test-api.ts       # dev-only window.__testApi (getPhase + match probes)
+│        ├─ scenes/           # BootScene, TitleScene, LobbyScene, ArenaScene (match + pause)
+│        ├─ input/            # InputDevice (keyboard/gamepad), hot-plug manager, edge reader, players.json/tuning parsers
 │        └─ render/           # sprite renderers (archer, arrows, jungle env); rect debug via ?rects=1
-└─ packages/pipeline/         # FUTURE (specs 003–004): bots, evals, generator. Do not create yet.
+└─ packages/pipeline/         # FUTURE (specs 004–005): bots, evals, generator. Do not create yet.
 ```
 
 ## Commands
@@ -129,7 +133,7 @@ Keep this section current as scripts change.
 | `npm run build` | Type-check both packages + production Vite build |
 | `npm run typecheck` | `tsc --noEmit` over sim src (no Node/DOM types — purity), sim tests (Node types), and game |
 | `npm test` | All Vitest suites (sim tests run headless in Node) |
-| `npm run e2e` | Playwright shell smoke suite (Chromium, dev server, `window.__testApi`) |
+| `npm run e2e` | Playwright suite (Chromium/SwiftShader, dev server, `window.__testApi`): shell smoke + lobby flow + gamepad shim |
 | `npm run lint` | ESLint, incl. sim determinism guards (no `Math.random`/`Date.now`/timers in sim) |
 | `npm run check:deps` | dependency-cruiser: fails if `packages/sim/src` imports anything outside itself |
 | `npm run export:art` | Re-export all `assets/*.aseprite` → `packages/game/public/assets/` atlases (needs local Aseprite; exports are committed, CI never runs this) |
@@ -161,3 +165,6 @@ Format: `Date | Scope | Decision | Reasoning | Alternatives rejected`
 | 2026-06-12 | roadmap | Spec 002 re-scoped to treasure chests + special arrows (bomb/laser/bounce) + power-ups (invisibility/flight); gamepads/roster/menus deferred to 003; bots → 004, AI pipeline → 005 | owner direction: content/combat variety before input breadth; chests are also the first consumer of the seeded PRNG, proving the determinism design under randomness | keeping 002 as roster rejected by owner |
 | 2026-06-12 | art | Pixel art is generated in-session by Claude driving Aseprite (MCP), owner as art director; sources in `assets/*.aseprite`, committed exports (PNG + Aseprite-JSON atlas) in `packages/game/public/assets/` consumed by the shell; per-slot colors via runtime ramp recolor of one canonical 16×16 sheet (spec 006, proposed) | owner delegated generation after reviewing the archer (19 frames, 6 tags); committed exports keep CI/CD free of an Aseprite dependency; one sheet + recolor avoids 4× asset upkeep | owner hand-drawing deferred: iteration speed; per-slot pre-exported sheets rejected; sprite sizes other than 16×16 rejected — matches tile grid, overlays the 12×12 hitbox |
 | 2026-06-13 | art/content | Spec 007 (owner-directed, skipped pre-spec review): shell boots the new jungle arena-002 "canopy"; arena-001 stays the sim-test/golden fixture; tile variants chosen at render time by a wrap-aware exposure mask (8 frames + 2 vines, vines placed by a deterministic position hash); arrows rotate by `atan2(vy, vx)`, stuck arrows hold the last flight angle tracked shell-side | complete level art + a denser layout without touching the sim (golden log pinned to arena-001 stays byte-identical); autotiling keeps arenas pure collision data and the tileset tiny | per-tile art indices in arena JSON rejected: arenas remain collision data the generator pipeline can emit; storing stick angles in sim state rejected: cosmetic-only concern, sim purity wins |
+| 2026-06-13 | sim-modes | Teams mode is implied by every player carrying `team?: 0\|1`; `friendlyFire?: boolean` defaults true; FFA paths kept byte-identical (golden log untouched) by branching round-end logic and gating kills behind a `team!==null` check; in teams mode `round_ended`/`match_ended.winner` carry the team id, match victory reads `match.teamScores` while per-player `scores` still tallies survivals | one sim, two modes without forking the kill/round code; the null-team guard guarantees FFA can never be suppressed so the determinism proof stays valid | a separate teams sim rejected: duplicates rules; regenerating the golden log rejected: FFA behavior is unchanged so it must stay identical |
+| 2026-06-13 | shell-input/scenes | Spec 003: uniform `InputDevice {id,kind,connected,sample(),pausePressed()}` (keyboard profiles + standard-mapping pads, hot-plug via a DeviceManager); one app-wide DeviceManager+KeyboardInput in the Phaser registry; scene flow boot→title→lobby→arena with `?quickstart=1` skipping to the 2-keyboard match; pause is a shell-only flag that stops the accumulator (sim untouched); lobby assembles a MatchConfig roster the match consumes | keeps the sim seeing only PlayerInput; the device abstraction lets the lobby map devices→slots and the match auto-pause on pad-disconnect; freezing the accumulator (not the sim) preserves determinism | Phaser keyboard/gamepad plugins rejected: thin testable layer preferred; pausing via a separate sim concept rejected: pause is cosmetic, belongs in the shell |
+| 2026-06-13 | e2e | T3.5 forces software WebGL (`--use-gl=angle --use-angle=swiftshader`) for Playwright; cross-scene `__testApi.getPhase()` installed at boot, match-only probes augmented by ArenaScene; gamepad e2e drives a player via an injected `navigator.getGamepads` shim | headless Chromium's GPU WebGL context drops and only lazily restores, stalling Phaser's first boot into the loader-less title scene; SwiftShader is deterministic across local Windows + Linux CI | bumping the boot timeout rejected: masks the stall without fixing it; Playwright gamepad emulation rejected: none exists, a shim is the standard approach |
