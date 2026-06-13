@@ -5,6 +5,8 @@ export interface PlayerState {
   id: number;
   /** Player slot (0-based); stable across rounds, maps to a device in the shell. */
   slot: number;
+  /** Team id (0 or 1) in teams mode; null in free-for-all. Stable across rounds. */
+  team: number | null;
   x: number;
   y: number;
   vx: number;
@@ -76,10 +78,16 @@ export interface ChestState {
 }
 
 export interface MatchState {
-  /** Round wins by player index (parallel to the players array). */
+  /** Per-player round-survival count, by player index (parallel to players).
+   *  In teams mode this still tallies individual survivals but does not decide
+   *  the match — teamScores does. */
   scores: number[];
-  /** Winning slot once someone reaches roundsToWin; null while contested. */
+  /** Winning id once the match is decided; null while contested. In FFA this is
+   *  the winning slot; in teams mode it is the winning team id. */
   winner: number | null;
+  /** Team round-win tally `[team0, team1]` in teams mode; null in FFA. Match
+   *  victory (first to roundsToWin) reads this. */
+  teamScores: number[] | null;
 }
 
 export interface SimState {

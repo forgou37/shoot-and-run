@@ -70,7 +70,7 @@ describe("match structure (spec 001 T1.1)", () => {
     }
 
     expect(events.find((e) => e.type === "round_started")).toBeDefined();
-    expect(sim.state.match).toEqual({ scores: [0, 0], winner: null });
+    expect(sim.state.match).toEqual({ scores: [0, 0], winner: null, teamScores: null });
     expect(sim.state.round).toMatchObject({ phase: "running", winner: null, number: 1 });
     sim.state.players.forEach((p) => {
       expect(p.alive).toBe(true);

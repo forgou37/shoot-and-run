@@ -27,6 +27,9 @@ export * from "./tuning";
 
 export interface PlayerSlotConfig {
   slot: number;
+  /** Team id for teams mode. All players carry one or none (validated at init);
+   *  if all carry one, the sim runs in teams mode. */
+  team?: 0 | 1;
 }
 
 export interface SimConfig {
@@ -34,6 +37,9 @@ export interface SimConfig {
   tuning: Tuning;
   players: PlayerSlotConfig[];
   seed: number;
+  /** Teams mode only: when false, same-team players can't harm each other
+   *  (arrows/lasers pass through, bombs and stomps spare teammates). Default true. */
+  friendlyFire?: boolean;
 }
 
 export interface Sim {
@@ -52,6 +58,22 @@ export interface Sim {
   setTuning(next: Tuning): void;
 }
 
+/**
+ * Teams mode is implied by every player carrying a team. Validates all-or-none
+ * (a partial team assignment is a config bug) and that both teams are non-empty.
+ */
+function resolveTeamsMode(players: readonly PlayerSlotConfig[]): boolean {
+  const withTeam = players.filter((p) => p.team === 0 || p.team === 1);
+  if (withTeam.length === 0) return false; // FFA
+  if (withTeam.length !== players.length) {
+    throw new Error("teams: either all players carry a team or none do");
+  }
+  if (!players.some((p) => p.team === 0) || !players.some((p) => p.team === 1)) {
+    throw new Error("teams: both team 0 and team 1 must be non-empty");
+  }
+  return true;
+}
+
 export function createSim(config: SimConfig): Sim {
   // The only randomness source in the sim (hard rule 4). Unused until
   // gameplay needs it, but seeded at init so the seed is part of the
@@ -59,13 +81,20 @@ export function createSim(config: SimConfig): Sim {
   const rng: Rng = createRng(config.seed);
   let tuning = deriveTuning(config.tuning);
 
+  const teamsMode = resolveTeamsMode(config.players);
+  const friendlyFire = config.friendlyFire ?? true;
+
   let nextEntityId = 1;
   const allocId = (): number => nextEntityId++;
 
   const state: SimState = {
     tick: 0,
     round: { phase: "running", winner: null, restartTicksLeft: 0, number: 1 },
-    match: { scores: config.players.map(() => 0), winner: null },
+    match: {
+      scores: config.players.map(() => 0),
+      winner: null,
+      teamScores: teamsMode ? [0, 0] : null
+    },
     players: config.players.map((p, index) => {
       const spawn = config.arena.spawns[index];
       if (!spawn) {
@@ -77,6 +106,7 @@ export function createSim(config: SimConfig): Sim {
       return {
         id: allocId(),
         slot: p.slot,
+        team: teamsMode ? (p.team as number) : null,
         x: spawn.x,
         y: spawn.y,
         vx: 0,
@@ -118,11 +148,11 @@ export function createSim(config: SimConfig): Sim {
           if (!p.alive) return;
           updatePlayer(p, inputs[i]!, config.arena, tuning);
         });
-        checkStomps(state.players, tuning, events, state.tick);
+        checkStomps(state.players, tuning, events, state.tick, friendlyFire);
         handleShooting(state.players, inputs, state.arrows, allocId, tuning, events, state.tick);
         updateArrows(config.arena, state.arrows, tuning, events, state.tick);
-        checkArrowKills(state.arrows, state.players, events, state.tick);
-        resolveExplosions(state.arrows, state.players, tuning, events, state.tick);
+        checkArrowKills(state.arrows, state.players, events, state.tick, friendlyFire);
+        resolveExplosions(state.arrows, state.players, tuning, events, state.tick, friendlyFire);
         state.arrows = collectPickups(
           state.arrows.filter((a) => a.phase !== "spent"),
           state.players,
