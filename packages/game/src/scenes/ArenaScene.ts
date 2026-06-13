@@ -20,8 +20,9 @@ import {
 import arenaJson from "../../../../content/arenas/arena-002.json";
 import playersJson from "../../../../content/players.json";
 import tuningJson from "../../../../content/tuning.json";
+import { KeyboardDevice, type InputDevice } from "../input/device";
 import { KeyboardInput } from "../input/keyboard";
-import { parsePlayersConfig, type PlayerSlotConfig } from "../input/players-config";
+import { parsePlayersConfig, type SlotConfig } from "../input/players-config";
 import { parseJuice, type JuiceConfig } from "../juice";
 import { FixedStepDriver } from "../loop";
 import { ARCHER_TAGS, ArcherRenderer, animKey, loadArcherAssets } from "../render/archer";
@@ -50,8 +51,11 @@ interface PrevPositions {
  */
 export class ArenaScene extends Phaser.Scene {
   private sim!: Sim;
-  private slots!: PlayerSlotConfig[];
+  private slots!: SlotConfig[];
   private keyboard!: KeyboardInput;
+  /** One input device per slot (spec 003). Two keyboard profiles until the
+   *  lobby (T3.3) wires gamepads and the join flow. */
+  private devices!: InputDevice[];
   private readonly driver = new FixedStepDriver();
   private entityGfx!: Phaser.GameObjects.Graphics;
   private overlayText!: Phaser.GameObjects.Text;
@@ -86,8 +90,13 @@ export class ArenaScene extends Phaser.Scene {
   create(): void {
     const arena = parseArena(arenaJson);
     this.arenaName = arena.name;
-    // Spec 000: two keyboard players.
-    this.slots = parsePlayersConfig(playersJson).slice(0, 2);
+    // Spec 000/003: two keyboard players until the lobby lands (T3.3).
+    const cfg = parsePlayersConfig(playersJson);
+    this.slots = cfg.slots.slice(0, 2);
+    this.keyboard = new KeyboardInput(window);
+    this.devices = this.slots.map(
+      (_, i) => new KeyboardDevice(i, this.keyboard, cfg.keyboards[i]!)
+    );
     this.sim = createSim({
       arena,
       tuning: parseTuning(tuningJson),
@@ -97,7 +106,6 @@ export class ArenaScene extends Phaser.Scene {
     this.prev = this.snapshot();
 
     this.juice = parseJuice(tuningJson);
-    this.keyboard = new KeyboardInput(window);
     const rectsMode = new URLSearchParams(window.location.search).get("rects") === "1";
     if (rectsMode) {
       this.drawTiles(arena);
@@ -170,7 +178,7 @@ export class ArenaScene extends Phaser.Scene {
   /** One sim tick: sample devices, step, apply FX, record events. The only
    *  place the sim is advanced — both the accumulator and __testApi use it. */
   private readonly doTick = (): void => {
-    const inputs = this.slots.map((s) => this.keyboard.sample(s.keys));
+    const inputs = this.devices.map((d) => d.sample());
     this.prev = this.snapshot();
     const events = this.sim.step(inputs);
     this.applyJuice(events);

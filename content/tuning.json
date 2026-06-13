@@ -22,6 +22,12 @@
   "chestIntervalMs": 8000,
   "maxChestsAlive": 2,
   "specialArrowsPerChest": 3,
+  "input": {
+    "stickDeadzone": 0.25
+  },
+  "ui": {
+    "lobbyCountdownMs": 3000
+  },
   "juice": {
     "hitstopMs": 80,
     "shakeDurationMs": 180,
