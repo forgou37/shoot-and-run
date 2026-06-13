@@ -25,6 +25,7 @@ import { EdgeReader, type DeviceEdges } from "../input/menu-input";
 import type { SlotConfig } from "../input/players-config";
 import type { MatchConfig } from "../match-config";
 import { parseJuice, type JuiceConfig } from "../juice";
+import { FONT_FAMILY } from "../theme";
 import { FixedStepDriver } from "../loop";
 import { ARCHER_TAGS, ArcherRenderer, animKey, loadArcherAssets } from "../render/archer";
 import { ArrowRenderer, loadArrowAssets } from "../render/arrows";
@@ -146,7 +147,7 @@ export class ArenaScene extends Phaser.Scene {
     this.createParticles();
     this.overlayText = this.add
       .text(ARENA_WIDTH / 2, ARENA_HEIGHT / 2 - 24, "", {
-        fontFamily: "monospace",
+        fontFamily: FONT_FAMILY,
         fontSize: "16px",
         color: "#ffffff"
       })
@@ -161,7 +162,7 @@ export class ArenaScene extends Phaser.Scene {
     this.scoreTexts = this.slots.map((s, i) =>
       this.add
         .text(((i + 0.5) * ARENA_WIDTH) / n, chipY, "", {
-          fontFamily: "monospace",
+          fontFamily: FONT_FAMILY,
           fontSize: "10px",
           color: s.color
         })
@@ -175,7 +176,7 @@ export class ArenaScene extends Phaser.Scene {
       this.teamTexts = [0, 1].map((team) =>
         this.add
           .text(team === 0 ? 4 : ARENA_WIDTH - 4, 2, "", {
-            fontFamily: "monospace",
+            fontFamily: FONT_FAMILY,
             fontSize: "10px",
             color: teamColor(team)
           })
@@ -185,7 +186,7 @@ export class ArenaScene extends Phaser.Scene {
     }
     this.pauseText = this.add
       .text(ARENA_WIDTH / 2, ARENA_HEIGHT / 2, "", {
-        fontFamily: "monospace",
+        fontFamily: FONT_FAMILY,
         fontSize: "11px",
         color: "#ffffff",
         align: "center",

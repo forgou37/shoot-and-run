@@ -84,7 +84,7 @@ arcade-game/
 ├─ specs/
 │  ├─ 000-baseline.md
 │  └─ backlog.md
-├─ assets/                    # Aseprite sprite sources (art pass, spec 006)
+├─ assets/                    # Aseprite sprite sources (art pass, spec 006); fonts/ (FreePixel.ttf, the shell's pixel font)
 ├─ scripts/
 │  └─ export-art.mjs          # assets/*.aseprite → packages/game/public/assets/
 ├─ content/
@@ -116,6 +116,7 @@ arcade-game/
 │        ├─ loop.ts           # accumulator + interpolation driver
 │        ├─ app-context.ts    # app-wide singletons (DeviceManager, keyboard) in the registry
 │        ├─ match-config.ts   # roster (slot+device+team) the lobby hands to the match
+│        ├─ theme.ts          # FONT_FAMILY + loadFont() (FreePixel.ttf, loaded before boot)
 │        ├─ test-api.ts       # dev-only window.__testApi (getPhase + match probes)
 │        ├─ scenes/           # BootScene, TitleScene, LobbyScene, ArenaScene (match + pause)
 │        ├─ input/            # InputDevice (keyboard/gamepad), hot-plug manager, edge reader, players.json/tuning parsers
