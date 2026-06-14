@@ -6,12 +6,7 @@ import { BotDevice } from "../input/bot-device";
 import type { InputDevice } from "../input/device";
 import { EdgeReader } from "../input/menu-input";
 import type { MatchConfig, RosterEntry } from "../match-config";
-import {
-  ARCHER_ATLAS_KEY,
-  archerIdleFrameName,
-  loadArcherAssets,
-  recolorArcherTexture
-} from "../render/archer";
+import { CARD_SRC_H, CARD_SRC_W, cardTextureKey, loadCardAssets } from "../render/cards";
 import { addPixelText } from "../theme";
 
 type Mode = "ffa" | "teams";
@@ -37,16 +32,18 @@ const MAX_SLOTS = 4;
 const seedNow = (): number => Date.now() & 0x7fffffff;
 
 // Card layout in the 320×240 logical buffer: four columns, equal side margins.
-const CARD_W = 72;
-const CARD_GAP = 4;
+// The card art is 96×180; four at native width (384) overflow the 320 buffer, so
+// they're drawn at 0.75 scale (72×135) — a uniform 4→3 pixel drop, the cleanest
+// fractional downscale for nearest-sampled pixel art.
+const CARD_SCALE = 0.75;
+const CARD_W = Math.round(CARD_SRC_W * CARD_SCALE);
+const CARD_H = Math.round(CARD_SRC_H * CARD_SCALE);
+const CARD_GAP = 6;
 const CARD_MARGIN = (ARENA_WIDTH - MAX_SLOTS * CARD_W - (MAX_SLOTS - 1) * CARD_GAP) / 2;
-const CARD_TOP = 26;
-const CARD_H = 160;
-const PORTRAIT_Y = 66;
-const PORTRAIT_SCALE = 3;
-const NAME_Y = 100;
-const STATUS_Y = 116;
-const CHIP_Y = 132;
+const CARD_TOP = 22;
+// The name is baked into the card art; status/device chip stack just beneath it.
+const STATUS_Y = CARD_TOP + CARD_H + 4;
+const CHIP_Y = STATUS_Y + 10;
 
 const COLOR_TEXT = "#f0e6c8";
 const COLOR_MUTED = "#6a708a";
@@ -88,8 +85,7 @@ export class LobbyScene extends Phaser.Scene {
   private countdownMsLeft!: number | null;
   // Persistent card display objects, rebuilt only in create(); render() mutates them.
   private frameGfx!: Phaser.GameObjects.Graphics;
-  private portraits!: Phaser.GameObjects.Sprite[];
-  private names!: Phaser.GameObjects.BitmapText[];
+  private cards!: Phaser.GameObjects.Image[];
   private statuses!: Phaser.GameObjects.BitmapText[];
   private chips!: Phaser.GameObjects.BitmapText[];
   private headerIdle!: Phaser.GameObjects.BitmapText;
@@ -102,9 +98,10 @@ export class LobbyScene extends Phaser.Scene {
   }
 
   preload(): void {
-    // First scene to need the archer sheet (the match loads it too, but later).
-    // Guard so lobby→match→lobby doesn't re-load an already-cached atlas.
-    if (!this.textures.exists(ARCHER_ATLAS_KEY)) loadArcherAssets(this.load);
+    // Owner-supplied character-select card art (one PNG per slot identity).
+    // (preload runs before create, so read slots straight from the registry.)
+    // loadCardAssets skips any already cached on lobby→match→lobby re-entry.
+    loadCardAssets(this, getAppContext(this).slots);
   }
 
   create(): void {
@@ -125,22 +122,19 @@ export class LobbyScene extends Phaser.Scene {
       .setOrigin(0.5, 0)
       .setVisible(false);
 
-    // Behind the portraits/text (added first → lowest on the display list).
+    // Behind the cards/text (added first → lowest on the display list); holds the
+    // ready/bot highlight outline drawn around each occupied card.
     this.frameGfx = this.add.graphics();
 
-    const idleFrame = archerIdleFrameName(this);
-    this.portraits = [];
-    this.names = [];
+    this.cards = [];
     this.statuses = [];
     this.chips = [];
     for (let i = 0; i < MAX_SLOTS; i++) {
-      const color = this.app.slots[i]?.color ?? "#ffffff";
       const cx = cardCenter(i);
-      const tex = recolorArcherTexture(this, i, color);
-      this.portraits.push(
-        this.add.sprite(cx, PORTRAIT_Y, tex, idleFrame).setOrigin(0.5).setScale(PORTRAIT_SCALE)
+      const tex = cardTextureKey(this.app.slots[i]?.name ?? "");
+      this.cards.push(
+        this.add.image(cx, CARD_TOP, tex).setOrigin(0.5, 0).setScale(CARD_SCALE)
       );
-      this.names.push(addPixelText(this, cx, NAME_Y, "", 10, color));
       this.statuses.push(addPixelText(this, cx, STATUS_Y, "", 8, COLOR_MUTED));
       this.chips.push(addPixelText(this, cx, CHIP_Y, "", 8, COLOR_MUTED));
     }
@@ -363,25 +357,22 @@ export class LobbyScene extends Phaser.Scene {
     const humanBySlot = new Map([...this.entries.values()].map((e) => [e.slotIndex, e]));
     this.frameGfx.clear();
     for (let i = 0; i < MAX_SLOTS; i++) {
-      const slot = this.app.slots[i];
       const cx = cardCenter(i);
       const entry = humanBySlot.get(i);
       const bot = this.bots.get(i);
       const occupied = entry !== undefined || bot !== undefined;
-      const colorInt = hexToInt(slot?.color ?? "#ffffff");
 
-      // Panel + border: dim when empty, slot-colored once a human/bot holds it;
-      // a thick border marks "ready" (and bots are always ready).
-      this.frameGfx.fillStyle(0x000000, occupied ? 0.4 : 0.22);
-      this.frameGfx.fillRect(cardLeft(i), CARD_TOP, CARD_W, CARD_H);
-      const thick = (entry?.ready ?? false) || bot !== undefined;
-      this.drawBorder(cardLeft(i), CARD_TOP, CARD_W, CARD_H, thick ? 2 : 1, colorInt, occupied ? 1 : 0.35);
+      // The card art (frame + portrait + baked name banner) is the card; dim it
+      // while the slot is empty so a lit card reads as "claimed".
+      this.cards[i]!.setAlpha(occupied ? 1 : 0.35);
 
-      this.portraits[i]!.setAlpha(occupied ? 1 : 0.3);
-
-      const name = (slot?.name ?? `P${String(i + 1)}`).toUpperCase();
-      const marked = entry !== undefined && this.isController(entry) ? `${name} *` : name;
-      this.centerText(this.names[i]!, cx, marked);
+      // Highlight outline: green when a human is ready, purple for a bot (always
+      // ready). Drawn fully outside the art (frameGfx is below the cards) so the
+      // whole 2px band frames the card rather than hiding behind it.
+      const highlight = entry?.ready ? COLOR_READY : bot !== undefined ? COLOR_BOT : null;
+      if (highlight !== null) {
+        this.drawBorder(cardLeft(i) - 2, CARD_TOP - 2, CARD_W + 4, CARD_H + 4, 2, hexToInt(highlight), 1);
+      }
 
       let status: string;
       let statusColor: string;
@@ -399,6 +390,8 @@ export class LobbyScene extends Phaser.Scene {
         statusColor = COLOR_MUTED;
         chip = "";
       }
+      // The lowest-slot human owns the mode/bot toggles; mark it (see bottom hint).
+      if (entry !== undefined && this.isController(entry)) status += " *";
       this.statuses[i]!.setTint(hexToInt(statusColor));
       this.centerText(this.statuses[i]!, cx, status);
       this.chips[i]!.setTint(hexToInt(bot !== undefined ? COLOR_BOT : COLOR_MUTED));
