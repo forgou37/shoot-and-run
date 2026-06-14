@@ -185,6 +185,60 @@ describe("movement adjustments (owner-directed)", () => {
     expect(p0(sim).vy).toBeGreaterThan(TEST_TUNING.wallSlideSpeed);
   });
 
+  it("wall jump: jumping off a clung wall launches up and away at 45°", () => {
+    const sim = createSim({
+      arena: TALL_WALL_ARENA,
+      tuning: TEST_TUNING,
+      players: [{ slot: 0 }],
+      seed: 1
+    });
+    // Cling to the right wall (right edge against col 10).
+    for (let t = 0; t < 15; t++) sim.step([inp({ right: true })]);
+    expect(p0(sim).grounded).toBe(false);
+    expect(p0(sim).vy).toBeCloseTo(TEST_TUNING.wallSlideSpeed, 6);
+
+    // Jump while still holding into the wall.
+    sim.step([inp({ right: true, jump: true })]);
+    const j = p0(sim);
+    expect(j.vy).toBeCloseTo(-TEST_TUNING.wallJumpSpeed, 6); // upward
+    expect(j.vx).toBeCloseTo(-TEST_TUNING.wallJumpSpeed, 6); // away from the wall (left)
+    expect(Math.abs(j.vx)).toBeCloseTo(Math.abs(j.vy), 6); // equal components ⇒ 45°
+    expect(j.facing).toBe(-1); // turns to face away from the wall
+  });
+
+  it("wall jump: air control is briefly suspended so the launch arc holds", () => {
+    const sim = createSim({
+      arena: TALL_WALL_ARENA,
+      tuning: TEST_TUNING,
+      players: [{ slot: 0 }],
+      seed: 1
+    });
+    for (let t = 0; t < 15; t++) sim.step([inp({ right: true })]);
+    sim.step([inp({ right: true, jump: true })]); // wall jump leftward
+
+    // Holding back into the wall would normally clamp horizontal speed to
+    // runSpeed within a tick; during the lock the away momentum is preserved.
+    sim.step([inp({ right: true })]);
+    expect(p0(sim).vx).toBeLessThan(-TEST_TUNING.runSpeed);
+
+    // After the lock expires, air control is responsive again.
+    const lockTicks = msToTicks(TEST_TUNING.wallJumpControlLockMs);
+    for (let t = 0; t < lockTicks; t++) sim.step([inp({ right: true })]);
+    expect(p0(sim).vx).toBeGreaterThanOrEqual(-TEST_TUNING.runSpeed);
+  });
+
+  it("wall jump: a grounded jump beside a wall is a normal vertical jump, not a wall jump", () => {
+    const sim = makeSettledSim(WALL_ARENA);
+    // Walk into the wall (col 15) and settle against it on the ground.
+    for (let t = 0; t < 40; t++) sim.step([inp({ right: true })]);
+    expect(p0(sim).grounded).toBe(true);
+
+    sim.step([inp({ right: true, jump: true })]);
+    const j = p0(sim);
+    expect(j.vy).toBeCloseTo(-TEST_TUNING.jumpVelocity, 6); // ground jump height
+    expect(j.vx).not.toBeCloseTo(-TEST_TUNING.wallJumpSpeed, 6); // not launched off the wall
+  });
+
   it("edge fall: walking off a ledge sheds run momentum and drops straight down", () => {
     const sim = makeSettledSim(LEDGE_ARENA, 10); // spawn 0 stands on the platform
     expect(p0(sim).grounded).toBe(true);

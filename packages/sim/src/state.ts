@@ -32,6 +32,8 @@ export interface PlayerState {
   dashCooldownTicksLeft: number;
   /** Locked horizontal direction of the active dash. */
   dashDir: 1 | -1;
+  /** Ticks of air-control suspension left after a wall jump (0 = free control). */
+  wallJumpLockTicksLeft: number;
   /** Whether releasing jump still shortens the current jump (variable height). */
   jumpCutAvailable: boolean;
   /** Power-up timers (ticks). 0 = inactive. Reset on round reset. */

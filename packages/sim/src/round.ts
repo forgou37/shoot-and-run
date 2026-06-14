@@ -133,6 +133,7 @@ function resetPlayer(p: PlayerState, index: number, arena: ArenaData, t: Derived
   p.dashTicksLeft = 0;
   p.dashCooldownTicksLeft = 0;
   p.dashDir = 1;
+  p.wallJumpLockTicksLeft = 0;
   p.jumpCutAvailable = false;
   p.invisibleTicksLeft = 0;
   p.flightTicksLeft = 0;

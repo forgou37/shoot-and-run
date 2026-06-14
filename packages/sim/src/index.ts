@@ -123,6 +123,7 @@ export function createSim(config: SimConfig): Sim {
         dashTicksLeft: 0,
         dashCooldownTicksLeft: 0,
         dashDir: 1 as const,
+        wallJumpLockTicksLeft: 0,
         jumpCutAvailable: false,
         invisibleTicksLeft: 0,
         flightTicksLeft: 0

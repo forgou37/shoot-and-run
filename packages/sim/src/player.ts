@@ -13,8 +13,8 @@ const HALF_H = PLAYER_HEIGHT / 2;
  *
  * Order matters and is part of the determinism contract:
  * input edges → dash start → horizontal velocity / gravity / wall-slide →
- * jump (buffer + coyote) → jump cut → integrate X → integrate Y →
- * grounded/coyote bookkeeping → dash timers.
+ * jump (buffer + coyote; ground / wall / flap) → jump cut → integrate X →
+ * integrate Y → grounded/coyote bookkeeping → dash + wall-jump-lock timers.
  */
 export function updatePlayer(
   p: PlayerState,
@@ -51,8 +51,10 @@ export function updatePlayer(
     if (p.grounded) {
       // Instant accelerate/stop on the ground: tight controls.
       p.vx = dir * t.runSpeed;
-    } else if (dir !== 0) {
-      // Air control: accelerate toward the held direction, keep momentum otherwise.
+    } else if (dir !== 0 && p.wallJumpLockTicksLeft === 0) {
+      // Air control: accelerate toward the held direction, keep momentum
+      // otherwise. Suspended briefly after a wall jump so its 45° launch arc
+      // isn't immediately clamped back toward run speed.
       p.vx += dir * t.airAccel * DT;
       if (p.vx > t.runSpeed) p.vx = t.runSpeed;
       if (p.vx < -t.runSpeed) p.vx = -t.runSpeed;
@@ -71,19 +73,35 @@ export function updatePlayer(
 
   let jumpedThisTick = false;
   const groundJump = p.grounded || p.coyoteTicksLeft > 0;
-  if (p.jumpBufferTicksLeft > 0 && (groundJump || p.flightTicksLeft > 0)) {
-    // Flight: mid-air presses flap with flapVelocity; from the ground it's a
-    // normal jump even while the power-up is active.
-    p.vy = groundJump ? -t.jumpVelocity : -t.flapVelocity;
-    p.grounded = false;
-    p.coyoteTicksLeft = 0;
-    p.jumpBufferTicksLeft = 0;
-    p.jumpCutAvailable = groundJump;
-    jumpedThisTick = true;
-    // A jump cancels an in-progress dash (and arms its cooldown).
-    if (p.dashTicksLeft > 0) {
-      p.dashTicksLeft = 0;
-      p.dashCooldownTicksLeft = t.dashCooldownTicks;
+  if (p.jumpBufferTicksLeft > 0) {
+    // Wall jump: airborne and clinging to a wall (pressing into an adjacent
+    // wall) — launch off it at 45°, away from the wall and upward. Ranks below
+    // a ground/coyote jump and above a mid-air flap.
+    const wallJump =
+      !groundJump && dir !== 0 && isAgainstWall(arena, p.x, p.y, HALF_W, HALF_H, dir);
+    if (groundJump || wallJump || p.flightTicksLeft > 0) {
+      if (wallJump) {
+        // Equal away-from-wall and upward components ⇒ a 45° launch. Suspend
+        // air control briefly so the arc holds, and turn to face the leap.
+        p.vx = -dir * t.wallJumpSpeed;
+        p.vy = -t.wallJumpSpeed;
+        p.facing = -dir as 1 | -1;
+        p.wallJumpLockTicksLeft = t.wallJumpLockTicks;
+      } else {
+        // Flight: mid-air presses flap with flapVelocity; from the ground it's a
+        // normal jump even while the power-up is active.
+        p.vy = groundJump ? -t.jumpVelocity : -t.flapVelocity;
+      }
+      p.grounded = false;
+      p.coyoteTicksLeft = 0;
+      p.jumpBufferTicksLeft = 0;
+      p.jumpCutAvailable = groundJump || wallJump;
+      jumpedThisTick = true;
+      // A jump cancels an in-progress dash (and arms its cooldown).
+      if (p.dashTicksLeft > 0) {
+        p.dashTicksLeft = 0;
+        p.dashCooldownTicksLeft = t.dashCooldownTicks;
+      }
     }
   }
 
@@ -112,6 +130,7 @@ export function updatePlayer(
 
   if (p.grounded) {
     p.coyoteTicksLeft = 0;
+    p.wallJumpLockTicksLeft = 0;
   } else if (wasGrounded && !jumpedThisTick) {
     // Walked off a ledge this tick: drop straight down by shedding carried run
     // momentum (no parabolic launch), and open the coyote window. Holding a
@@ -132,6 +151,9 @@ export function updatePlayer(
 
   if (p.jumpBufferTicksLeft > 0) {
     p.jumpBufferTicksLeft--;
+  }
+  if (p.wallJumpLockTicksLeft > 0) {
+    p.wallJumpLockTicksLeft--;
   }
   if (p.invisibleTicksLeft > 0) p.invisibleTicksLeft--;
   if (p.flightTicksLeft > 0) p.flightTicksLeft--;

@@ -63,6 +63,7 @@ function mkPlayer(slot: number, team: number | null, over: Partial<PlayerState> 
     dashTicksLeft: 0,
     dashCooldownTicksLeft: 0,
     dashDir: 1,
+    wallJumpLockTicksLeft: 0,
     jumpCutAvailable: false,
     invisibleTicksLeft: 0,
     flightTicksLeft: 0,

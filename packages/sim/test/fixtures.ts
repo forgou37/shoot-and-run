@@ -13,6 +13,8 @@ export const TEST_TUNING: Tuning = {
   coyoteTimeMs: 80,
   jumpBufferMs: 100,
   wallSlideSpeed: 40,
+  wallJumpSpeed: 240,
+  wallJumpControlLockMs: 150,
   dashSpeed: 300,
   dashDurationMs: 130,
   dashCooldownMs: 450,

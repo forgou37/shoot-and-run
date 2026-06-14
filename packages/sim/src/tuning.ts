@@ -15,6 +15,12 @@ export interface Tuning {
   jumpBufferMs: number;
   /** Capped descent speed while wall-sliding (px/s), well below maxFallSpeed. */
   wallSlideSpeed: number;
+  /** Speed of a wall jump's launch; used for BOTH the up and away-from-wall
+   *  components, so the launch leaves the wall at exactly 45° (px/s). */
+  wallJumpSpeed: number;
+  /** How long air control is suspended after a wall jump so its 45° launch arc
+   *  holds instead of being clamped straight back to run speed. */
+  wallJumpControlLockMs: number;
   /** Horizontal speed during a dash burst (px/s). */
   dashSpeed: number;
   /** How long one dash burst lasts. */
@@ -53,6 +59,8 @@ const TUNING_KEYS: readonly (keyof Tuning)[] = [
   "coyoteTimeMs",
   "jumpBufferMs",
   "wallSlideSpeed",
+  "wallJumpSpeed",
+  "wallJumpControlLockMs",
   "dashSpeed",
   "dashDurationMs",
   "dashCooldownMs",
@@ -122,6 +130,7 @@ export interface DerivedTuning extends Tuning {
   chestIntervalTicks: number;
   dashTicks: number;
   dashCooldownTicks: number;
+  wallJumpLockTicks: number;
 }
 
 export function deriveTuning(t: Tuning): DerivedTuning {
@@ -131,6 +140,7 @@ export function deriveTuning(t: Tuning): DerivedTuning {
     jumpBufferTicks: msToTicks(t.jumpBufferMs),
     dashTicks: msToTicks(t.dashDurationMs),
     dashCooldownTicks: msToTicks(t.dashCooldownMs),
+    wallJumpLockTicks: msToTicks(t.wallJumpControlLockMs),
     roundRestartDelayTicks: msToTicks(t.roundRestartDelayMs),
     matchRestartDelayTicks: msToTicks(t.matchRestartDelayMs),
     invisibilityTicks: msToTicks(t.invisibilityDurationMs),
