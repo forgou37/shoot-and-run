@@ -63,8 +63,8 @@ Phases 008–009 are **fully headless and CI-gated** — all the hard determinis
 
 | Phase | Theme | First-playable? | Gate |
 |---|---|---|---|
-| **008** | Netcode foundation: snapshot/restore, input (de)serialization, determinism hardening, headless rollback harness | no | 007 done ✓ |
-| 009 | `packages/net` session layer: clock/tick sync, input delay, jitter buffer, prediction/rollback loop — over a loopback transport with injected latency/jitter/loss | no | 008 |
+| **008** | Netcode foundation: snapshot/restore, input (de)serialization, determinism hardening, headless rollback harness — **done** (T8.1–T8.6) | no | 007 done ✓ |
+| 009 | `packages/net` session layer: clock/tick sync, input delay, jitter buffer, prediction/rollback loop — over a loopback transport with injected latency/jitter/loss | no | 008 ✓ |
 | 010 | Real transport + Cloudflare signaling: WebSocket adapter (dedicated path), Worker + Durable Object signaling, room codes | no (LAN/localhost connect) | 009 |
 | 011 | **Dedicated server + browser client** — `packages/server` headless host on a Durable Object; browser becomes a pure prediction client | **yes — first internet match** | 010 |
 | 012 | Player-hosted / listen-server: one browser becomes the Host; WebRTC DataChannel P2P; NAT traversal + TURN; host-leaving policy | yes (P2P) | 011 |
@@ -88,16 +88,18 @@ Phases 008–009 are **fully headless and CI-gated** — all the hard determinis
 
 **Definition of done:** the acceptance criteria below pass in `npm test` and the existing CI gate; sim purity (`check:deps`) still passes with `packages/net` added.
 
+**Status: done** (T8.1–T8.6 landed 2026-06-15). Full gate green — typecheck/lint/check:deps + 161 Vitest tests; golden FFA event log byte-identical.
+
 ### Spec-level acceptance criteria
 
-- [ ] N1. `sim.snapshot()` returns a structurally-cloned, JSON-serializable value capturing **all** sim state needed to resume: `SimState`, the RNG internal state, and `nextEntityId`. `createSimFromSnapshot(snapshot, { arena, tuning, players, friendlyFire })` reconstructs a sim that is `step()`-for-`step()` identical to the original.
-- [ ] N2. **Rollback identity:** create sim A, step N ticks with input log L, snapshot at tick K<N, then: (a) continuing A to N and (b) restoring from the K-snapshot and stepping the tail of L produce byte-identical state and event logs at tick N.
-- [ ] N3. **Divergence + reconverge:** from a tick-K snapshot, stepping a *different* tail L′ diverges; re-restoring K and stepping the original L returns to A's tick-N state byte-for-byte (proves restore fully resets hidden state — RNG, counters).
-- [ ] N4. RNG exposes `getState()/setState()` (or equivalent); `createRng` seeded then advanced M times, state captured, a fresh rng `setState`'d to it, produces an identical next stream. No behavioral change to the existing seed→stream mapping (golden log unaffected).
-- [ ] N5. `serializeInput(PlayerInput): Uint8Array` (1 byte) and `deserializeInput`; round-trips for all 128 combinations. A versioned `serializeInputFrame(tick, inputs[])` / parser, tagged with `SIM_VERSION`; a version mismatch is a typed, catchable error.
-- [ ] N6. **Cross-engine determinism guard:** a checked-in golden state-hash sequence (e.g. FNV-1a over `snapshot()` every K ticks of the scripted-bot round) re-verified in CI. Extends the existing Windows/Linux golden-log proof to a state-level hash. (Browser-engine verification is wired in 010 when a browser is in the loop; 008 covers the Node/V8 + state-hash guard.)
-- [ ] N7. `packages/net` workspace exists with the transport **interface only** (no implementation) and is added to `check:deps`: `net → sim` allowed, `sim → net` forbidden, neither imports Phaser/DOM.
-- [ ] N8. The existing golden FFA determinism log stays **byte-identical** (snapshot/RNG-exposure changes are additive; no gameplay path changes).
+- [x] N1. `sim.snapshot()` returns a structurally-cloned, JSON-serializable value capturing **all** sim state needed to resume: `SimState`, the RNG internal state, and `nextEntityId`. `createSimFromSnapshot(snapshot, { arena, tuning, players, friendlyFire })` reconstructs a sim that is `step()`-for-`step()` identical to the original. _(snapshot.test.ts)_
+- [x] N2. **Rollback identity:** create sim A, step N ticks with input log L, snapshot at tick K<N, then: (a) continuing A to N and (b) restoring from the K-snapshot and stepping the tail of L produce byte-identical state and event logs at tick N. _(rollback.test.ts)_
+- [x] N3. **Divergence + reconverge:** from a tick-K snapshot, stepping a *different* tail L′ diverges; re-restoring K and stepping the original L returns to A's tick-N state byte-for-byte (proves restore fully resets hidden state — RNG, counters). _(rollback.test.ts)_
+- [x] N4. RNG exposes `getState()/setState()` (or equivalent); `createRng` seeded then advanced M times, state captured, a fresh rng `setState`'d to it, produces an identical next stream. No behavioral change to the existing seed→stream mapping (golden log unaffected). _(rng.test.ts)_
+- [x] N5. `serializeInput(PlayerInput): Uint8Array` (1 byte) and `deserializeInput`; round-trips for all 128 combinations. A versioned `serializeInputFrame(tick, inputs[])` / parser, tagged with `SIM_VERSION`; a version mismatch is a typed, catchable error. _(wire.test.ts; the frame carries a numeric `PROTOCOL_VERSION` bumped in lockstep with `SIM_VERSION`, kept compact rather than embedding the version string per tick.)_
+- [x] N6. **Cross-engine determinism guard:** a checked-in golden state-hash sequence (e.g. FNV-1a over `snapshot()` every K ticks of the scripted-bot round) re-verified in CI. Extends the existing Windows/Linux golden-log proof to a state-level hash. (Browser-engine verification is wired in 010 when a browser is in the loop; 008 covers the Node/V8 + state-hash guard.) _(cross-engine.test.ts + golden-state-hashes.json)_
+- [x] N7. `packages/net` workspace exists with the transport **interface only** (no implementation) and is added to `check:deps`: `net → sim` allowed, `sim → net` forbidden, neither imports Phaser/DOM. _(`net-purity` rule; `tsPreCompilationDeps:true` added so the type-only sim↔net seam is actually analyzed — verified a deliberate `sim→net` import fails the gate, then reverted.)_
+- [x] N8. The existing golden FFA determinism log stays **byte-identical** (snapshot/RNG-exposure changes are additive; no gameplay path changes).
 
 ### Fixed design points
 
