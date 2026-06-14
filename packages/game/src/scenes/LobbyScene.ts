@@ -35,7 +35,7 @@ export class LobbyScene extends Phaser.Scene {
   private mode!: Mode;
   private friendlyFire!: boolean;
   private countdownMsLeft!: number | null;
-  private text!: Phaser.GameObjects.Text;
+  private text!: Phaser.GameObjects.BitmapText;
 
   constructor() {
     super("lobby");
@@ -193,6 +193,6 @@ export class LobbyScene extends Phaser.Scene {
       lines.push("");
       lines.push(`starting in ${String(Math.ceil(this.countdownMsLeft / 1000))}...`);
     }
-    this.text.setText(lines);
+    this.text.setText(lines.join("\n"));
   }
 }

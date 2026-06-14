@@ -63,13 +63,15 @@ export class ArenaScene extends Phaser.Scene {
   private paused = false;
   private pauseIndex = 0;
   private prevEsc = false;
-  private pauseText!: Phaser.GameObjects.Text;
+  private pauseText!: Phaser.GameObjects.BitmapText;
+  /** Backing panel for the pause menu (BitmapText can't draw its own bg). */
+  private pausePanel!: Phaser.GameObjects.Rectangle;
   private readonly driver = new FixedStepDriver();
   private entityGfx!: Phaser.GameObjects.Graphics;
-  private overlayText!: Phaser.GameObjects.Text;
-  private scoreTexts: Phaser.GameObjects.Text[] = [];
+  private overlayText!: Phaser.GameObjects.BitmapText;
+  private scoreTexts: Phaser.GameObjects.BitmapText[] = [];
   /** Team round-win readouts, populated only in teams mode. */
-  private teamTexts: Phaser.GameObjects.Text[] = [];
+  private teamTexts: Phaser.GameObjects.BitmapText[] = [];
   private teamsMode = false;
   private prev!: PrevPositions;
   private juice!: JuiceConfig;
@@ -145,7 +147,7 @@ export class ArenaScene extends Phaser.Scene {
       this.arrowSprites = new ArrowRenderer(this);
     }
     this.createParticles();
-    this.overlayText = addPixelText(this, ARENA_WIDTH / 2, ARENA_HEIGHT / 2 - 24, "", 16, "#ffffff")
+    this.overlayText = addPixelText(this, ARENA_WIDTH / 2, ARENA_HEIGHT / 2 - 24, "", 22, "#ffffff")
       .setOrigin(0.5)
       .setDepth(20)
       .setVisible(false);
@@ -169,10 +171,13 @@ export class ArenaScene extends Phaser.Scene {
           .setDepth(20)
       );
     }
+    this.pausePanel = this.add
+      .rectangle(ARENA_WIDTH / 2, ARENA_HEIGHT / 2, 10, 10, 0x000000, 0.63)
+      .setOrigin(0.5)
+      .setDepth(29)
+      .setVisible(false);
     this.pauseText = addPixelText(this, ARENA_WIDTH / 2, ARENA_HEIGHT / 2, "", 11, "#ffffff", {
-      align: "center",
-      backgroundColor: "#000000a0",
-      padding: { x: 8, y: 6 }
+      align: "center"
     })
       .setOrigin(0.5)
       .setDepth(30)
@@ -243,6 +248,7 @@ export class ArenaScene extends Phaser.Scene {
     this.paused = true;
     this.pauseIndex = 0;
     this.anims.pauseAll(); // freeze sprite anims with the sim
+    this.pausePanel.setVisible(true);
     this.pauseText.setVisible(true);
     this.renderPauseMenu();
   }
@@ -250,6 +256,7 @@ export class ArenaScene extends Phaser.Scene {
   private resumePause(): void {
     this.paused = false;
     this.anims.resumeAll();
+    this.pausePanel.setVisible(false);
     this.pauseText.setVisible(false);
   }
 
@@ -278,6 +285,8 @@ export class ArenaScene extends Phaser.Scene {
   private renderPauseMenu(): void {
     const menu = PAUSE_OPTIONS.map((o, i) => (i === this.pauseIndex ? `> ${o}` : `  ${o}`));
     this.pauseText.setText(["— PAUSED —", "", ...menu].join("\n"));
+    const b = this.pauseText.getTextBounds(true).global;
+    this.pausePanel.setSize(b.width + 16, b.height + 12);
   }
 
   /** One sim tick: sample devices, step, apply FX, record events. The only

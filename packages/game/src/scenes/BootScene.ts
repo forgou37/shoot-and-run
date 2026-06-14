@@ -8,6 +8,7 @@ import { parsePlayersConfig } from "../input/players-config";
 import { parseInputSettings, parseUiSettings } from "../input/settings";
 import { quickstartConfig } from "../match-config";
 import { installBaseTestApi } from "../test-api";
+import { buildPixelFont } from "../theme";
 
 /** Fixed seed for the dev/e2e quickstart match so its boot is reproducible. */
 const QUICKSTART_SEED = 1;
@@ -24,6 +25,10 @@ export class BootScene extends Phaser.Scene {
   }
 
   create(): void {
+    // Rasterize the pixel font into its bitmap-font atlas before any scene
+    // renders text (FreePixel was loaded before the game booted, in main.ts).
+    buildPixelFont(this);
+
     const players = parsePlayersConfig(playersJson);
     const keyboard = new KeyboardInput(window);
     const manager = new DeviceManager(
