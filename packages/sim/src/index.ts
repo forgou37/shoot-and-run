@@ -56,6 +56,15 @@ export interface Sim {
    * determinism proof always pin one tuning snapshot at init instead.
    */
   setTuning(next: Tuning): void;
+  /**
+   * The deterministic entity-id allocator's next value — hidden state that
+   * lives outside `SimState` (a closure counter). Exposed for snapshot/restore
+   * (spec 008); reading is harmless. NOT for use during normal play —
+   * `step()` owns the counter, and reseeding it mid-round corrupts entity
+   * identity. Restore reseeds it once, before the first `step()`.
+   */
+  getEntityIdCounter(): number;
+  setEntityIdCounter(value: number): void;
 }
 
 /**
@@ -172,6 +181,12 @@ export function createSim(config: SimConfig): Sim {
     },
     setTuning(next: Tuning): void {
       tuning = deriveTuning(next);
+    },
+    getEntityIdCounter(): number {
+      return nextEntityId;
+    },
+    setEntityIdCounter(value: number): void {
+      nextEntityId = value >>> 0;
     }
   };
 }

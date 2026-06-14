@@ -76,4 +76,18 @@ describe("sim determinism (skeleton)", () => {
     const sim = makeSim(1);
     expect(() => sim.step([cannedInput(0, 0)])).toThrow(/1 inputs for 2 players/);
   });
+
+  // T8.1 — the entity-id allocator is hidden state outside SimState; snapshot/
+  // restore (T8.2) needs to read and reseed it.
+  it("exposes the entity-id counter past the ids already allocated at init", () => {
+    const sim = makeSim(1); // 2 players => ids 1, 2 allocated at init
+    expect(sim.state.players.map((p) => p.id)).toEqual([1, 2]);
+    expect(sim.getEntityIdCounter()).toBe(3);
+  });
+
+  it("setEntityIdCounter reseeds the allocator (uint32)", () => {
+    const sim = makeSim(1);
+    sim.setEntityIdCounter(500);
+    expect(sim.getEntityIdCounter()).toBe(500);
+  });
 });
