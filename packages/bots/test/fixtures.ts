@@ -43,6 +43,7 @@ export function mkPlayer(over: Partial<PlayerState> & Pick<PlayerState, "slot" |
     dashCooldownTicksLeft: 0,
     dashDir: 1,
     jumpCutAvailable: false,
+    wallJumpLockTicksLeft: 0,
     invisibleTicksLeft: 0,
     flightTicksLeft: 0,
     ...over

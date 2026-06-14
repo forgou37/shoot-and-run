@@ -12,7 +12,7 @@ Everything that is not in the current spec lives here. New ideas land here first
 | 003 | Full roster: gamepads, 3–4 players, teams/FF, title/lobby/pause — **done** (specs/003-roster.md) | 002 done ✓ |
 | 006 | Art pass I: sprite pipeline + player animation — **done** (specs/006-art-pass.md; Claude generates art via Aseprite MCP, owner art-directs) | 000–002 done ✓ (hard rule 6) |
 | 007 | Art pass II: jungle environment (tileset, background, chest, arena-002 "canopy") + arrow sprites — **done** (specs/007-art-pass-2.md; owner-directed 2026-06-13) | 006 done ✓ |
-| 004 | Real bots: heuristic AI archers playable from the lobby (FFA/teams, 3 difficulties) — **spec'd** (specs/004-bots.md; couch-play core, headless eval runner pushed to 005) | game is fun by hand |
+| 004 | Real bots: heuristic AI archers playable from the lobby (FFA/teams, 3 difficulties) — **done** (specs/004-bots.md; couch-play core, headless eval runner pushed to 005) | game is fun by hand ✓ |
 | 005 | AI pipeline: headless `run-rounds` eval runner → arena generator + metrics + judge loop | 004 done |
 
 ---

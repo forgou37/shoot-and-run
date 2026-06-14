@@ -70,6 +70,7 @@ Everything a designer (or a future LLM generator) might touch is a data file, ne
 | `content/arenas/*.json` | One arena per file: tile grid, spawn points, metadata. Conforms to the arena schema in `packages/sim`. |
 | `content/tuning.json` | Every game-feel number. The only place tunables exist. Shell-only blocks `juice`, `input` (stickDeadzone), `ui` (lobbyCountdownMs) live here too — the sim ignores them. |
 | `content/players.json` | `{ slots: [{slot,name,color} ×4], keyboards: [KeyBindings ×2] }` — slot identities plus the two keyboard binding profiles. Devices bind to slots in the lobby, not here. |
+| `content/bots.json` | `{ difficulties: { easy/normal/hard: {reactionDelayTicks, aimTolerance, aimErrorChance, dodgeChance, dashChance} } }` — bot difficulty presets (spec 004). Validated in `packages/bots`; never imported by the sim. |
 
 Hot-reload: the Phaser shell watches `content/tuning.json` via Vite HMR in dev and pushes the new tuning object into the running sim. Note: hot-reloading mid-round breaks determinism for that run — fine in dev; replays/tests always pin the tuning snapshot at init.
 
@@ -80,7 +81,7 @@ arcade-game/
 ├─ CLAUDE.md
 ├─ package.json               # npm workspaces root: packages/*
 ├─ tsconfig.base.json
-├─ .dependency-cruiser.cjs    # enforces sim purity (hard rule 2)
+├─ .dependency-cruiser.cjs    # enforces sim + bots purity (hard rule 2)
 ├─ specs/
 │  ├─ 000-baseline.md
 │  └─ backlog.md
@@ -91,7 +92,8 @@ arcade-game/
 │  ├─ arenas/arena-001.json   # "crossfire" — sim-test + golden-log fixture
 │  ├─ arenas/arena-002.json   # "canopy" — jungle arena the shell boots into
 │  ├─ tuning.json
-│  └─ players.json
+│  ├─ players.json
+│  └─ bots.json               # bot difficulty presets (spec 004)
 ├─ packages/
 │  ├─ sim/
 │  │  ├─ src/
@@ -107,6 +109,12 @@ arcade-game/
 │  │  │  └─ events.ts         # SimEvent definitions
 │  │  └─ test/
 │  │     └─ determinism.test.ts
+│  ├─ bots/                   # spec 004: heuristic AI archers (pure, headless, imports only sim)
+│  │  └─ src/
+│  │     ├─ types.ts          # BotPolicy/BotContext/BotDifficulty contract
+│  │     ├─ sense.ts          # wrap-aware perception primitives
+│  │     ├─ bot.ts            # behavior stack (dodge→engage→scavenge), makeBot, botSeed
+│  │     └─ config.ts         # content/bots.json validator
 │  └─ game/
 │     ├─ index.html
 │     ├─ vite.config.ts
@@ -119,9 +127,9 @@ arcade-game/
 │        ├─ theme.ts          # pixel bitmap font: FreePixel→1-bit RetroFont atlas (buildPixelFont) + addPixelText/loadFont()
 │        ├─ test-api.ts       # dev-only window.__testApi (getPhase + match probes)
 │        ├─ scenes/           # BootScene, TitleScene, LobbyScene, ArenaScene (match + pause)
-│        ├─ input/            # InputDevice (keyboard/gamepad), hot-plug manager, edge reader, players.json/tuning parsers
+│        ├─ input/            # InputDevice (keyboard/gamepad/bot), hot-plug manager, edge reader, players.json/tuning parsers
 │        └─ render/           # sprite renderers (archer, arrows, jungle env); rect debug via ?rects=1
-└─ packages/pipeline/         # FUTURE (specs 004–005): bots, evals, generator. Do not create yet.
+└─ packages/pipeline/         # FUTURE (spec 005): evals + generator. Do not create yet. (bots landed in packages/bots, spec 004)
 ```
 
 ## Commands
@@ -132,11 +140,11 @@ Keep this section current as scripts change.
 |---|---|
 | `npm run dev` | Vite dev server for `packages/game` (tuning hot-reload from T0.5) |
 | `npm run build` | Type-check both packages + production Vite build |
-| `npm run typecheck` | `tsc --noEmit` over sim src (no Node/DOM types — purity), sim tests (Node types), and game |
-| `npm test` | All Vitest suites (sim tests run headless in Node) |
-| `npm run e2e` | Playwright suite (Chromium/SwiftShader, dev server, `window.__testApi`): shell smoke + lobby flow + gamepad shim |
-| `npm run lint` | ESLint, incl. sim determinism guards (no `Math.random`/`Date.now`/timers in sim) |
-| `npm run check:deps` | dependency-cruiser: fails if `packages/sim/src` imports anything outside itself |
+| `npm run typecheck` | `tsc --noEmit` over sim src + tests, bots src + tests (no Node/DOM types — purity), game, and e2e |
+| `npm test` | All Vitest suites (sim + bots tests run headless in Node) |
+| `npm run e2e` | Playwright suite (Chromium/SwiftShader, dev server, `window.__testApi`): shell smoke + lobby flow + gamepad shim + bots (`?bots=N` / lobby add-bot) |
+| `npm run lint` | ESLint, incl. sim + bots determinism guards (no `Math.random`/`Date.now`/timers) |
+| `npm run check:deps` | dependency-cruiser: fails if `packages/sim/src` or `packages/bots/src` imports anything outside itself (bots may import the sim) |
 | `npm run export:art` | Re-export all `assets/*.aseprite` → `packages/game/public/assets/` atlases (needs local Aseprite; exports are committed, CI never runs this) |
 
 Notes: `packages/sim` has no build step — its package `exports` points at `src/index.ts` and Vite/Vitest consume the TS source directly. Sim's tsconfig has no DOM lib, so `window`/`document` fail to typecheck there (first line of defense for hard rule 2).
@@ -147,7 +155,7 @@ One GitHub Actions workflow on every push (lands in T0.1): `npm ci` → typechec
 
 - Linux CI re-verifying the golden determinism log produced on the Windows dev machine doubles as the cross-OS float-determinism check backing Decision #3.
 - CD is static-only — no server component will ever exist: continuous deploy of green `main` builds to GitHub Pages or Cloudflare Pages (from spec 001, an always-playable playtest URL); tagged releases to itch.io via `butler` (later, once the game is fun).
-- Generated arenas (spec 004) arrive as commits and pass the exact same gate as hand-written content.
+- Generated arenas (spec 005) arrive as commits and pass the exact same gate as hand-written content.
 
 ## Decisions Log
 
@@ -172,3 +180,4 @@ Format: `Date | Scope | Decision | Reasoning | Alternatives rejected`
 | 2026-06-13 | e2e | T3.5 forces software WebGL (`--use-gl=angle --use-angle=swiftshader`) for Playwright; cross-scene `__testApi.getPhase()` installed at boot, match-only probes augmented by ArenaScene; gamepad e2e drives a player via an injected `navigator.getGamepads` shim | headless Chromium's GPU WebGL context drops and only lazily restores, stalling Phaser's first boot into the loader-less title scene; SwiftShader is deterministic across local Windows + Linux CI | bumping the boot timeout rejected: masks the stall without fixing it; Playwright gamepad emulation rejected: none exists, a shim is the standard approach |
 | 2026-06-14 | shell-text | All shell text renders via a runtime-generated 1-bit bitmap font (Phaser BitmapText + fixed-grid RetroFont) instead of live TTF canvas Text; FreePixel is rasterized once at boot into a thresholded glyph atlas (`buildPixelFont` in theme.ts), sampled NEAREST at integer scale, tinted per use, with 1px letter-spacing | a TTF drawn through the canvas 2D text API is always grayscale-anti-aliased, and those soft edges blur badly when the 320×240 buffer is nearest-upscaled ×N (the long-standing "blurry text" issue); a 1-bit atlas sampled NEAREST stays pixel-crisp at any integer scale in every browser | keeping TTF `Text` rejected: AA blur is unfixable under the upscale regardless of font choice; committing a pre-baked atlas PNG rejected: runtime generation needs no binary asset or headless-canvas dep and regenerates from the TTF |
 | 2026-06-14 | sim-movement | Owner-directed wall jump: while airborne and clinging to a wall (pressing into an adjacent wall, the wall-slide state), a jump launches off it at exactly 45° — equal away-from-wall and upward components, both `wallJumpSpeed` — and turns to face away. Reuses `PlayerInput.jump` (no new binding); ranks below a ground/coyote jump and above a mid-air flap. Air control is suspended for `wallJumpControlLockMs` after the launch (new `wallJumpLockTicksLeft` state, cleared on landing) so the existing air-control clamp doesn't snap the horizontal launch speed back to `runSpeed` within a tick and flatten the arc; the lock leaves the parabola (gravity still applies). Both numbers in `content/tuning.json`; golden FFA log stayed byte-identical (the arena-001 bot round ends on an early grounded kill, so no airborne mechanic fires) | requested wall mobility — climb/reposition off walls; 45° because owner specified it; the control lock is required for the angle to actually read on screen, otherwise it collapses to ~vertical+runSpeed; all rules stay in the pure sim so determinism + the bot/eval pipeline are unaffected | a single up-only wall kick rejected: owner asked for 45°; storing the launch lock shell-side rejected: it's gameplay, belongs in the sim; reusing `wallSlideSpeed`/`jumpVelocity` for the launch rejected: the launch is its own feel knob |
+| 2026-06-14 | bots | Spec 004: real bots live in a new pure `packages/bots` and are presented to the match as an `InputDevice` (`BotDevice`, `kind:"bot"`) whose `sample()` runs a heuristic `(state, slot, ctx) → PlayerInput` policy over the live `sim.state`; the sim, match scene, kills, rounds and teams are untouched. Each bot owns a mulberry32 seeded `botSeed(matchSeed, slot)` (never the sim's PRNG); behavior is a fixed priority stack (dodge→engage→scavenge) with all knobs in `content/bots.json` (easy/normal/hard). A `bots-purity` dependency-cruiser rule keeps `packages/bots/src` to sim-only imports. Headless eval `run-rounds` CLI deferred to spec 005 | bots are pure consumers of state and producers of input, so they belong outside the sim on the existing device seam — no rules change, determinism preserved, and the headless policy is exactly what the spec 005 eval pipeline will call; per-bot seeded RNG keeps bot-driven shell matches replayable | bots inside the sim rejected: they read state but aren't game rules, and would couple AI to the deterministic core; `Math.random` for aim error rejected: breaks replay — seeded PRNG instead; creating `packages/pipeline` now rejected: only bots are needed for couch play, evals/generator stay future |
