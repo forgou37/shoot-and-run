@@ -30,10 +30,12 @@ export default tseslint.config(
     }
   },
   {
-    // Hard rules 2 and 4 (CLAUDE.md): sim is engine-free and deterministic.
-    // The missing DOM lib in packages/sim/tsconfig.json is the primary guard;
-    // these rules catch the cases tsc lets through.
-    files: ["packages/sim/src/**/*.ts"],
+    // Hard rules 2 and 4 (CLAUDE.md): sim is engine-free and deterministic, and
+    // spec 004's packages/bots inherits the same constraints (it must stay
+    // headless and deterministic for the eval pipeline). The missing DOM lib in
+    // their tsconfigs is the primary guard; these rules catch what tsc lets
+    // through (e.g. Math.random for aim error — bots use their own seeded PRNG).
+    files: ["packages/sim/src/**/*.ts", "packages/bots/src/**/*.ts"],
     rules: {
       "@typescript-eslint/no-explicit-any": "error",
       "no-restricted-globals": [
