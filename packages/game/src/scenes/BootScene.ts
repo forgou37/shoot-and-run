@@ -1,7 +1,10 @@
+import { botDifficulty, parseBotConfig } from "@shoot-and-run/bots";
 import Phaser from "phaser";
+import botsJson from "../../../../content/bots.json";
 import playersJson from "../../../../content/players.json";
 import tuningJson from "../../../../content/tuning.json";
 import { setAppContext } from "../app-context";
+import { BotDevice } from "../input/bot-device";
 import { DeviceManager, windowGamepadHost } from "../input/device-manager";
 import { KeyboardInput } from "../input/keyboard";
 import { parsePlayersConfig } from "../input/players-config";
@@ -30,6 +33,7 @@ export class BootScene extends Phaser.Scene {
     buildPixelFont(this);
 
     const players = parsePlayersConfig(playersJson);
+    const botConfig = parseBotConfig(botsJson);
     const keyboard = new KeyboardInput(window);
     const manager = new DeviceManager(
       windowGamepadHost(window),
@@ -41,13 +45,26 @@ export class BootScene extends Phaser.Scene {
       manager,
       keyboard,
       slots: players.slots,
-      lobbyCountdownMs: parseUiSettings(tuningJson).lobbyCountdownMs
+      lobbyCountdownMs: parseUiSettings(tuningJson).lobbyCountdownMs,
+      botConfig
     });
     installBaseTestApi(this.game);
 
-    const quickstart = new URLSearchParams(window.location.search).get("quickstart") === "1";
+    // ?bots=N (1–3) boots a quick human-vs-bots match for dev/e2e, optionally
+    // ?difficulty=easy|normal|hard; it implies quickstart. ?quickstart=1 alone
+    // is still the original two-keyboard match.
+    const params = new URLSearchParams(window.location.search);
+    const botCount = Math.max(0, Math.min(3, Number.parseInt(params.get("bots") ?? "", 10) || 0));
+    const quickstart = params.get("quickstart") === "1" || botCount > 0;
     if (quickstart) {
-      this.scene.start("arena", quickstartConfig(manager.devices(), players.slots, QUICKSTART_SEED));
+      const requested = params.get("difficulty") ?? "normal";
+      const name = requested in botConfig.difficulties ? requested : Object.keys(botConfig.difficulties)[0]!;
+      const difficulty = botDifficulty(botConfig, name);
+      const botDevices = Array.from({ length: botCount }, (_, i) => new BotDevice(i, name, difficulty));
+      this.scene.start(
+        "arena",
+        quickstartConfig(manager.devices(), players.slots, QUICKSTART_SEED, botDevices)
+      );
     } else {
       this.scene.start("title");
     }

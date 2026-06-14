@@ -1,3 +1,4 @@
+import type { BotConfig } from "@shoot-and-run/bots";
 import type Phaser from "phaser";
 import type { DeviceManager } from "./input/device-manager";
 import type { KeyboardInput } from "./input/keyboard";
@@ -14,6 +15,8 @@ export interface AppContext {
   /** Slot identities (name/color) from content/players.json. */
   slots: SlotConfig[];
   lobbyCountdownMs: number;
+  /** Bot difficulty presets from content/bots.json (spec 004). */
+  botConfig: BotConfig;
 }
 
 const KEY = "appContext";

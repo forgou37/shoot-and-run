@@ -18,15 +18,21 @@ export interface MatchConfig {
   seed: number;
 }
 
-/** Default 2-keyboard FFA roster — the spec 000 boot path and ?quickstart=1. */
+/**
+ * Default FFA roster for the spec 000 boot path and ?quickstart=1. With no bot
+ * devices this is the original two-keyboard match; with bots (?bots=N) it is one
+ * keyboard plus the bot devices, filling slots in order up to the roster cap.
+ */
 export function quickstartConfig(
   devices: readonly InputDevice[],
   slots: SlotConfig[],
-  seed: number
+  seed: number,
+  botDevices: readonly InputDevice[] = []
 ): MatchConfig {
-  const roster: RosterEntry[] = devices
-    .filter((d) => d.kind === "keyboard")
-    .slice(0, 2)
+  const humanCount = botDevices.length > 0 ? 1 : 2;
+  const keyboards = devices.filter((d) => d.kind === "keyboard").slice(0, humanCount);
+  const roster: RosterEntry[] = [...keyboards, ...botDevices]
+    .slice(0, slots.length)
     .map((device, i) => ({ slot: slots[i]!, device, team: null }));
   return { roster, friendlyFire: true, seed };
 }

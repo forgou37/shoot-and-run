@@ -9,6 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@shoot-and-run/bots": "*",
     "@shoot-and-run/sim": "*",
     "phaser": "^3.90.0"
   },

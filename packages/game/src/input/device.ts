@@ -8,7 +8,7 @@ import type { KeyBindings } from "./players-config";
  * devices→slots in join order; the match samples each assigned device per tick.
  * The sim only ever sees PlayerInput, never a device.
  */
-export type DeviceKind = "keyboard" | "pad";
+export type DeviceKind = "keyboard" | "pad" | "bot";
 
 export interface InputDevice {
   /** Stable id, e.g. "keyboard:0", "pad:2". */

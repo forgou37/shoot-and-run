@@ -20,6 +20,7 @@ import {
 import arenaJson from "../../../../content/arenas/arena-002.json";
 import tuningJson from "../../../../content/tuning.json";
 import { getAppContext, type AppContext } from "../app-context";
+import { BotDevice } from "../input/bot-device";
 import type { InputDevice } from "../input/device";
 import { EdgeReader, type DeviceEdges } from "../input/menu-input";
 import type { SlotConfig } from "../input/players-config";
@@ -132,6 +133,13 @@ export class ArenaScene extends Phaser.Scene {
       seed: this.matchConfig.seed,
       friendlyFire: this.matchConfig.friendlyFire
     });
+    // Bind any bot devices to the running sim: the lobby/quickstart built them
+    // before the sim existed, so only now are slot, seed and arena available.
+    for (const r of this.matchConfig.roster) {
+      if (r.device instanceof BotDevice) {
+        r.device.attach(() => this.sim.state, r.slot.slot, this.matchConfig.seed, arena);
+      }
+    }
     this.prev = this.snapshot();
 
     this.juice = parseJuice(tuningJson);
