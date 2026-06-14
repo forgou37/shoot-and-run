@@ -1,9 +1,9 @@
 {
   "slots": [
-    { "slot": 0, "name": "P1", "color": "#4fc3f7" },
-    { "slot": 1, "name": "P2", "color": "#ff8a65" },
-    { "slot": 2, "name": "P3", "color": "#81c784" },
-    { "slot": 3, "name": "P4", "color": "#ba68c8" }
+    { "slot": 0, "name": "Lyosha", "color": "#4fc3f7" },
+    { "slot": 1, "name": "Igor B", "color": "#ff8a65" },
+    { "slot": 2, "name": "Igor Sh", "color": "#81c784" },
+    { "slot": 3, "name": "Maks", "color": "#ba68c8" }
   ],
   "keyboards": [
     { "left": "KeyA", "right": "KeyD", "up": "KeyW", "down": "KeyS", "jump": "KeyG", "shoot": "KeyF", "dash": "ShiftLeft" },

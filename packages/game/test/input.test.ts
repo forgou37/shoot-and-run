@@ -28,7 +28,7 @@ describe("parsePlayersConfig (spec 003 reshape)", () => {
   it("accepts content/players.json: 4 slots + 2 keyboard profiles", () => {
     const cfg = parsePlayersConfig(playersJson);
     expect(cfg.slots.map((s) => s.slot)).toEqual([0, 1, 2, 3]);
-    expect(cfg.slots[0]).toEqual({ slot: 0, name: "P1", color: "#4fc3f7" });
+    expect(cfg.slots[0]).toEqual({ slot: 0, name: "Lyosha", color: "#4fc3f7" });
     expect(cfg.keyboards).toHaveLength(2);
     expect(cfg.keyboards[0]!.right).toBe("KeyD");
     expect(cfg.keyboards[1]!.left).toBe("ArrowLeft");

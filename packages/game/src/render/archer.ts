@@ -15,7 +15,8 @@ import { orderedFrameNames, type AsepriteData } from "./aseprite-data";
  * READS sim state — selection below is cosmetic mapping, not game logic.
  */
 
-const ATLAS_KEY = "archer";
+/** Canonical archer atlas key; per-slot recolors are `${ARCHER_ATLAS_KEY}-${slot}`. */
+export const ARCHER_ATLAS_KEY = "archer";
 const DATA_KEY = "archer-data";
 
 /** The P1 ramp baked into the canonical sheet: [shadow, base, highlight]. */
@@ -44,8 +45,59 @@ const PLAYBACK: Record<ArcherTag, { repeat: number; yoyo: boolean }> = {
 };
 
 export function loadArcherAssets(loader: Phaser.Loader.LoaderPlugin): void {
-  loader.atlas(ATLAS_KEY, "assets/archer.png", "assets/archer.json");
+  loader.atlas(ARCHER_ATLAS_KEY, "assets/archer.png", "assets/archer.json");
   loader.json(DATA_KEY, "assets/archer.json");
+}
+
+/** First idle frame name — a good static portrait pose (lobby/menus). Requires
+ *  the archer atlas data to be loaded (loadArcherAssets). */
+export function archerIdleFrameName(scene: Phaser.Scene): string {
+  const data = scene.cache.json.get(DATA_KEY) as AsepriteData | undefined;
+  const name = data && orderedFrameNames(data)[0];
+  if (!name) throw new Error("archer atlas data missing — re-run `npm run export:art`");
+  return name;
+}
+
+/**
+ * Build (once) a per-slot recolored archer texture and return its key. Slot 0 is
+ * the canonical sheet untouched; other slots recolor the canonical
+ * [shadow, base, highlight] ramp toward the slot color. The recolored canvas
+ * mirrors the canonical frame definitions and is sampled NEAREST so it stays
+ * crisp when scaled. Reused by the in-match renderer and the lobby portraits.
+ * Idempotent: textures are game-global and survive scene restarts (e.g. lobby →
+ * match → lobby), so an existing recolor is returned rather than rebuilt.
+ */
+export function recolorArcherTexture(scene: Phaser.Scene, slot: number, color: string): string {
+  if (slot === 0) return ARCHER_ATLAS_KEY;
+  const key = `${ARCHER_ATLAS_KEY}-${String(slot)}`;
+  if (scene.textures.exists(key)) return key;
+  const canonical = scene.textures.get(ARCHER_ATLAS_KEY);
+  const source = canonical.getSourceImage() as HTMLImageElement | HTMLCanvasElement;
+  const canvas = scene.textures.createCanvas(key, source.width, source.height);
+  if (!canvas) throw new Error(`texture key collision: ${key}`);
+  canvas.context.drawImage(source, 0, 0);
+  const image = canvas.context.getImageData(0, 0, source.width, source.height);
+  const ramp = slotRamp(color);
+  const map = new Map<number, readonly [number, number, number]>();
+  CANONICAL_RAMP.forEach((hex, i) => map.set(packHex(hex), ramp[i]!));
+  const px = image.data;
+  for (let i = 0; i < px.length; i += 4) {
+    if (px[i + 3] === 0) continue;
+    const replacement = map.get((px[i]! << 16) | (px[i + 1]! << 8) | px[i + 2]!);
+    if (replacement) {
+      px[i] = replacement[0];
+      px[i + 1] = replacement[1];
+      px[i + 2] = replacement[2];
+    }
+  }
+  canvas.context.putImageData(image, 0, 0);
+  canvas.refresh();
+  canvas.setFilter(Phaser.Textures.FilterMode.NEAREST);
+  for (const name of canonical.getFrameNames()) {
+    const f = canonical.get(name);
+    canvas.add(name, 0, f.cutX, f.cutY, f.cutWidth, f.cutHeight);
+  }
+  return key;
 }
 
 export class ArcherRenderer {
@@ -61,7 +113,7 @@ export class ArcherRenderer {
     }
     const frameNames = orderedFrameNames(data);
     for (const s of slots) {
-      const textureKey = this.buildSlotTexture(s.slot, s.color);
+      const textureKey = recolorArcherTexture(this.scene, s.slot, s.color);
       this.buildSlotAnims(s.slot, textureKey, data, frameNames);
       const quad: Phaser.GameObjects.Sprite[] = [];
       for (let m = 0; m < QUAD; m++) {
@@ -131,43 +183,6 @@ export class ArcherRenderer {
     if (!p.alive) return "death";
     if (!p.grounded) return p.vy < 0 ? "jump" : "fall";
     return Math.abs(p.vx) > 1 ? "run" : "idle";
-  }
-
-  /** Recolor the canonical ramp toward the slot color; slot 0 (the ramp the
-   *  sheet is drawn in) uses the canonical texture untouched. */
-  private buildSlotTexture(slot: number, color: string): string {
-    if (slot === 0) return ATLAS_KEY;
-    const key = `${ATLAS_KEY}-${String(slot)}`;
-    // Textures are game-global and survive scene restarts (e.g. returning to a
-    // match from the lobby), so reuse the recolor built for this slot earlier
-    // rather than colliding on the key.
-    if (this.scene.textures.exists(key)) return key;
-    const canonical = this.scene.textures.get(ATLAS_KEY);
-    const source = canonical.getSourceImage() as HTMLImageElement | HTMLCanvasElement;
-    const canvas = this.scene.textures.createCanvas(key, source.width, source.height);
-    if (!canvas) throw new Error(`texture key collision: ${key}`);
-    canvas.context.drawImage(source, 0, 0);
-    const image = canvas.context.getImageData(0, 0, source.width, source.height);
-    const ramp = slotRamp(color);
-    const map = new Map<number, readonly [number, number, number]>();
-    CANONICAL_RAMP.forEach((hex, i) => map.set(packHex(hex), ramp[i]!));
-    const px = image.data;
-    for (let i = 0; i < px.length; i += 4) {
-      if (px[i + 3] === 0) continue;
-      const replacement = map.get((px[i]! << 16) | (px[i + 1]! << 8) | px[i + 2]!);
-      if (replacement) {
-        px[i] = replacement[0];
-        px[i + 1] = replacement[1];
-        px[i + 2] = replacement[2];
-      }
-    }
-    canvas.context.putImageData(image, 0, 0);
-    canvas.refresh();
-    for (const name of canonical.getFrameNames()) {
-      const f = canonical.get(name);
-      canvas.add(name, 0, f.cutX, f.cutY, f.cutWidth, f.cutHeight);
-    }
-    return key;
   }
 
   /** Mirrors Phaser's createFromAseprite timing: base rate from the tag's
