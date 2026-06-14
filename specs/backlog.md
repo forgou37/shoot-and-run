@@ -12,8 +12,8 @@ Everything that is not in the current spec lives here. New ideas land here first
 | 003 | Full roster: gamepads, 3–4 players, teams/FF, title/lobby/pause — **done** (specs/003-roster.md) | 002 done ✓ |
 | 006 | Art pass I: sprite pipeline + player animation — **done** (specs/006-art-pass.md; Claude generates art via Aseprite MCP, owner art-directs) | 000–002 done ✓ (hard rule 6) |
 | 007 | Art pass II: jungle environment (tileset, background, chest, arena-002 "canopy") + arrow sprites — **done** (specs/007-art-pass-2.md; owner-directed 2026-06-13) | 006 done ✓ |
-| 004 | Scripted bots + headless eval harness | game is fun by hand |
-| 005 | AI arena-generation pipeline: generator + metrics + judge loop | 004 done |
+| 004 | Real bots: heuristic AI archers playable from the lobby (FFA/teams, 3 difficulties) — **spec'd** (specs/004-bots.md; couch-play core, headless eval runner pushed to 005) | game is fun by hand |
+| 005 | AI pipeline: headless `run-rounds` eval runner → arena generator + metrics + judge loop | 004 done |
 
 ---
 
@@ -79,21 +79,19 @@ Game-rule e2e stays headless in `packages/sim`; browser e2e covers only shell gl
 - Crash-safe tuning hot-reload (validate before applying).
 - In-game debug overlay: hitboxes, sim tick, event ticker, input viewer.
 
-## Scripted bots (spec 004)
+## Real bots (spec 004 — see specs/004-bots.md)
 
-Prerequisite for the AI pipeline (spec 005); also useful for solo playtesting.
+Prerequisite for the AI pipeline (spec 005); also useful for solo playtesting. Now spec'd as couch-play core (bots as `InputDevice`s over a pure policy in `packages/bots`). Remaining backlog items below were deferred from 004 to 005:
 
-- Bot policy interface: `(state, slot, rng) → PlayerInput`, pure and deterministic given the sim's PRNG stream. Lives in `packages/pipeline` (or `packages/bots`) — NOT in sim; sim only consumes inputs.
-- Behaviors in increasing order: patrol/random-walk, arrow-seeker (path to nearest pickup), hunter (chase + line-of-sight shot), survivor (evade + opportunistic stomp). No pathfinding gold-plating — single-screen arenas allow simple heuristics.
-- Difficulty knobs (reaction delay ticks, aim error via PRNG) as data.
-- Headless runner CLI: `run-rounds --arena X --bots A,B --rounds N --seed S` → JSONL event logs + summary stats. This is the eval harness substrate.
+- Headless runner CLI: `run-rounds --arena X --bots A,B --rounds N --seed S` → JSONL event logs + summary stats. This is the eval harness substrate — **moved to spec 005** (its first task).
+- More bot behaviors / a 4th difficulty tier / per-arena bot tuning — revisit after 004 playtesting.
 
 ## AI arena-generation pipeline (spec 005) — see "Future direction" in the project brief
 
 Offline pipeline, target only after the game is fun to play by hand (prereq: bots from spec 004). Architecture is already shaped for it: arenas are data files validated by sim code, and the sim exposes `createSim(arena, tuning, players, seed) / step / events / state`.
 
 1. **Generator.** LLM agent emits candidate arenas as structured JSON conforming to the arena schema (tile grid + spawns). Schema validation (already in `packages/sim`) rejects malformed output before any simulation is spent; structural pre-checks (connectivity given wrapping, spawn fairness by symmetry, open-space ratio) filter cheap failures.
-2. **Headless evals.** For each candidate: N rounds (varied seeds, varied bot pairings from spec 003) via the headless runner. Output: per-round event logs.
+2. **Headless evals.** For each candidate: N rounds (varied seeds, varied bot pairings from spec 004) via the headless runner. Output: per-round event logs.
 3. **Balance metrics** (computed from event logs — this is why every meaningful occurrence must be a SimEvent):
    - Kill distribution per spawn point (spawn fairness)
    - Round length distribution vs the 10–60 s envelope
