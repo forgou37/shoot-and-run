@@ -25,6 +25,7 @@ export * from "./rng";
 export * from "./round";
 export * from "./state";
 export * from "./tuning";
+export * from "./wire";
 export type { SimSnapshot } from "./snapshot";
 
 export interface PlayerSlotConfig {
