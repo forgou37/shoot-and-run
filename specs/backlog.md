@@ -14,6 +14,12 @@ Everything that is not in the current spec lives here. New ideas land here first
 | 007 | Art pass II: jungle environment (tileset, background, chest, arena-002 "canopy") + arrow sprites — **done** (specs/007-art-pass-2.md; owner-directed 2026-06-13) | 006 done ✓ |
 | 004 | Real bots: heuristic AI archers playable from the lobby (FFA/teams, 3 difficulties) — **done** (specs/004-bots.md; couch-play core, headless eval runner pushed to 005) | game is fun by hand ✓ |
 | 005 | AI pipeline: headless `run-rounds` eval runner → arena generator + metrics + judge loop | 004 done |
+| 008 | Online multiplayer umbrella + netcode foundation (snapshot/restore, input serialization, determinism hardening) — **planning** (specs/008-netcode.md; owner reversed "online never" 2026-06-14) | 007 done ✓ |
+| 009 | Netcode session layer (`packages/net`): clock sync, input delay, jitter buffer, prediction/rollback over loopback | 008 |
+| 010 | Real transport + Cloudflare signaling (WebSocket adapter, Worker + Durable Object, room codes) | 009 |
+| 011 | Dedicated server (`packages/server` on a Durable Object) + browser prediction client — **first internet match** | 010 |
+| 012 | Player-hosted / listen-server: WebRTC DataChannel P2P, NAT traversal + TURN, host-leaving policy | 011 |
+| 013 | Netplay polish: lag-comp tuning, spectators, reconnection, metrics, anti-cheat posture, host migration | 012 |
 
 ---
 
@@ -105,5 +111,6 @@ Open items to resolve when speccing 004: candidate budget per iteration, metric 
 
 ## Explicitly never
 
-- Online multiplayer / netcode (unless the owner explicitly reverses this).
 - Copying TowerFall names, assets, or text.
+
+> Online multiplayer / netcode was here ("unless the owner explicitly reverses this"). **Reversed by the owner 2026-06-14** → now the spec 008–013 endeavor (host-authoritative rollback, dedicated-first, Cloudflare-native). See specs/008-netcode.md.
