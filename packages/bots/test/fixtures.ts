@@ -1,4 +1,27 @@
-import type { ArrowState, PlayerState, SimState } from "@shoot-and-run/sim";
+import type { ArenaData, ArrowState, PlayerState, SimState } from "@shoot-and-run/sim";
+import type { BotContext, BotDifficulty } from "../src/types";
+import { createRng } from "@shoot-and-run/sim";
+
+/** An open arena (no solid tiles) for behavior tests that don't exercise walls. */
+export function blankArena(): ArenaData {
+  return { name: "blank", tiles: Array.from({ length: 15 }, () => ".".repeat(20)), spawns: [] };
+}
+
+/** A difficulty with sensible defaults; override the knob under test. */
+export function mkDifficulty(over: Partial<BotDifficulty> = {}): BotDifficulty {
+  return {
+    reactionDelayTicks: 1,
+    aimTolerance: 8,
+    aimErrorChance: 0,
+    dodgeChance: 0,
+    dashChance: 0,
+    ...over
+  };
+}
+
+export function mkCtx(difficulty: BotDifficulty, seed = 1, arena: ArenaData = blankArena()): BotContext {
+  return { rng: createRng(seed), difficulty, arena };
+}
 
 /** A fully-typed player at rest; override only what a test cares about. */
 export function mkPlayer(over: Partial<PlayerState> & Pick<PlayerState, "slot" | "x" | "y">): PlayerState {

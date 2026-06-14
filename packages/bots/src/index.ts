@@ -9,3 +9,5 @@
 export const BOTS_VERSION = "0.0.0";
 
 export * from "./types";
+export { botDifficulty, parseBotConfig, parseBotDifficulty, type BotConfig } from "./config";
+export { botSeed, botTick, createBotMemory, makeBot, type MakeBotOptions } from "./bot";
