@@ -1,0 +1,35 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - name: Package web build
+        run: |
+          cd packages/game/dist
+          zip -r "$GITHUB_WORKSPACE/shoot-and-run-${GITHUB_REF_NAME}.zip" .
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" \
+            "shoot-and-run-${GITHUB_REF_NAME}.zip" \
+            --title "${GITHUB_REF_NAME}" \
+            --generate-notes
+      # Deploy is intentionally NOT wired here: the static-host target is still
+      # owner-decided (Pages needs a public/paid repo; Cloudflare needs an account
+      # call — see the CLAUDE.md Decisions Log). Add the deploy step once chosen.

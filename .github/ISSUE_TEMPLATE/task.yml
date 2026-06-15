@@ -1,0 +1,37 @@
+name: Task
+description: A unit of work — a spec task, fix, or chore.
+title: "[Task] "
+labels: ["task"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem / goal
+      description: What needs to happen and why. One or two sentences.
+    validations:
+      required: true
+  - type: input
+    id: spec
+    attributes:
+      label: Spec / source
+      description: Link the spec under `specs/` (or the backlog item) this comes from, if any.
+      placeholder: specs/008-netcode.md
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: Concrete, checkable conditions for "done".
+      value: |
+        - [ ]
+        - [ ]
+    validations:
+      required: true
+  - type: checkboxes
+    id: dod
+    attributes:
+      label: Definition of Done (see CONTRIBUTING.md)
+      options:
+        - label: Tests added/updated; local gate green (typecheck, lint, check:deps, test, build)
+        - label: Determinism preserved — golden log byte-identical or regenerated with a logged reason (hard rule 4)
+        - label: Sim purity (hard rule 2) and tuning-is-data (hard rule 3) held
+        - label: "/code-review + /security-review run; CLAUDE.md updated if a non-trivial choice was made"
