@@ -67,6 +67,23 @@ export function createHostRuntime(config: HostRuntimeConfig): HostRuntimeHandle 
   const expected = config.expectedClients ?? config.players.length;
   const playerCount = config.players.length;
 
+  // Contract enforced loudly at init: clients are assigned slots in connection
+  // order and the canonical sim addresses players by ARRAY INDEX, while the
+  // client rebuilds a dense `{slot:i}` roster from `playerCount`. So the host's
+  // roster must use dense, in-order slots (`players[i].slot === i`), or a client's
+  // input would route to the wrong sim player. And the start gate can only ever
+  // see at most `playerCount` valid connections, so `expected` must fit the roster.
+  if (!Number.isInteger(expected) || expected < 1 || expected > playerCount) {
+    throw new Error(`HostRuntime: expectedClients must be an integer in [1, ${String(playerCount)}]`);
+  }
+  config.players.forEach((p, i) => {
+    if (p.slot !== i) {
+      throw new Error(
+        `HostRuntime: roster must use dense in-order slots — players[${String(i)}].slot=${String(p.slot)}, expected ${String(i)}`
+      );
+    }
+  });
+
   /** clientId -> its transport, for the host's per-client send. */
   const transports = new Map<string, Transport>();
   let connections = 0;

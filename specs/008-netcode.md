@@ -316,3 +316,11 @@ Playwright two-page online test with the dev host as a second `webServer`; asser
 - Over-the-wire content/tuning negotiation, and late/mid-session join beyond the existing snapshot `resync` (011+).
 - TCP head-of-line mitigation — 010 documents the caveat; the unreliable transport is 012.
 - Touching `packages/sim` or regenerating any golden artifact (this phase needs neither).
+
+### Post-implementation review notes (deferred, non-blocking)
+
+`/code-review` (multi-angle, recall mode) + `/security-review` ran on the landed branch. The core was confirmed solid — confirmed state stays byte-identical to the host across cap stalls, reorder/dup/stale authoritative, multi-remote mispredicts, 4-player, resync, and high-loss/jitter; security review found no exploitable surface (the untrusted codec is bounds-checked; no XSS/secret/auth sink). Two findings were **fixed in a follow-up** (HostRuntime now validates a dense, in-range roster at init; the online scene snaps interpolation instead of smearing a multi-tick prediction jump). Three were **consciously deferred** as non-correctness (convergence is unaffected):
+
+- **Bootstrap input loss before clock sync.** Until the first ack, the client leads off `confirmedTick` (which lags real host time by ~latency), so the local player's opening inputs for ~`latency`+`inputDelay` ticks are tagged late and repeat-last-filled by the host. Negligible on localhost (sub-tick latency); revisit when clock/timing is hardened for real RTT in **011**.
+- **Interpolation teleport on a rollback correction.** Authoritative/snapshot messages arrive between frames and can roll the predicted sim back after `prev` was captured, so the next frame interpolates across the jump (inherent to prediction; self-heals next tick). Visual smoothing belongs to **013** (polish).
+- **Pre-open datagrams dropped if the socket fails mid-handshake.** Benign — the connection is already terminal and the protocol tolerates loss; the scene shows "Disconnected".

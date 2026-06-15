@@ -137,8 +137,13 @@ export class OnlineArenaScene extends Phaser.Scene {
   /** One fixed step: sample the local input, predict + send via the session. */
   private readonly doNetTick = (): void => {
     const before = this.session.predictedState();
+    const beforeTick = this.session.predictedTick;
     this.prev = before ? this.snapshotPositions(before) : null;
     const events = this.session.tick(this.localDevice.sample());
+    // A single tick() can advance prediction by >1 tick (startup lead, or
+    // catch-up after a rollback-cap stall). One `prev` can't interpolate a
+    // multi-tick jump, so snap to the current state instead of smearing across it.
+    if (this.session.predictedTick - beforeTick > 1) this.prev = null;
     if (events.length > 0) this.archers.onEvents(events);
     this.recordConfirmedHash();
   };
