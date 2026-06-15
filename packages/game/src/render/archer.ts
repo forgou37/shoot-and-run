@@ -7,6 +7,7 @@ import {
   type SimEvent
 } from "@shoot-and-run/sim";
 import { orderedFrameNames, type AsepriteData } from "./aseprite-data";
+import { SHIELD_BUBBLE_KEY } from "./boosters";
 
 /**
  * Player sprite rendering (spec 006). One canonical archer atlas (P1 ramp);
@@ -29,6 +30,9 @@ const SPRITE_SIZE = 16;
 /** Mirror copies drawn when the sprite straddles a wrapping edge (parity with
  *  drawWrappedRect): main + up to 3 mirrors. */
 const QUAD = 4;
+/** Shield bubble (spec 014): a ~20px ring drawn around a `shielded` player. */
+const BUBBLE_HALF = 10;
+const DEPTH_SHIELD = 3;
 
 export const ARCHER_TAGS = ["idle", "run", "jump", "fall", "shoot", "death"] as const;
 export type ArcherTag = (typeof ARCHER_TAGS)[number];
@@ -102,6 +106,11 @@ export function recolorArcherTexture(scene: Phaser.Scene, slot: number, color: s
 
 export class ArcherRenderer {
   private readonly quads: Phaser.GameObjects.Sprite[][] = [];
+  /** Per-slot shield bubble wrap-quad + its last drawn center (for the pop FX). */
+  private readonly shieldQuads: Phaser.GameObjects.Image[][] = [];
+  private readonly shieldPos: { x: number; y: number }[] = [];
+  private shieldPop: Phaser.GameObjects.Image | null = null;
+  private readonly hasShieldTex: boolean;
 
   constructor(
     private readonly scene: Phaser.Scene,
@@ -123,15 +132,37 @@ export class ArcherRenderer {
       }
       this.quads.push(quad);
     }
+
+    // Shield bubbles (spec 014): one wrap-quad per slot + a shared pop sprite.
+    // Guarded so scenes that don't load the bubble texture still construct.
+    this.hasShieldTex = scene.textures.exists(SHIELD_BUBBLE_KEY);
+    if (this.hasShieldTex) {
+      for (let i = 0; i < slots.length; i++) {
+        this.shieldQuads.push(
+          Array.from({ length: QUAD }, () =>
+            scene.add.image(0, 0, SHIELD_BUBBLE_KEY).setDepth(DEPTH_SHIELD).setVisible(false)
+          )
+        );
+        this.shieldPos.push({ x: 0, y: 0 });
+      }
+      this.shieldPop = scene.add
+        .image(0, 0, SHIELD_BUBBLE_KEY)
+        .setDepth(DEPTH_SHIELD)
+        .setVisible(false);
+    }
   }
 
   /** Cosmetic one-shots driven by sim events (spec 006 T6.3): `shoot` plays
    *  on every arrow_fired; death is driven from state in update(). */
   onEvents(events: readonly SimEvent[]): void {
     for (const e of events) {
-      if (e.type !== "arrow_fired") continue;
-      const idx = this.slots.findIndex((s) => s.slot === e.playerSlot);
-      this.quads[idx]?.[0]?.play(animKey(e.playerSlot, "shoot"));
+      if (e.type === "arrow_fired") {
+        const idx = this.slots.findIndex((s) => s.slot === e.playerSlot);
+        this.quads[idx]?.[0]?.play(animKey(e.playerSlot, "shoot"));
+      } else if (e.type === "shield_blocked") {
+        const idx = this.slots.findIndex((s) => s.slot === e.slot);
+        if (idx >= 0) this.popShield(idx);
+      }
     }
   }
 
@@ -165,6 +196,54 @@ export class ArcherRenderer {
       mirror.setTexture(main.texture.key, main.frame.name);
       this.place(mirror, x + off[0], bottomY + off[1], p, alpha);
     }
+
+    this.updateShield(p, slotIndex, x, y);
+  }
+
+  /** Shield bubble around a `shielded`, alive player — a gentle alpha pulse,
+   *  wrap-mirrored. Hidden otherwise; the pop FX is driven by shield_blocked. */
+  private updateShield(p: PlayerState, slotIndex: number, x: number, y: number): void {
+    if (!this.hasShieldTex) return;
+    const quad = this.shieldQuads[slotIndex]!;
+    if (!p.alive || !p.shielded) {
+      for (const img of quad) img.setVisible(false);
+      return;
+    }
+    this.shieldPos[slotIndex] = { x, y };
+    const pulse = 0.6 + 0.2 * Math.sin(this.scene.time.now / 220);
+    const xs = x - BUBBLE_HALF < 0 ? [ARENA_WIDTH] : x + BUBBLE_HALF > ARENA_WIDTH ? [-ARENA_WIDTH] : [];
+    const ys = y - BUBBLE_HALF < 0 ? [ARENA_HEIGHT] : y + BUBBLE_HALF > ARENA_HEIGHT ? [-ARENA_HEIGHT] : [];
+    const offsets: [number, number][] = [[0, 0]];
+    for (const dx of xs) offsets.push([dx, 0]);
+    for (const dy of ys) offsets.push([0, dy]);
+    if (xs.length > 0 && ys.length > 0) offsets.push([xs[0]!, ys[0]!]);
+    for (let m = 0; m < QUAD; m++) {
+      const img = quad[m]!;
+      const off = offsets[m];
+      if (!off) {
+        img.setVisible(false);
+        continue;
+      }
+      img.setPosition(x + off[0], y + off[1]).setAlpha(pulse).setVisible(true);
+    }
+  }
+
+  /** Brief expanding-fade pop when a shield absorbs a hit (shield_blocked). */
+  private popShield(slotIndex: number): void {
+    if (!this.shieldPop) return;
+    for (const img of this.shieldQuads[slotIndex] ?? []) img.setVisible(false);
+    const pos = this.shieldPos[slotIndex] ?? { x: 0, y: 0 };
+    const pop = this.shieldPop;
+    this.scene.tweens.killTweensOf(pop);
+    pop.setPosition(pos.x, pos.y).setScale(1).setAlpha(0.95).setVisible(true);
+    this.scene.tweens.add({
+      targets: pop,
+      scale: 2.2,
+      alpha: 0,
+      duration: 260,
+      ease: "Quad.Out",
+      onComplete: () => pop.setVisible(false)
+    });
   }
 
   private place(

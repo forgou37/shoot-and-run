@@ -2,6 +2,8 @@ import Phaser from "phaser";
 import {
   ARENA_HEIGHT,
   ARENA_WIDTH,
+  BOOSTER_HEIGHT,
+  BOOSTER_WIDTH,
   CHEST_HEIGHT,
   CHEST_WIDTH,
   PLAYER_HEIGHT,
@@ -14,6 +16,7 @@ import {
   wrapMod,
   type ArenaData,
   type ArrowKind,
+  type ChestContents,
   type Sim,
   type SimEvent
 } from "@shoot-and-run/sim";
@@ -30,6 +33,7 @@ import { addPixelText } from "../theme";
 import { FixedStepDriver } from "../loop";
 import { ARCHER_TAGS, ArcherRenderer, animKey, loadArcherAssets } from "../render/archer";
 import { ArrowRenderer, loadArrowAssets } from "../render/arrows";
+import { BoosterRenderer, loadBoosterAssets } from "../render/boosters";
 import { EnvironmentRenderer, loadEnvironmentAssets } from "../render/environment";
 
 const TILE_COLOR = 0x5a5a6e;
@@ -40,6 +44,16 @@ const ARROW_COLORS: Record<ArrowKind, number> = {
   laser: 0x40e8ff,
   bounce: 0xffd740
 };
+/** ?rects=1 fallback colors for floating boosters, by content. */
+const BOOSTER_COLORS: Record<ChestContents, number> = {
+  bomb: 0xff5252,
+  laser: 0x40e8ff,
+  bounce: 0xffd740,
+  invisibility: 0xcdbfe8,
+  flight: 0xe8f2ff,
+  shield: 0x4fa3e8
+};
+const SHIELD_RING_COLOR = 0x9fd8ff;
 const PAUSE_OPTIONS = ["Resume", "To Lobby", "To Title"] as const;
 
 interface PrevPositions {
@@ -90,6 +104,8 @@ export class ArenaScene extends Phaser.Scene {
   private env: EnvironmentRenderer | null = null;
   /** Sprite arrows (spec 007); null in `?rects=1` debug mode. */
   private arrowSprites: ArrowRenderer | null = null;
+  /** Floating booster sprites (spec 014); null in `?rects=1` debug mode. */
+  private boosters: BoosterRenderer | null = null;
 
   constructor() {
     super("arena");
@@ -114,6 +130,7 @@ export class ArenaScene extends Phaser.Scene {
     loadArcherAssets(this.load);
     loadEnvironmentAssets(this.load);
     loadArrowAssets(this.load);
+    loadBoosterAssets(this.load);
   }
 
   create(): void {
@@ -124,9 +141,10 @@ export class ArenaScene extends Phaser.Scene {
     // teams and friendly fire all flow in through the MatchConfig.
     this.slots = this.matchConfig.roster.map((r) => r.slot);
     this.devices = this.matchConfig.roster.map((r) => r.device);
+    const tuning = parseTuning(tuningJson);
     this.sim = createSim({
       arena,
-      tuning: parseTuning(tuningJson),
+      tuning,
       players: this.matchConfig.roster.map((r) =>
         r.team !== null ? { slot: r.slot.slot, team: r.team } : { slot: r.slot.slot }
       ),
@@ -153,6 +171,12 @@ export class ArenaScene extends Phaser.Scene {
     if (!rectsMode) {
       this.archers = new ArcherRenderer(this, this.slots);
       this.arrowSprites = new ArrowRenderer(this);
+      this.boosters = new BoosterRenderer(
+        this,
+        this.juice.boosterBobAmplitudePx,
+        this.juice.boosterBobPeriodMs,
+        tuning.boosterFloatOffsetPx
+      );
     }
     this.createParticles();
     this.overlayText = addPixelText(this, ARENA_WIDTH / 2, ARENA_HEIGHT / 2 - 24, "", 22, "#ffffff")
@@ -305,6 +329,7 @@ export class ArenaScene extends Phaser.Scene {
     const events = this.sim.step(inputs);
     this.applyJuice(events);
     this.archers?.onEvents(events);
+    this.boosters?.onEvents(events);
     if (events.length > 0) {
       this.eventLog.push(...events);
       if (this.eventLog.length > 1000) {
@@ -335,7 +360,7 @@ export class ArenaScene extends Phaser.Scene {
     api.getSpriteProbe = () => ({
       textures: this.textures
         .getTextureKeys()
-        .filter((k) => /^(archer|jungle|chest|arrow)/.test(k))
+        .filter((k) => /^(archer|jungle|chest|arrow|boosters|shield-bubble)/.test(k))
         .sort(),
       missingAnims: this.slots.flatMap((s) =>
         ARCHER_TAGS.filter((t) => !this.anims.exists(animKey(s.slot, t))).map((t) =>
@@ -470,6 +495,17 @@ export class ArenaScene extends Phaser.Scene {
         this.drawWrappedRect(chest.x, chest.y, CHEST_WIDTH, CHEST_HEIGHT, CHEST_COLOR);
       }
     }
+    // Floating boosters (spec 014): sprites with a cosmetic bob, or colored
+    // rects at the fixed pickup point in ?rects debug mode.
+    if (this.boosters) {
+      this.boosters.beginFrame();
+      for (const b of this.sim.state.boosters) this.boosters.draw(b);
+      this.boosters.endFrame();
+    } else {
+      for (const b of this.sim.state.boosters) {
+        this.drawWrappedRect(b.x, b.y, BOOSTER_WIDTH, BOOSTER_HEIGHT, BOOSTER_COLORS[b.contents]);
+      }
+    }
     this.sim.state.players.forEach((p, i) => {
       const prev = this.prev.players[i] ?? p;
       const x = lerpWrapped(prev.x, p.x, alpha, ARENA_WIDTH);
@@ -484,6 +520,7 @@ export class ArenaScene extends Phaser.Scene {
       const color = Phaser.Display.Color.HexStringToColor(this.slots[i]!.color).color;
       this.drawWrappedRect(x, y, PLAYER_WIDTH, PLAYER_HEIGHT, color, playerAlpha);
       this.drawQuiverDots(p.quiver, x, y, playerAlpha);
+      if (p.shielded) this.drawWrappedRing(x, y, 9, SHIELD_RING_COLOR);
     });
     this.arrowSprites?.beginFrame();
     for (const a of this.sim.state.arrows) {
@@ -558,6 +595,23 @@ export class ArenaScene extends Phaser.Scene {
     for (const dx of xs) {
       for (const dy of ys) {
         this.entityGfx.fillRect(cx + dx - w / 2, cy + dy - h / 2, w, h);
+      }
+    }
+  }
+
+  /** Stroke a ring (shield bubble) centered at (cx, cy), wrap-mirrored. The
+   *  ?rects=1 fallback for the sprite shield bubble. */
+  private drawWrappedRing(cx: number, cy: number, r: number, color: number): void {
+    const xs = [0];
+    const ys = [0];
+    if (cx - r < 0) xs.push(ARENA_WIDTH);
+    if (cx + r > ARENA_WIDTH) xs.push(-ARENA_WIDTH);
+    if (cy - r < 0) ys.push(ARENA_HEIGHT);
+    if (cy + r > ARENA_HEIGHT) ys.push(-ARENA_HEIGHT);
+    this.entityGfx.lineStyle(1, color, 0.9);
+    for (const dx of xs) {
+      for (const dy of ys) {
+        this.entityGfx.strokeCircle(cx + dx, cy + dy, r);
       }
     }
   }

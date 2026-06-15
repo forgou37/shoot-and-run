@@ -20,7 +20,25 @@ import { orderedFrameNames, type AsepriteData } from "./aseprite-data";
 const TILES_KEY = "jungle-tiles";
 const TILES_DATA_KEY = "jungle-tiles-data";
 const BG_KEY = "jungle-bg";
-const CHEST_KEY = "chest";
+/** Chest atlas key (spec 014: now a 2-frame `closed`/`opened` atlas). The
+ *  opened frame is the decoration the booster renderer draws under a floating
+ *  booster, so the key + frame lookup are exported. */
+export const CHEST_KEY = "chest";
+const CHEST_DATA_KEY = "chest-data";
+
+/** Resolve a chest atlas frame name by its tag (`closed` / `opened`). Requires
+ *  the chest atlas data loaded (loadEnvironmentAssets). */
+export function chestFrameName(scene: Phaser.Scene, tag: "closed" | "opened"): string {
+  const data = scene.cache.json.get(CHEST_DATA_KEY) as AsepriteData | undefined;
+  if (!data?.meta?.frameTags?.length) {
+    throw new Error("chest atlas data missing frameTags — re-run `npm run export:art`");
+  }
+  const frames = orderedFrameNames(data);
+  const ft = data.meta.frameTags.find((t) => t.name === tag);
+  const frame = ft && frames[ft.from];
+  if (!frame) throw new Error(`chest atlas has no "${tag}" tag`);
+  return frame;
+}
 
 /** Explicit depths so runtime-created images never cover depth-0 entities:
  *  background < tiles/vines < chests < entities (0) < FX/overlays. */
@@ -32,13 +50,15 @@ export function loadEnvironmentAssets(loader: Phaser.Loader.LoaderPlugin): void 
   loader.atlas(TILES_KEY, "assets/jungle-tiles.png", "assets/jungle-tiles.json");
   loader.json(TILES_DATA_KEY, "assets/jungle-tiles.json");
   loader.image(BG_KEY, "assets/jungle-bg.png");
-  loader.image(CHEST_KEY, "assets/chest.png");
+  loader.atlas(CHEST_KEY, "assets/chest.png", "assets/chest.json");
+  loader.json(CHEST_DATA_KEY, "assets/chest.json");
 }
 
 export class EnvironmentRenderer {
   private readonly chestImages = new Map<number, Phaser.GameObjects.Image>();
   /** Tile-variant tag name → atlas frame name. */
   private readonly tileFrame = new Map<string, string>();
+  private readonly closedChestFrame: string;
 
   constructor(
     private readonly scene: Phaser.Scene,
@@ -53,6 +73,7 @@ export class EnvironmentRenderer {
       const frame = frameNames[tag.from];
       if (frame) this.tileFrame.set(tag.name, frame);
     }
+    this.closedChestFrame = chestFrameName(scene, "closed");
 
     scene.add.image(0, 0, BG_KEY).setOrigin(0).setDepth(DEPTH_BG);
     this.placeTiles(arena);
@@ -100,7 +121,7 @@ export class EnvironmentRenderer {
       seen.add(chest.id);
       if (!this.chestImages.has(chest.id)) {
         const img = this.scene.add
-          .image(chest.x, chest.y + CHEST_HEIGHT / 2, CHEST_KEY)
+          .image(chest.x, chest.y + CHEST_HEIGHT / 2, CHEST_KEY, this.closedChestFrame)
           .setOrigin(0.5, 1)
           .setDepth(DEPTH_CHESTS);
         this.chestImages.set(chest.id, img);
