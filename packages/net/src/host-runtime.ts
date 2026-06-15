@@ -146,7 +146,16 @@ export function createHostRuntime(config: HostRuntimeConfig): HostRuntimeHandle 
     transport.onClose(() => {
       transports.delete(clientId);
     });
+
+    // Tell every waiting client the roster filled up ("connected / expected") so
+    // the join lobby can show progress until the match starts (T11.3).
+    broadcastLobby();
   });
+
+  function broadcastLobby(): void {
+    const data = encodeMessage({ type: "lobby", connected: transports.size, expected });
+    for (const t of transports.values()) t.send(data);
+  }
 
   return {
     get tick(): number {

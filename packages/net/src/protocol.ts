@@ -82,6 +82,18 @@ export interface PongMessage {
   hostTick: number;
 }
 
+/**
+ * Host -> Client: pre-match lobby status (spec 011, T11.3). Broadcast as clients
+ * join so a waiting player sees the roster fill up ("connected / expected"). It
+ * stops mattering once the match starts (authoritative inputs begin); the client
+ * shows the last value it received while waiting.
+ */
+export interface LobbyMessage {
+  type: "lobby";
+  connected: number;
+  expected: number;
+}
+
 export type NetMessage =
   | HelloMessage
   | InputMessage
@@ -89,4 +101,5 @@ export type NetMessage =
   | SnapshotMessage
   | AckMessage
   | PingMessage
-  | PongMessage;
+  | PongMessage
+  | LobbyMessage;

@@ -163,6 +163,17 @@ describe("ClientSession (T10.1 / W3)", () => {
     expect(s.confirmedTick).toBe(30);
   });
 
+  it("tracks pre-match lobby status from lobby messages (T11.3)", () => {
+    const t = new SpyTransport();
+    const s = makeSession(t);
+    expect(s.lobbyStatus).toBeNull();
+    t.deliver({ type: "hello", slot: 0, seed: 1, playerCount: 2, version: VERSION, arenaId: "crossfire" });
+    t.deliver({ type: "lobby", connected: 1, expected: 2 });
+    expect(s.lobbyStatus).toEqual({ connected: 1, expected: 2 });
+    t.deliver({ type: "lobby", connected: 2, expected: 2 });
+    expect(s.lobbyStatus).toEqual({ connected: 2, expected: 2 });
+  });
+
   it("refuses to bootstrap on a content-version mismatch and reports it (S4)", () => {
     const t = new SpyTransport();
     const errors: Error[] = [];

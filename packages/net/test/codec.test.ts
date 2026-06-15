@@ -83,6 +83,15 @@ describe("NetMessage codec (T9.1 / M2)", () => {
     }
   });
 
+  it("round-trips lobby status messages", () => {
+    for (const connected of [0, 1, 4]) {
+      for (const expected of [1, 2, 4]) {
+        const msg: NetMessage = { type: "lobby", connected, expected };
+        expect(decodeMessage(encodeMessage(msg))).toEqual(msg);
+      }
+    }
+  });
+
   it("rejects a truncated hello buffer with WireFormatError", () => {
     const hello = encodeMessage({ type: "hello", slot: 1, seed: 99, playerCount: 2, version: 42, arenaId: "canopy" });
     expect(() => decodeMessage(hello.slice(0, hello.length - 2))).toThrow(WireFormatError);

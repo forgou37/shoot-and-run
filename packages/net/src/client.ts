@@ -75,6 +75,8 @@ export class ClientSession {
   private nextPingId = 0;
   /** Set if the host's content fingerprint differs from ours — session refused. */
   private versionMismatched = false;
+  /** Latest pre-match lobby status from the host (null until first received). */
+  private lobby: { connected: number; expected: number } | null = null;
 
   constructor(private readonly config: ClientSessionConfig) {
     config.transport.onMessage((data) => this.onMessage(data));
@@ -87,6 +89,11 @@ export class ClientSession {
   /** True if the host rejected us for a content/version mismatch (S4). */
   get versionMismatch(): boolean {
     return this.versionMismatched;
+  }
+  /** Latest pre-match lobby status (connected vs expected), or null until the
+   *  host has sent one. The shell shows it on the waiting screen (T11.3). */
+  get lobbyStatus(): { connected: number; expected: number } | null {
+    return this.lobby;
   }
   /** Slot the Host assigned this client (−1 until bootstrapped). */
   get localSlot(): number {
@@ -222,6 +229,9 @@ export class ClientSession {
         break;
       case "pong":
         this.clock.onPong(msg.id, msg.hostTick, this.localTick);
+        break;
+      case "lobby":
+        this.lobby = { connected: msg.connected, expected: msg.expected };
         break;
       case "input":
       case "ping":
