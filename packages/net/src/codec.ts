@@ -8,13 +8,21 @@
  * Layout: `[uvarint PROTOCOL_VERSION][uint8 tag][payload]`
  *   input        → [uvarint tick][input byte]
  *   authoritative→ [uvarint tick][uvarint count][count input bytes]
- *   ack          → [uvarint tick]
+ *   ack          → [uvarint tick][uvarint inputTick]
  *   snapshot     → [uvarint utf8Len][utf8(JSON.stringify(snapshot))]
  *
- * Reuses the sim's exported byte primitives (`encodeInputByte`, the version +
- * error types). The varint + UTF-8 helpers are kept local rather than exported
- * from the sim so `packages/sim` stays byte-for-byte untouched this phase; they
- * are tiny and fully covered by the round-trip tests.
+ * Reuses the sim's exported byte primitives — `encodeInputByte`, the
+ * `writeVarint`/`readVarint` LEB128 helpers, and the version + error types — so
+ * there is one wire implementation, not two. Only the tiny DOM-free UTF-8 codec
+ * is local (the sim has no UTF-8 helper to share, and its no-DOM tsconfig lacks
+ * TextEncoder).
+ *
+ * Snapshot payloads are JSON. JSON coerces `-0`/`NaN`/`Infinity`, which is why
+ * the sim's in-memory clone is hand-written (snapshot.ts) — but it is safe here:
+ * the cross-engine determinism guard (T8.5) already hashes `JSON.stringify` of
+ * snapshots, so the sim is required to keep its state JSON-stable (finite,
+ * sign-normalized). If that ever changes, this codec must switch to a
+ * value-preserving snapshot encoding (and so must the determinism hash).
  */
 import {
   PROTOCOL_VERSION,
@@ -22,6 +30,8 @@ import {
   WireFormatError,
   decodeInputByte,
   encodeInputByte,
+  readVarint,
+  writeVarint,
   type PlayerInput,
   type SimSnapshot
 } from "@shoot-and-run/sim";
@@ -31,36 +41,6 @@ const TAG_INPUT = 0;
 const TAG_AUTHORITATIVE = 1;
 const TAG_SNAPSHOT = 2;
 const TAG_ACK = 3;
-
-// --- unsigned LEB128 varint (arithmetic form; correct for any non-negative
-//     safe integer). Intentionally local — see file header. ---
-
-function writeUvarint(out: number[], value: number): void {
-  if (value < 0 || !Number.isInteger(value)) {
-    throw new WireFormatError(`varint requires a non-negative integer, got ${value}`);
-  }
-  let v = value;
-  while (v >= 0x80) {
-    out.push((v % 128) | 0x80);
-    v = Math.floor(v / 128);
-  }
-  out.push(v);
-}
-
-function readUvarint(bytes: Uint8Array, offset: number): { value: number; next: number } {
-  let value = 0;
-  let scale = 1;
-  let pos = offset;
-  for (;;) {
-    if (pos >= bytes.length) throw new WireFormatError("truncated varint");
-    const b = bytes[pos++]!;
-    value += (b & 0x7f) * scale;
-    if ((b & 0x80) === 0) break;
-    scale *= 128;
-    if (scale > Number.MAX_SAFE_INTEGER) throw new WireFormatError("varint too long");
-  }
-  return { value, next: pos };
-}
 
 // --- minimal DOM-free UTF-8 (TextEncoder/Decoder are not in the no-DOM lib) ---
 
@@ -108,30 +88,60 @@ function decodeUtf8(bytes: Uint8Array): string {
   return out;
 }
 
+/**
+ * Validate the shape of a decoded (untrusted) snapshot before it is fed to
+ * resync/createSimFromSnapshot — a malformed-but-parseable payload must fail
+ * loudly here rather than seed the client sim with `NaN`/missing fields.
+ */
+function assertSnapshotShape(snap: unknown): asserts snap is SimSnapshot {
+  if (typeof snap !== "object" || snap === null) {
+    throw new WireFormatError("snapshot is not an object");
+  }
+  const s = snap as Record<string, unknown>;
+  const state = s["state"];
+  if (typeof state !== "object" || state === null) {
+    throw new WireFormatError("snapshot.state is not an object");
+  }
+  const st = state as Record<string, unknown>;
+  if (typeof st["tick"] !== "number" || !Number.isFinite(st["tick"])) {
+    throw new WireFormatError("snapshot.state.tick is not a finite number");
+  }
+  if (!Array.isArray(st["players"])) {
+    throw new WireFormatError("snapshot.state.players is not an array");
+  }
+  if (typeof s["rngState"] !== "number" || !Number.isFinite(s["rngState"])) {
+    throw new WireFormatError("snapshot.rngState is not a finite number");
+  }
+  if (typeof s["nextEntityId"] !== "number" || !Number.isFinite(s["nextEntityId"])) {
+    throw new WireFormatError("snapshot.nextEntityId is not a finite number");
+  }
+}
+
 /** Encode a NetMessage to a single datagram. */
 export function encodeMessage(msg: NetMessage): Uint8Array {
   const out: number[] = [];
-  writeUvarint(out, PROTOCOL_VERSION);
+  writeVarint(out, PROTOCOL_VERSION);
   switch (msg.type) {
     case "input":
       out.push(TAG_INPUT);
-      writeUvarint(out, msg.tick);
+      writeVarint(out, msg.tick);
       out.push(encodeInputByte(msg.input));
       break;
     case "authoritative":
       out.push(TAG_AUTHORITATIVE);
-      writeUvarint(out, msg.tick);
-      writeUvarint(out, msg.inputs.length);
+      writeVarint(out, msg.tick);
+      writeVarint(out, msg.inputs.length);
       for (const input of msg.inputs) out.push(encodeInputByte(input));
       break;
     case "ack":
       out.push(TAG_ACK);
-      writeUvarint(out, msg.tick);
+      writeVarint(out, msg.tick);
+      writeVarint(out, msg.inputTick);
       break;
     case "snapshot": {
       out.push(TAG_SNAPSHOT);
       const json = encodeUtf8(JSON.stringify(msg.snapshot));
-      writeUvarint(out, json.length);
+      writeVarint(out, json.length);
       for (const b of json) out.push(b);
       break;
     }
@@ -142,7 +152,7 @@ export function encodeMessage(msg: NetMessage): Uint8Array {
 /** Parse a datagram. Throws ProtocolVersionError on a version mismatch and
  *  WireFormatError on a malformed/truncated/unknown buffer. */
 export function decodeMessage(bytes: Uint8Array): NetMessage {
-  const version = readUvarint(bytes, 0);
+  const version = readVarint(bytes, 0);
   if (version.value !== PROTOCOL_VERSION) {
     throw new ProtocolVersionError(PROTOCOL_VERSION, version.value);
   }
@@ -152,14 +162,14 @@ export function decodeMessage(bytes: Uint8Array): NetMessage {
 
   switch (tag) {
     case TAG_INPUT: {
-      const tick = readUvarint(bytes, pos);
+      const tick = readVarint(bytes, pos);
       pos = tick.next;
       if (pos >= bytes.length) throw new WireFormatError("input message missing input byte");
       return { type: "input", tick: tick.value, input: decodeInputByte(bytes[pos]!) };
     }
     case TAG_AUTHORITATIVE: {
-      const tick = readUvarint(bytes, pos);
-      const count = readUvarint(bytes, tick.next);
+      const tick = readVarint(bytes, pos);
+      const count = readVarint(bytes, tick.next);
       pos = count.next;
       if (bytes.length - pos < count.value) {
         throw new WireFormatError(`authoritative message truncated: expected ${count.value} inputs`);
@@ -169,15 +179,23 @@ export function decodeMessage(bytes: Uint8Array): NetMessage {
       return { type: "authoritative", tick: tick.value, inputs };
     }
     case TAG_ACK: {
-      const tick = readUvarint(bytes, pos);
-      return { type: "ack", tick: tick.value };
+      const tick = readVarint(bytes, pos);
+      const inputTick = readVarint(bytes, tick.next);
+      return { type: "ack", tick: tick.value, inputTick: inputTick.value };
     }
     case TAG_SNAPSHOT: {
-      const len = readUvarint(bytes, pos);
+      const len = readVarint(bytes, pos);
       pos = len.next;
       if (bytes.length - pos < len.value) throw new WireFormatError("snapshot message truncated");
       const json = decodeUtf8(bytes.subarray(pos, pos + len.value));
-      return { type: "snapshot", snapshot: JSON.parse(json) as SimSnapshot };
+      let snapshot: SimSnapshot;
+      try {
+        snapshot = JSON.parse(json) as SimSnapshot;
+      } catch {
+        throw new WireFormatError("snapshot message has invalid JSON");
+      }
+      assertSnapshotShape(snapshot);
+      return { type: "snapshot", snapshot };
     }
     default:
       throw new WireFormatError(`unknown message tag ${tag}`);

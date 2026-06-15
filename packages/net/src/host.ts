@@ -25,6 +25,7 @@ import {
   type SimSnapshot,
   type Tuning
 } from "@shoot-and-run/sim";
+import { encodeMessage } from "./codec";
 import type { NetMessage } from "./protocol";
 import type { HostSession } from "./session";
 
@@ -43,8 +44,8 @@ export interface HostSessionConfig {
   clients: HostClient[];
   /** Broadcast a full snapshot every this many committed ticks (>= 1). */
   snapshotIntervalTicks: number;
-  /** Emit one outbound message to one client (wire to a transport). */
-  send: (clientId: string, message: NetMessage) => void;
+  /** Emit one already-encoded datagram to one client (wire to a transport). */
+  send: (clientId: string, data: Uint8Array) => void;
 }
 
 export interface HostSessionHandle extends HostSession {
@@ -76,7 +77,8 @@ export function createHostSession(config: HostSessionConfig): HostSessionHandle 
   let lateDropped = 0;
 
   function broadcast(message: NetMessage): void {
-    for (const c of config.clients) config.send(c.id, message);
+    const data = encodeMessage(message); // encode once, send the same bytes to every client
+    for (const c of config.clients) config.send(c.id, data);
   }
 
   return {
@@ -100,8 +102,9 @@ export function createHostSession(config: HostSessionConfig): HostSessionHandle 
         }
         row[slot] = input;
       }
-      // Echo the current tick so the client can estimate the host clock + RTT.
-      config.send(clientId, { type: "ack", tick: committedTick });
+      // Echo the host's current tick + the acked input's tick so the client can
+      // pair this ack with its send and estimate the host clock + RTT.
+      config.send(clientId, encodeMessage({ type: "ack", tick: committedTick, inputTick: tick }));
     },
 
     step(): void {

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import arena001 from "../../../content/arenas/arena-001.json";
 import tuningJson from "../../../content/tuning.json";
 import { createSim, emptyInput, parseArena, parseTuning, type PlayerInput } from "@shoot-and-run/sim";
+import { decodeMessage } from "../src/codec";
 import { createHostSession } from "../src/host";
 import type { NetMessage } from "../src/protocol";
 
@@ -29,7 +30,7 @@ function makeHost(snapshotIntervalTicks = 30) {
       { id: "c1", slot: 1 }
     ],
     snapshotIntervalTicks,
-    send: (clientId, message) => sent.push({ clientId, message })
+    send: (clientId, data) => sent.push({ clientId, message: decodeMessage(data) })
   });
   return { host, sent };
 }
@@ -86,7 +87,9 @@ describe("host session (T9.2 / M3)", () => {
     host.receiveInput("c0", 5, emptyInput());
     const acks = sent.filter((s) => s.clientId === "c0" && s.message.type === "ack");
     expect(acks).toHaveLength(1);
-    expect((acks[0]!.message as Extract<NetMessage, { type: "ack" }>).tick).toBe(1);
+    const ack = acks[0]!.message as Extract<NetMessage, { type: "ack" }>;
+    expect(ack.tick).toBe(1); // host's current committed tick
+    expect(ack.inputTick).toBe(5); // echoes the input's tick for clock pairing
   });
 
   it("drops and counts inputs for an already-committed tick", () => {

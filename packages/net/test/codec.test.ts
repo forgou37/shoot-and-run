@@ -54,8 +54,8 @@ describe("NetMessage codec (T9.1 / M2)", () => {
     }
   });
 
-  it("round-trips ack messages", () => {
-    const msg: NetMessage = { type: "ack", tick: 54321 };
+  it("round-trips ack messages (host tick + echoed input tick)", () => {
+    const msg: NetMessage = { type: "ack", tick: 54321, inputTick: 53999 };
     expect(decodeMessage(encodeMessage(msg))).toEqual(msg);
   });
 
@@ -68,17 +68,24 @@ describe("NetMessage codec (T9.1 / M2)", () => {
   });
 
   it("rejects a mismatched protocol version with a typed, catchable error", () => {
-    const bytes = encodeMessage({ type: "ack", tick: 1 });
+    const bytes = encodeMessage({ type: "ack", tick: 1, inputTick: 1 });
     bytes[0] = bytes[0]! + 1; // bump the version varint (single byte for v1)
     expect(() => decodeMessage(bytes)).toThrow(ProtocolVersionError);
   });
 
   it("rejects an unknown tag and a truncated buffer with WireFormatError", () => {
-    const ack = encodeMessage({ type: "ack", tick: 1 });
+    const ack = encodeMessage({ type: "ack", tick: 1, inputTick: 1 });
     ack[1] = 99; // clobber the tag
     expect(() => decodeMessage(ack)).toThrow(WireFormatError);
 
     const auth = encodeMessage({ type: "authoritative", tick: 5, inputs: [emptyInput(), emptyInput()] });
     expect(() => decodeMessage(auth.slice(0, auth.length - 1))).toThrow(WireFormatError);
+  });
+
+  it("rejects a structurally-invalid snapshot payload with WireFormatError", () => {
+    // Valid JSON, wrong shape (state.tick missing/non-numeric) — must fail loudly
+    // rather than seed the client sim with garbage on resync.
+    const bad = { type: "snapshot", snapshot: { state: { players: [] } } } as unknown as NetMessage;
+    expect(() => decodeMessage(encodeMessage(bad))).toThrow(WireFormatError);
   });
 });
