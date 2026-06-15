@@ -34,4 +34,5 @@ export type SimEvent =
       boosterId: number;
       slot: number;
       contents: ChestContents;
-    };
+    }
+  | { tick: number; type: "shield_blocked"; slot: number };

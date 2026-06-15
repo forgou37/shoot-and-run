@@ -33,7 +33,9 @@ describe("treasure chests (spec 002 T2.3)", () => {
     expect(spawned).toBeDefined();
     if (spawned?.type === "chest_spawned") {
       expect(CHEST_ARENA.chestSpots).toContainEqual({ x: spawned.x, y: spawned.y });
-      expect(["bomb", "laser", "bounce", "invisibility", "flight"]).toContain(spawned.contents);
+      expect(["bomb", "laser", "bounce", "invisibility", "flight", "shield"]).toContain(
+        spawned.contents
+      );
     }
     expect(sim.state.chests).toHaveLength(1);
   });

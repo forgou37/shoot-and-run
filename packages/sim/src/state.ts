@@ -39,6 +39,9 @@ export interface PlayerState {
   /** Power-up timers (ticks). 0 = inactive. Reset on round reset. */
   invisibleTicksLeft: number;
   flightTicksLeft: number;
+  /** Shield charge (spec 014): absorbs the first lethal hit, then clears.
+   *  A persistent charge — no timer. Cleared on death/round reset. */
+  shielded: boolean;
 }
 
 /** "exploding" and "spent" are transient within a tick: a contacted bomb is
@@ -77,7 +80,7 @@ export interface RoundState {
   number: number;
 }
 
-export type ChestContents = Exclude<ArrowKind, "normal"> | "invisibility" | "flight";
+export type ChestContents = Exclude<ArrowKind, "normal"> | "invisibility" | "flight" | "shield";
 
 export interface ChestState {
   id: number;

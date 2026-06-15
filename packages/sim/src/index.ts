@@ -222,7 +222,8 @@ export function createSim(config: SimConfig): Sim {
         wallJumpLockTicksLeft: 0,
         jumpCutAvailable: false,
         invisibleTicksLeft: 0,
-        flightTicksLeft: 0
+        flightTicksLeft: 0,
+        shielded: false
       };
     }),
     arrows: [],

@@ -67,6 +67,7 @@ function mkPlayer(slot: number, team: number | null, over: Partial<PlayerState> 
     jumpCutAvailable: false,
     invisibleTicksLeft: 0,
     flightTicksLeft: 0,
+    shielded: false,
     ...over
   };
 }

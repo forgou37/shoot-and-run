@@ -138,4 +138,5 @@ function resetPlayer(p: PlayerState, index: number, arena: ArenaData, t: Derived
   p.jumpCutAvailable = false;
   p.invisibleTicksLeft = 0;
   p.flightTicksLeft = 0;
+  p.shielded = false;
 }

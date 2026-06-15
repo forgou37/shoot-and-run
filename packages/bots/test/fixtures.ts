@@ -46,6 +46,7 @@ export function mkPlayer(over: Partial<PlayerState> & Pick<PlayerState, "slot" |
     wallJumpLockTicksLeft: 0,
     invisibleTicksLeft: 0,
     flightTicksLeft: 0,
+    shielded: false,
     ...over
   };
 }

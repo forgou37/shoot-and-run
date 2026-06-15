@@ -109,6 +109,8 @@ describe("floating booster pickups (spec 014 T14.1)", () => {
       expect(p.invisibleTicksLeft).toBeGreaterThan(0);
     } else if (spawned.contents === "flight") {
       expect(p.flightTicksLeft).toBeGreaterThan(0);
+    } else if (spawned.contents === "shield") {
+      expect(p.shielded).toBe(true);
     } else {
       expect(p.quiver.slice(0, TEST_TUNING.specialArrowsPerChest)).toEqual(
         Array.from({ length: TEST_TUNING.specialArrowsPerChest }, () => spawned.contents)

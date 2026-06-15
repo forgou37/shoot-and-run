@@ -84,5 +84,8 @@ export function grant(p: PlayerState, contents: ChestContents, t: DerivedTuning)
     case "flight":
       p.flightTicksLeft = t.flightTicks;
       break;
+    case "shield":
+      p.shielded = true;
+      break;
   }
 }
