@@ -1,0 +1,155 @@
+import { describe, expect, it } from "vitest";
+import arena001 from "../../../content/arenas/arena-001.json";
+import tuningJson from "../../../content/tuning.json";
+import { emptyInput, parseArena, parseTuning, type PlayerInput } from "@shoot-and-run/sim";
+import { ClientSession } from "../src/client";
+import { createHostRuntime } from "../src/host-runtime";
+import { LoopbackNetwork } from "../src/loopback";
+
+/**
+ * T10.2 / W4 — full host-authoritative session through the REUSABLE pieces:
+ * createHostRuntime (connection management + hello handshake + the authoritative
+ * loop) + ClientSession (clock + predict/rollback), over the lossy loopback.
+ *
+ * Unlike the 009 convergence test (which wired host/clients inline and never
+ * routed client inputs INTO the host), this drives everything through the
+ * orchestrators AND asserts client inputs actually reach the host and move the
+ * canonical sim — then that every client's confirmed state is byte-identical to
+ * the host's, under clean / lossy networks, reproducibly.
+ */
+
+const arena = parseArena(arena001);
+const tuning = parseTuning(tuningJson);
+const players = [{ slot: 0 }, { slot: 1 }];
+
+/** Deterministic stand-in for a bot: a varied input per (slot, tick). */
+function scriptInput(slot: number, tick: number): PlayerInput {
+  const input = emptyInput();
+  if ((tick + slot) % 2 === 0) input.right = true;
+  else input.left = true;
+  if ((tick + slot) % 7 === 0) input.jump = true;
+  if ((tick * (slot + 1)) % 11 === 0) input.shoot = true;
+  return input;
+}
+
+interface Opts {
+  seed: number;
+  latency: number;
+  jitter: number;
+  loss: number;
+  inputDelay: number;
+  snapshotInterval: number;
+  maxRollback: number;
+  ticks: number;
+}
+
+interface Result {
+  hostTick: number;
+  hostFinal: string;
+  hostMoved: boolean;
+  lateDropped: number;
+  malformed: number;
+  clients: { confirmedTick: number; confirmed: string }[];
+}
+
+function runSession(o: Opts): Result {
+  const net = new LoopbackNetwork({
+    seed: o.seed,
+    latencyTicks: o.latency,
+    jitterTicks: o.jitter,
+    lossRate: o.loss
+  });
+
+  // Runtime registers server.onConnection in its constructor — before clients dial.
+  const runtime = createHostRuntime({
+    server: net.server,
+    arena,
+    tuning,
+    players,
+    seed: o.seed,
+    snapshotIntervalTicks: o.snapshotInterval,
+    arenaId: "crossfire"
+  });
+
+  const clientIds = ["c0", "c1"];
+  const sessions = clientIds.map(
+    (id) =>
+      new ClientSession({
+        transport: net.connect(id),
+        arena,
+        tuning,
+        inputDelayTicks: o.inputDelay,
+        maxRollbackTicks: o.maxRollback
+      })
+  );
+
+  const spawn0 = arena.spawns[0]!;
+
+  for (let t = 0; t <= o.ticks; t++) {
+    net.advance(t);
+    runtime.step();
+    for (const s of sessions) {
+      const slot = s.ready ? s.localSlot : 0;
+      s.tick(scriptInput(slot, t));
+    }
+  }
+
+  // Drain in-flight datagrams so confirmed catches up to the host (no more steps).
+  const drainUntil = o.ticks + o.latency + o.jitter + o.snapshotInterval + 5;
+  for (let t = o.ticks + 1; t <= drainUntil; t++) net.advance(t);
+
+  const hostState = runtime.snapshot().state;
+  const hostMoved = hostState.players.some((p) => p.x !== spawn0.x || p.y !== spawn0.y);
+
+  return {
+    hostTick: runtime.tick,
+    hostFinal: JSON.stringify(runtime.snapshot()),
+    hostMoved,
+    lateDropped: runtime.lateDropped,
+    malformed: runtime.malformed,
+    clients: sessions.map((s) => ({
+      confirmedTick: s.confirmedTick,
+      confirmed: JSON.stringify(s.snapshotConfirmed())
+    }))
+  };
+}
+
+const BASE: Opts = {
+  seed: 0xfeed,
+  latency: 3,
+  jitter: 2,
+  loss: 0,
+  inputDelay: 6,
+  snapshotInterval: 20,
+  maxRollback: 200,
+  ticks: 240
+};
+
+describe("HostRuntime + ClientSession convergence (T10.2 / W4)", () => {
+  it("clean network: client inputs reach the host and every client converges byte-for-byte", () => {
+    const r = runSession(BASE);
+    expect(r.hostMoved).toBe(true); // inputs actually drove the canonical sim
+    expect(r.malformed).toBe(0);
+    for (const c of r.clients) {
+      expect(c.confirmedTick).toBe(r.hostTick);
+      expect(c.confirmed).toBe(r.hostFinal);
+    }
+  });
+
+  it("10% packet loss: clients still fully recover to the host via snapshots", () => {
+    const r = runSession({ ...BASE, loss: 0.1, seed: 0x105510 });
+    expect(r.hostMoved).toBe(true);
+    for (const c of r.clients) {
+      expect(c.confirmedTick).toBe(r.hostTick);
+      expect(c.confirmed).toBe(r.hostFinal);
+    }
+  });
+
+  it("is fully reproducible for a fixed seed", () => {
+    const opts = { ...BASE, loss: 0.12, seed: 0xabcd };
+    const a = runSession(opts);
+    const b = runSession(opts);
+    expect(a.hostFinal).toBe(b.hostFinal);
+    expect(a.clients).toEqual(b.clients);
+  });
+});
