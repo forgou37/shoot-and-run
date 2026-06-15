@@ -21,3 +21,10 @@ const normalize = (slotName: string): string => slotName.toLowerCase().replace(/
 export function cardImageUrl(slotName: string): string {
   return `assets/card_${normalize(slotName)}.png`;
 }
+
+/** Phaser texture/atlas key for a slot's per-character in-match archer sheet
+ *  (spec 014), name-normalized like the cards so the mapping follows roster
+ *  identity ("Igor B" → archer_igorb). */
+export function archerAtlasKey(slotName: string): string {
+  return `archer_${normalize(slotName)}`;
+}

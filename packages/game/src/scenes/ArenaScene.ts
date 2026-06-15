@@ -17,6 +17,7 @@ import {
   type ArenaData,
   type ArrowKind,
   type ChestContents,
+  type PlayerInput,
   type Sim,
   type SimEvent
 } from "@shoot-and-run/sim";
@@ -31,7 +32,7 @@ import type { MatchConfig } from "../match-config";
 import { parseJuice, type JuiceConfig } from "../juice";
 import { addPixelText } from "../theme";
 import { FixedStepDriver } from "../loop";
-import { ARCHER_TAGS, ArcherRenderer, animKey, loadArcherAssets } from "../render/archer";
+import { ARCHER_TAGS, ArcherRenderer, aimSuffix, animKey, loadArcherAssets } from "../render/archer";
 import { ArrowRenderer, loadArrowAssets } from "../render/arrows";
 import { BoosterRenderer, loadBoosterAssets } from "../render/boosters";
 import { EnvironmentRenderer, loadEnvironmentAssets } from "../render/environment";
@@ -106,6 +107,8 @@ export class ArenaScene extends Phaser.Scene {
   private arrowSprites: ArrowRenderer | null = null;
   /** Floating booster sprites (spec 014); null in `?rects=1` debug mode. */
   private boosters: BoosterRenderer | null = null;
+  /** Last sampled inputs per slot — drives the shell-side directional aim pose. */
+  private lastInputs: PlayerInput[] = [];
 
   constructor() {
     super("arena");
@@ -325,6 +328,7 @@ export class ArenaScene extends Phaser.Scene {
    *  place the sim is advanced — both the accumulator and __testApi use it. */
   private readonly doTick = (): void => {
     const inputs = this.devices.map((d) => d.sample());
+    this.lastInputs = inputs;
     this.prev = this.snapshot();
     const events = this.sim.step(inputs);
     this.applyJuice(events);
@@ -512,7 +516,8 @@ export class ArenaScene extends Phaser.Scene {
       const y = lerpWrapped(prev.y, p.y, alpha, ARENA_HEIGHT);
       const playerAlpha = p.invisibleTicksLeft > 0 ? this.juice.invisibilityOpacity : 1;
       if (this.archers) {
-        this.archers.update(p, i, x, y, playerAlpha);
+        const aim = this.lastInputs[i] ? aimSuffix(this.lastInputs[i]!) : "";
+        this.archers.update(p, i, x, y, playerAlpha, aim);
         if (p.alive) this.drawQuiverDots(p.quiver, x, y, playerAlpha);
         return;
       }

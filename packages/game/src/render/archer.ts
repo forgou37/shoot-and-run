@@ -8,6 +8,8 @@ import {
 } from "@shoot-and-run/sim";
 import { orderedFrameNames, type AsepriteData } from "./aseprite-data";
 import { SHIELD_BUBBLE_KEY } from "./boosters";
+import { archerAtlasKey } from "./cards";
+import type { PlayerInput } from "@shoot-and-run/sim";
 
 /**
  * Player sprite rendering (spec 006). One canonical archer atlas (P1 ramp);
@@ -48,9 +50,33 @@ const PLAYBACK: Record<ArcherTag, { repeat: number; yoyo: boolean }> = {
   death: { repeat: 0, yoyo: false }
 };
 
+/**
+ * Normalized identity names that have a committed per-character archer atlas
+ * (spec 014). Only listed sheets are loaded, so absent ones never 404; a slot
+ * whose named sheet isn't listed falls back to the recolored generic archer.
+ * Add a name here once its `assets/archer_<name>.aseprite` is exported.
+ */
+export const NAMED_ARCHER_SHEETS: readonly string[] = [];
+
 export function loadArcherAssets(loader: Phaser.Loader.LoaderPlugin): void {
   loader.atlas(ARCHER_ATLAS_KEY, "assets/archer.png", "assets/archer.json");
   loader.json(DATA_KEY, "assets/archer.json");
+  for (const name of NAMED_ARCHER_SHEETS) {
+    const key = `archer_${name}`;
+    loader.atlas(key, `assets/${key}.png`, `assets/${key}.json`);
+    loader.json(`${key}-data`, `assets/${key}.json`);
+  }
+}
+
+/** Held-aim → tag suffix (spec 014 A14.15). Pure-up → `_up`, any up-diagonal →
+ *  `_up45`, any down → `_down45`, else horizontal (base). facing drives flipX,
+ *  so left/right share a suffix. */
+export function aimSuffix(input: PlayerInput): string {
+  const dy = (input.down ? 1 : 0) - (input.up ? 1 : 0);
+  const dx = (input.right ? 1 : 0) - (input.left ? 1 : 0);
+  if (dy < 0) return dx !== 0 ? "_up45" : "_up";
+  if (dy > 0) return "_down45";
+  return "";
 }
 
 /** First idle frame name — a good static portrait pose (lobby/menus). Requires
@@ -106,6 +132,8 @@ export function recolorArcherTexture(scene: Phaser.Scene, slot: number, color: s
 
 export class ArcherRenderer {
   private readonly quads: Phaser.GameObjects.Sprite[][] = [];
+  /** Per-slot last held-aim suffix, so a fired-shoot one-shot aims correctly. */
+  private readonly lastAim: string[] = [];
   /** Per-slot shield bubble wrap-quad + its last drawn center (for the pop FX). */
   private readonly shieldQuads: Phaser.GameObjects.Image[][] = [];
   private readonly shieldPos: { x: number; y: number }[] = [];
@@ -114,16 +142,24 @@ export class ArcherRenderer {
 
   constructor(
     private readonly scene: Phaser.Scene,
-    private readonly slots: readonly { slot: number; color: string }[]
+    private readonly slots: readonly { slot: number; color: string; name: string }[]
   ) {
-    const data = scene.cache.json.get(DATA_KEY) as AsepriteData | undefined;
-    if (!data?.meta?.frameTags?.length) {
+    const genericData = scene.cache.json.get(DATA_KEY) as AsepriteData | undefined;
+    if (!genericData?.meta?.frameTags?.length) {
       throw new Error("archer atlas data missing frameTags — re-run `npm run export:art`");
     }
-    const frameNames = orderedFrameNames(data);
     for (const s of slots) {
-      const textureKey = recolorArcherTexture(this.scene, s.slot, s.color);
+      // Per-character sheet (spec 014) keyed by identity name; fall back to the
+      // recolored generic archer when a named sheet isn't loaded.
+      const named = archerAtlasKey(s.name);
+      const useNamed = scene.textures.exists(named);
+      const textureKey = useNamed ? named : recolorArcherTexture(this.scene, s.slot, s.color);
+      const data =
+        (useNamed ? (scene.cache.json.get(`${named}-data`) as AsepriteData | undefined) : genericData) ??
+        genericData;
+      const frameNames = orderedFrameNames(data);
       this.buildSlotAnims(s.slot, textureKey, data, frameNames);
+      this.lastAim.push("");
       const quad: Phaser.GameObjects.Sprite[] = [];
       for (let m = 0; m < QUAD; m++) {
         quad.push(
@@ -158,7 +194,9 @@ export class ArcherRenderer {
     for (const e of events) {
       if (e.type === "arrow_fired") {
         const idx = this.slots.findIndex((s) => s.slot === e.playerSlot);
-        this.quads[idx]?.[0]?.play(animKey(e.playerSlot, "shoot"));
+        if (idx >= 0) {
+          this.quads[idx]?.[0]?.play(this.resolveAnim(e.playerSlot, "shoot", this.lastAim[idx] ?? ""));
+        }
       } else if (e.type === "shield_blocked") {
         const idx = this.slots.findIndex((s) => s.slot === e.slot);
         if (idx >= 0) this.popShield(idx);
@@ -166,17 +204,19 @@ export class ArcherRenderer {
     }
   }
 
-  /** Per render frame. (x, y) is the interpolated hitbox center. */
-  update(p: PlayerState, slotIndex: number, x: number, y: number, alpha: number): void {
+  /** Per render frame. (x, y) is the interpolated hitbox center. `aimSuf` is the
+   *  held-aim tag suffix (spec 014), derived shell-side from live input. */
+  update(p: PlayerState, slotIndex: number, x: number, y: number, alpha: number, aimSuf = ""): void {
     const quad = this.quads[slotIndex]!;
     const main = quad[0]!;
     const slot = this.slots[slotIndex]!.slot;
+    this.lastAim[slotIndex] = aimSuf;
     const bottomY = y + PLAYER_HEIGHT / 2;
-    const desired = animKey(slot, this.selectTag(p));
+    const desired = this.resolveAnim(slot, this.selectTag(p), aimSuf);
     const current = main.anims.currentAnim?.key;
     // A playing shoot one-shot wins over locomotion; death wins over everything.
     const holdShoot =
-      current === animKey(slot, "shoot") && main.anims.isPlaying && p.alive;
+      current?.startsWith(animKey(slot, "shoot")) === true && main.anims.isPlaying && p.alive;
     if (!holdShoot && current !== desired) main.play(desired);
     this.place(main, x, bottomY, p, alpha);
 
@@ -264,6 +304,16 @@ export class ArcherRenderer {
     return Math.abs(p.vx) > 1 ? "run" : "idle";
   }
 
+  /** Pick the directional aim variant of a base tag if this slot's sheet has it
+   *  (spec 014 A14.14), else the base tag. `death` has no aim variant. */
+  private resolveAnim(slot: number, baseTag: ArcherTag, aimSuf: string): string {
+    if (baseTag !== "death" && aimSuf) {
+      const withAim = animKey(slot, `${baseTag}${aimSuf}`);
+      if (this.scene.anims.exists(withAim)) return withAim;
+    }
+    return animKey(slot, baseTag);
+  }
+
   /** Mirrors Phaser's createFromAseprite timing: base rate from the tag's
    *  shortest frame, per-frame `duration` carries the remainder. */
   private buildSlotAnims(
@@ -273,16 +323,18 @@ export class ArcherRenderer {
     frameNames: readonly string[]
   ): void {
     for (const tag of data.meta.frameTags) {
-      const playback = PLAYBACK[tag.name as ArcherTag];
+      // Aim variants (e.g. "run_up45") share the base tag's playback ("run").
+      const baseTag = tag.name.split("_")[0] as ArcherTag;
+      const playback = PLAYBACK[baseTag];
       if (!playback) continue;
       // Anims, like textures, are game-global and outlive the scene; skip ones
       // already built for this slot on an earlier match.
-      if (this.scene.anims.exists(animKey(slot, tag.name as ArcherTag))) continue;
+      if (this.scene.anims.exists(animKey(slot, tag.name))) continue;
       const names = frameNames.slice(tag.from, tag.to + 1);
       const durations = names.map((n) => data.frames[n]?.duration ?? 100);
       const minDuration = Math.min(...durations);
       this.scene.anims.create({
-        key: animKey(slot, tag.name as ArcherTag),
+        key: animKey(slot, tag.name),
         frames: names.map((frame, i) => ({
           key: textureKey,
           frame,
@@ -296,7 +348,7 @@ export class ArcherRenderer {
   }
 }
 
-export function animKey(slot: number, tag: ArcherTag): string {
+export function animKey(slot: number, tag: string): string {
   return `archer-${String(slot)}-${tag}`;
 }
 
