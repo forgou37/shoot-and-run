@@ -122,8 +122,11 @@ export function createRollbackController(
 
     predict(tick: number, input: PlayerInput): void {
       if (tick !== predictedTick) return; // must predict the next tick in order
-      if (predictedTick - confirmedTick >= maxRollback) return; // don't out-run confirmation
+      // Record the local input even when stalled at the rollback cap, so it is
+      // never lost — it gets applied (and can be re-sent) once confirmation
+      // catches up and prediction resumes.
       localInputs.set(tick, input);
+      if (predictedTick - confirmedTick >= maxRollback) return; // stalled: don't out-run confirmation
       const ins = resolveInputs(tick);
       predictedSim.step(ins);
       predictedLog.set(tick, ins);
@@ -158,10 +161,13 @@ export function createRollbackController(
       }
 
       // A guess was wrong for an already-predicted tick — roll back + re-sim.
+      // Per the contract a correction happens iff a remote input differed from
+      // the guess, which is exactly `mispredicted`; no need to deep-clone +
+      // stringify the whole state twice on this hot path (which would also lean
+      // on JSON's lossy number handling).
       if (mispredicted) {
-        const before = JSON.stringify(predictedSim.snapshot());
         resimFromConfirmed();
-        return before !== JSON.stringify(predictedSim.snapshot());
+        return true;
       }
       return false;
     },
@@ -173,7 +179,9 @@ export function createRollbackController(
       confirmedTick = snapshot.state.tick;
       predictedSim = createSimFromSnapshot(snapshot, restoreConfig);
       predictedTick = confirmedTick;
-      lastConfirmedRemote = config.players.map(() => emptyInput());
+      // Keep the last-known authoritative remote inputs as the repeat-last guess
+      // (consistent with prediction elsewhere) — right after a snapshot heal the
+      // last held input is a better guess than blanking everyone to "released".
       for (const t of [...localInputs.keys()]) if (t < confirmedTick) localInputs.delete(t);
       for (const t of [...authoritative.keys()]) if (t < confirmedTick) authoritative.delete(t);
       predictedLog.clear();

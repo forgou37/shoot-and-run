@@ -29,10 +29,16 @@ export interface SnapshotMessage {
   snapshot: SimSnapshot;
 }
 
-/** Host <-> Client: liveness / round-trip clock sample. */
+/**
+ * Host -> Client: liveness / round-trip clock sample. `tick` is the host's
+ * current committed tick when it acked; `inputTick` echoes the tick of the
+ * client input being acknowledged, so the client can pair this ack with the
+ * exact send it answers (robust to loss/reorder — see ClockSync).
+ */
 export interface AckMessage {
   type: "ack";
   tick: number;
+  inputTick: number;
 }
 
 export type NetMessage =

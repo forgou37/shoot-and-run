@@ -10,7 +10,13 @@
 import type { PredictionParams } from "./session";
 
 export interface NetParams extends PredictionParams {
-  /** Depth of the client jitter buffer (ticks) used to absorb reordering. */
+  /**
+   * Depth of the client inbound jitter buffer (ticks). RESERVED — not yet
+   * consumed: the rollback controller already tolerates reordering (it buffers
+   * out-of-order authoritative ticks and applies them when contiguous), so an
+   * explicit jitter buffer is only wired when the real transport lands (spec
+   * 010). Validated here so the knob's contract is fixed up front.
+   */
   jitterBufferTicks: number;
 }
 

@@ -79,7 +79,7 @@ function runSession(o: SessionOpts): SessionResult {
     seed: o.seed,
     clients: clientIds.map((id, i) => ({ id, slot: i })),
     snapshotIntervalTicks: o.snapshotInterval,
-    send: (clientId, message) => hostTransports.get(clientId)!.send(encodeMessage(message))
+    send: (clientId, data) => hostTransports.get(clientId)!.send(data) // host encodes once
   });
 
   const hostStates = new Map<number, string>();
@@ -158,23 +158,26 @@ describe("end-to-end convergence (T9.5 / M6)", () => {
     expect(r.dropped).toBe(0);
   });
 
-  it("10% packet loss: confirmed state still matches the host at each client's tick", () => {
+  it("10% packet loss: clients fully recover to the host's state via snapshots", () => {
     const r = runSession({ ...BASE, loss: 0.1, seed: 0x105510 });
     expect(r.dropped).toBeGreaterThan(0);
     for (const [, client] of r.clients) {
-      // The core invariant: whatever tick a client confirmed, that state is the
-      // host's state at that tick, byte-for-byte (snapshots heal the loss gaps).
+      // Confirmed state is the host's state at that tick, byte-for-byte...
       expect(r.hostStates.get(client.confirmedTick)).toBe(client.confirmed);
-      // ...and it recovered far past the start rather than stalling at a gap.
-      expect(client.confirmedTick).toBeGreaterThan(BASE.ticks / 2);
+      // ...and after draining, periodic snapshots have healed every loss gap, so
+      // the client is fully caught up to the host — not merely "past halfway"
+      // (deterministic per seed; a regression that stalls a client would fail here).
+      expect(client.confirmedTick).toBe(r.hostTick);
+      expect(client.confirmed).toBe(r.hostFinal);
     }
   });
 
-  it("heavy jitter: confirmed state matches the host", () => {
+  it("heavy jitter: clients fully converge to the host's state", () => {
     const r = runSession({ ...BASE, latency: 3, jitter: 8, inputDelay: 12, seed: 0x317120 });
     for (const [, client] of r.clients) {
       expect(r.hostStates.get(client.confirmedTick)).toBe(client.confirmed);
-      expect(client.confirmedTick).toBeGreaterThan(BASE.ticks / 2);
+      expect(client.confirmedTick).toBe(r.hostTick);
+      expect(client.confirmed).toBe(r.hostFinal);
     }
   });
 

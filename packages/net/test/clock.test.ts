@@ -17,10 +17,10 @@ function simulate(opts: {
   for (let i = 0; i < opts.samples; i++) {
     const d = opts.oneWay(i);
     const sendLocal = local;
-    sync.onSend(sendLocal);
+    sync.onSend(i, sendLocal); // inputTick = i
     const hostAtAck = sendLocal + d + opts.trueOffset;
     const ackLocal = sendLocal + 2 * d;
-    sync.onAck(hostAtAck, ackLocal);
+    sync.onAck(i, hostAtAck, ackLocal); // ack echoes inputTick i
     local = ackLocal + 1; // next send a bit later
   }
   return sync;
@@ -54,9 +54,26 @@ describe("clock sync (T9.3 / M4)", () => {
     expect(err).toBeLessThanOrEqual(1);
   });
 
-  it("ignores an unmatched ack (more acks than sends)", () => {
+  it("ignores an unmatched ack (no matching send)", () => {
     const sync = new ClockSync();
-    sync.onAck(5, 5); // no prior send
+    sync.onAck(5, 5, 5); // no prior onSend for inputTick 5
     expect(sync.synced).toBe(false);
+  });
+
+  it("a lost ack does not corrupt later samples (acks are tick-matched)", () => {
+    // Drop 50% of acks: because each ack is paired by its inputTick (not by
+    // arrival order), the delivered ones still pair correctly and the estimate
+    // stays exact — the old FIFO-shift design drifted badly here.
+    const K = 30;
+    const D = 4;
+    const sync = new ClockSync(0.2);
+    let local = 0;
+    for (let i = 0; i < 40; i++) {
+      const sendLocal = local;
+      sync.onSend(i, sendLocal);
+      if (i % 2 === 0) sync.onAck(i, sendLocal + D + K, sendLocal + 2 * D); // odd acks "lost"
+      local = sendLocal + 2 * D + 1;
+    }
+    expect(sync.estimateHostTick(1000)).toBe(1000 + K);
   });
 });

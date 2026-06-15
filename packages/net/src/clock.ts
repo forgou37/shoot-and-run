@@ -4,10 +4,11 @@
  * `hostTick + inputDelay` for its inputs — far enough ahead that they reach the
  * host before it commits that tick.
  *
- * Pure and transport-free: the caller feeds it `onSend(localTick)` when it emits
- * an ack-eliciting message and `onAck(hostTick, localNow)` when an ack returns.
- * Acks are assumed to return in send order (true on an ordered channel; under
- * loss/jitter the estimate stays bounded, which is all the contract requires).
+ * Pure and transport-free: the caller feeds it `onSend(inputTick, localTick)`
+ * when it emits an ack-eliciting input and `onAck(inputTick, hostTick, localNow)`
+ * when the matching ack returns. Each send/ack is paired by the input's tick
+ * (the ack echoes it — see AckMessage), NOT by arrival order, so a dropped or
+ * reordered ack only loses its own sample; it never mispairs later acks.
  *
  * Derivation (fixed one-way delay D, true offset K where hostTick = localTick+K):
  *   send at local S → host acks at host tick H = S + D + K → ack arrives at
@@ -18,21 +19,31 @@ export class ClockSync {
   /** Estimated hostTick - localTick. */
   private offset = 0;
   private initialized = false;
-  /** Local ticks of sends still awaiting their ack, in send order. */
-  private readonly pending: number[] = [];
+  /** inputTick -> local tick it was sent at, awaiting that input's ack. */
+  private readonly sentAt = new Map<number, number>();
 
-  constructor(private readonly smoothing = 0.2) {}
+  constructor(
+    private readonly smoothing = 0.2,
+    /** Cap on outstanding unacked sends; oldest is dropped past this (its ack
+     *  was lost) so the map can't grow without bound under sustained loss. */
+    private readonly maxPending = 512
+  ) {}
 
-  /** Record that an ack-eliciting message was sent at this local tick. */
-  onSend(localTick: number): void {
-    this.pending.push(localTick);
+  /** Record that the client sent its input for `inputTick` at `localTick`. */
+  onSend(inputTick: number, localTick: number): void {
+    this.sentAt.set(inputTick, localTick);
+    if (this.sentAt.size > this.maxPending) {
+      const oldest = this.sentAt.keys().next().value; // insertion order
+      if (oldest !== undefined) this.sentAt.delete(oldest);
+    }
   }
 
-  /** Fold in an ack: the host was at `hostTick` when it acked, received now. */
-  onAck(hostTick: number, localNow: number): void {
-    const sentTick = this.pending.shift();
-    if (sentTick === undefined) return; // unmatched ack (e.g. after loss); ignore
-    const rtt = localNow - sentTick;
+  /** Fold in the ack for `inputTick`: host was at `hostTick`, received now. */
+  onAck(inputTick: number, hostTick: number, localNow: number): void {
+    const sentLocal = this.sentAt.get(inputTick);
+    if (sentLocal === undefined) return; // no matching send (lost/duplicate); ignore
+    this.sentAt.delete(inputTick);
+    const rtt = localNow - sentLocal;
     const oneWay = rtt / 2;
     const sampleOffset = hostTick + oneWay - localNow;
     if (!this.initialized) {

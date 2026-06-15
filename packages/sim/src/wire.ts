@@ -76,9 +76,10 @@ export function deserializeInput(bytes: Uint8Array): PlayerInput {
 }
 
 // --- unsigned LEB128 varint (arithmetic form, correct for any non-negative
-//     safe integer — avoids 32-bit shift overflow on large ticks) ---
+//     safe integer — avoids 32-bit shift overflow on large ticks). Exported so
+//     packages/net's codec reuses one implementation rather than copying it. ---
 
-function writeVarint(out: number[], value: number): void {
+export function writeVarint(out: number[], value: number): void {
   if (value < 0 || !Number.isInteger(value)) {
     throw new WireFormatError(`varint requires a non-negative integer, got ${value}`);
   }
@@ -90,7 +91,7 @@ function writeVarint(out: number[], value: number): void {
   out.push(v);
 }
 
-function readVarint(bytes: Uint8Array, offset: number): { value: number; next: number } {
+export function readVarint(bytes: Uint8Array, offset: number): { value: number; next: number } {
   let value = 0;
   let scale = 1;
   let pos = offset;
