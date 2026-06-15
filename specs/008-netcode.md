@@ -1,6 +1,6 @@
 # Spec 008 — Online Multiplayer
 
-**Status:** planning. Owner-directed reversal of "online permanently out of scope" (hard rule 1 escape clause + "Explicitly never" in backlog). This spec is the umbrella; each phase below becomes its own numbered spec (008–013) when promoted. **Phases 008, 009, and 010 are done** (T8.1–T8.6, T9.0–T9.6, T10.0–T10.6). Phase 010 was owner-re-scoped 2026-06-15 to the cheapest tangible win — a real WebSocket transport + local two-tab play, *before* any Cloudflare — and landed: two browser tabs play a full match against a local dedicated Node host on `localhost`, converging byte-for-byte. Phases 011+ stay scoped at the goal/acceptance level until their predecessors land.
+**Status:** planning. Owner-directed reversal of "online permanently out of scope" (hard rule 1 escape clause + "Explicitly never" in backlog). This spec is the umbrella; each phase below becomes its own numbered spec (008–013) when promoted. **Phases 008–011 are done** (T8.1–T8.6, T9.0–T9.6, T10.0–T10.6, T11.1–T11.4). Phase 010 was owner-re-scoped 2026-06-15 to the cheapest tangible win — a real WebSocket transport + local two-tab play, *before* any Cloudflare — and landed: two browser tabs play a full match against a local dedicated Node host on `localhost`, converging byte-for-byte. **Phase 011 was owner-re-scoped 2026-06-15** to drop Cloudflare entirely and landed: the dedicated host graduated into a self-hosted `packages/server` Node process (owner's netcup VPS or local machine) reached over `wss://`, with clock-bootstrap + build-version hardening for real RTT and a friend-usable online join menu (single game, no room codes) — see § Phase 011 below. **This is the first internet-playable match.** Phases 012+ stay scoped at the goal/acceptance level until their predecessors land.
 
 **Goal:** 2–4 players play a full match over the internet with feel close to local play, hosted by **either** a dedicated headless process **or** one player's browser, sharing one codebase. No game logic leaves `packages/sim`.
 
@@ -45,7 +45,7 @@ Three forks were locked with the owner:
 ## Decision amendments this endeavor requires (need owner sign-off)
 
 1. **Hard rule 1 / "Explicitly never":** online is being added — satisfied by the rule's own "unless explicitly added by the owner" clause. Backlog "Explicitly never" line moves to the roadmap (done in this spec's commit).
-2. **"No server component will ever exist; CD static-only" (Decisions Log, 2026-06-12):** internet play needs at minimum signaling, and dedicated mode needs a host process. Amended to: *static game client on Pages + a Cloudflare Worker/Durable-Object control & host plane + Cloudflare TURN.* Still no traditional always-on VM.
+2. **"No server component will ever exist; CD static-only" (Decisions Log, 2026-06-12):** internet play needs at minimum signaling, and dedicated mode needs a host process. Amended to: *static game client on Pages + a Cloudflare Worker/Durable-Object control & host plane + Cloudflare TURN.* Still no traditional always-on VM. **Further amended 2026-06-15 (Phase 011 re-scope, owner-directed):** Cloudflare is dropped for the foreseeable future — for a pet project played among friends, the dedicated host is a plain Node `packages/server` process the owner self-hosts (netcup VPS or local machine) behind TLS. This *does* introduce a traditional host process, and an always-on VM is now allowed within the owner's self-hosting scope. Workers/DO/TURN remain a future option behind the unchanged `packages/net` `Transport` seam, not a v1 dependency. (Supersedes the "Infra: Cloudflare-native" fork in the Architecture table above for v1.)
 3. **Float-determinism / fixed-point rejection (Decisions Log):** **unchanged.** Host authority absorbs divergence; periodic snapshots hard-resync. Would only need revisiting for trustless host-less P2P lockstep (not planned).
 4. **Tuning hot-reload (hard rule 3 / CLAUDE.md note):** must be **disabled for the duration of a net session** (tuning pinned at session init), as already flagged that hot-reload breaks determinism.
 
@@ -66,7 +66,7 @@ Phases 008–009 are **fully headless and CI-gated** — all the hard determinis
 | **008** | Netcode foundation: snapshot/restore, input (de)serialization, determinism hardening, headless rollback harness — **done** (T8.1–T8.6) | no | 007 done ✓ |
 | 009 | `packages/net` session layer: clock/tick sync, input delay, jitter buffer, prediction/rollback loop — over a loopback transport with injected latency/jitter/loss | no | 008 ✓ |
 | **010** | **Real WebSocket transport + local online play**: browser + Node `ws` adapters on the 009 `Transport` seam, a local dedicated Node host, and an online Phaser scene — **two browser tabs play a full match on `localhost`**. No Cloudflare, no signaling, no room codes, no `packages/server`. **Done** (T10.0–T10.6, below). | no (localhost only) | 009 ✓ |
-| 011 | **Cloudflare signaling + dedicated server — first internet match**: `packages/server` headless host on a Durable Object, Worker + DO signaling + room codes (moved here from 010); browser stays a pure prediction client | **yes — first internet match** | 010 |
+| **011** | **Self-hosted dedicated server + online join menu — first internet match (no Cloudflare)**: graduate the dev host into a deployable `packages/server` Node process (owner's netcup VPS or local machine), reached over `wss://`; clock-bootstrap + build-version hardening for real RTT; a Title→Online join menu (enter host URL, single game, **no room codes**); browser stays a pure prediction client — **done** (T11.1–T11.4) | **yes — first internet match** | 010 ✓ |
 | 012 | Player-hosted / listen-server: one browser becomes the Host; WebRTC DataChannel P2P; NAT traversal + TURN; host-leaving policy | yes (P2P) | 011 |
 | 013 | Polish: lag-comp tuning, spectators, reconnection, metrics/telemetry, anti-cheat posture, host migration | — | 012 |
 
@@ -324,3 +324,96 @@ Playwright two-page online test with the dev host as a second `webServer`; asser
 - **Bootstrap input loss before clock sync.** Until the first ack, the client leads off `confirmedTick` (which lags real host time by ~latency), so the local player's opening inputs for ~`latency`+`inputDelay` ticks are tagged late and repeat-last-filled by the host. Negligible on localhost (sub-tick latency); revisit when clock/timing is hardened for real RTT in **011**.
 - **Interpolation teleport on a rollback correction.** Authoritative/snapshot messages arrive between frames and can roll the predicted sim back after `prev` was captured, so the next frame interpolates across the jump (inherent to prediction; self-heals next tick). Visual smoothing belongs to **013** (polish).
 - **Pre-open datagrams dropped if the socket fails mid-handshake.** Benign — the connection is already terminal and the protocol tolerates loss; the scene shows "Disconnected".
+
+---
+
+## Phase 011 — Self-hosted dedicated server + online join menu (first internet match, no Cloudflare)
+
+**Status: done** (T11.1–T11.4, landed 2026-06-15). The original Phase 011 ("Cloudflare signaling + DO host + room codes") was dropped: this is a pet project played among friends, so the dedicated host became a **plain Node `packages/server` process the owner self-hosts** (his netcup VPS, or his own machine), reached by friends over `wss://`, joined through a small in-game **Online menu**. No Cloudflare, no Durable Objects, no room codes, no matchmaking. Full gate green: typecheck/lint/check:deps (45 modules) + unit tests + online e2e (tab A via the menu, tab B via `?online=` deep-link, converging byte-for-byte) + build; `packages/sim` untouched (golden artifacts byte-identical).
+
+**Goal:** 2–4 friends play a full match **over the internet** with feel close to local play. One friend (the owner) runs the dedicated host; everyone else opens the GitHub-Pages client, picks **Online**, enters the host's `wss://` address, and plays. Convergence is still byte-for-byte (008/009/010 machinery, unchanged). No game logic leaves `packages/sim`.
+
+This is the **first phase exposed to real internet RTT** (tens of ms + jitter + loss), not 010's localhost sub-ms, and the **first time the client and host are deployed independently** (Pages build vs VPS build). Both facts drive the only genuinely new netcode work; everything else is packaging + a join UI.
+
+### What's already done vs what 011 adds
+
+010 delivered the entire authoritative session over a real WebSocket: `HostRuntime` + `HostSession` (canonical sim, slot assignment, hello handshake, wait-for-all start), `ClientSession` (clock sync + predict/rollback over any `Transport`), the browser `WebSocketTransport`, the `ws`→`TransportServer` adapter, and a converging two-tab match on `localhost`. **011 changes none of that core.** It adds, around it:
+
+1. **A deployable host** — `packages/server` (graduated from `scripts/dev-host`), buildable and runnable on the VPS, reachable over `wss://`.
+2. **Two real-internet hardenings** in `packages/net` — clock bootstrap before the client leads (the 010-deferred "bootstrap input loss," negligible on localhost but real at internet RTT), and a build/content **version guard** in the handshake (because a stale cached Pages client must be rejected loudly, not silently desync against a freshly-deployed host).
+3. **A friend-usable Online menu** in the shell — enter a host URL, see a waiting lobby, drop into the existing `OnlineArenaScene`.
+
+**Definition of done:** the acceptance criteria below pass in `npm test`; an e2e runs the `packages/server` host + two browser tabs through the Online menu to a converging match; the full CI gate + e2e are green; `check:deps` still passes (`server → {net, sim}`, `net → sim`, neither imports Phaser/DOM); `packages/sim` is unchanged (golden FFA log + `golden-state-hashes.json` byte-identical); a deployment doc explains running the host on the netcup VPS behind TLS.
+
+### Architecture for this phase
+
+```
+   netcup VPS (or owner's machine)                    Friends' browsers (GitHub Pages client, https)
+   ┌──────────────────────────────────────┐          ┌──────────────────────────┐  ┌────────────────┐
+   │ reverse proxy (Caddy/nginx) : TLS     │◄──wss──► │ Online menu → enter URL  │  │ Online menu    │
+   │   └─ proxies wss → ws on localhost     │          │  → waiting lobby         │  │  → waiting …   │
+   │ packages/server (Node, ws)             │          │  → OnlineArenaScene      │  │ → OnlineArena… │
+   │   HostRuntime + HostSession (008/009)  │◄──wss──────── ClientSession ────────────── ClientSession │
+   │   60 Hz wall-clock loop                │          │  (ClockSync + Rollback)  │  │ (ClockSync+RB) │
+   └──────────────────────────────────────┘          └──────────────────────────┘  └────────────────┘
+       authoritative dedicated host                       predict + roll back            predict + roll back
+```
+
+(Direct `wss` in the Node server via `TLS_CERT`/`TLS_KEY` is supported as an alternative to the reverse proxy — see S2.)
+
+### Spec-level acceptance criteria
+
+(Criteria are prefixed **S#** — "self-hosted server"; tasks below cite the S# they satisfy, mirroring 008's N# / 009's M# / 010's W#.)
+
+- [x] S1. **Deployable `packages/server`.** A new `packages/server` workspace contains the dedicated host: the `ws`→`TransportServer` adapter, `HostRuntime` + `HostSession` wiring, and the 60 Hz wall-clock loop — all **moved out of** `scripts/dev-host`. It is a `tsc`-buildable Node app (no Phaser/DOM), configured by env (`PORT`, `PLAYERS`, `SEED`, `ARENA`), loading `content/` pinned at init. `npm run dev:host` runs it locally; a `build`/`start` path runs it on the VPS. `check:deps` gains a `server-purity` posture: `packages/server/src` may import `@shoot-and-run/net` + `@shoot-and-run/sim` (+ Node + `ws`), never Phaser/DOM.
+- [x] S2. **`wss://` reachability (TLS).** The host is reachable over `wss://` two documented ways: (a) **reverse proxy** (recommended) — Caddy/nginx terminates TLS and proxies `wss → ws` to the Node server on `localhost`; (b) **direct** — the Node server serves `wss` itself when given `TLS_CERT`/`TLS_KEY` env (`https.createServer` + `ws`). The deployment doc covers both on the netcup VPS, plus the **https→wss mixed-content rule**: the Pages client (https) can only open `wss`; a plaintext `ws` host is reachable only from a localhost/http client (so localhost dev still works unchanged).
+- [x] S3. **Clock bootstrap for real RTT.** The client performs an initial clock handshake and begins leading/sending inputs **only after** its host-tick estimate has converged (resolving the 010-deferred "bootstrap input loss before clock sync," which is real at tens-of-ms RTT). Validated headless under **real-latency loopback profiles** (e.g. {40, 80, 120} ms fixed delay + jitter + loss): the client's confirmed state stays byte-identical to the host, rollback stays within `maxRollbackTicks`, and the opening inputs are not late-dropped. `inputDelayTicks`/`jitterBufferTicks` remain data in the `net` block; the doc records recommended internet values.
+- [x] S4. **Build/content version guard.** Because the Pages client and the VPS host are now deployed independently, `HelloMessage` carries a **build/content version** (sim/protocol version + a hash of the pinned `tuning` + `arena`). A client whose version mismatches the host is rejected with a typed, catchable error (`VersionMismatchError` or similar) surfaced as a friendly "version mismatch — refresh the page" message; a matching client proceeds. Round-trip + mismatch tests; `PROTOCOL_VERSION` continues to guard wire-protocol mismatches independently.
+- [x] S5. **Online join menu (single game).** TitleScene gains an **Online** option → an `OnlineJoinScene`: enter/confirm a host `wss://` URL (DOM input overlay, default + persisted in `localStorage`, mirroring the `card-overlay` DOM pattern), **Connect** → a **waiting lobby** showing connected vs expected players; when the host starts (existing wait-for-all-then-tick-0 policy), transition into the existing `OnlineArenaScene`. The `?online=wss://…` deep-link still works (skips the menu). One match per host process; **no room codes**.
+- [x] S6. **Disconnect / error posture.** A client socket drop mid-match → the host keeps running and fills the missing slot's inputs by the existing repeat-last/neutral policy; the dropped client shows "Disconnected" and returns to the menu. Connection failure, host-full, and version-mismatch each return to the menu with a clear message. No mid-session reconnection/rejoin (013). Host process exit ends the session for everyone (existing 008 policy).
+- [x] S7. **e2e + purity + determinism held.** A Playwright test runs the `packages/server` host (second `webServer`) and two browser tabs **through the Online menu** to a converging match, reusing the `getNetProbe()` byte-identical-confirmed-hash assertion at a shared confirmed tick; zero console errors. `packages/sim` untouched (golden FFA log + `golden-state-hashes.json` byte-identical); `packages/net` gains only pure additions; `check:deps` green; `ws`/server/TLS code lives outside `packages/net`. No new game-feel tunables (server config is env; any client knob lands in the `net` block — hard rule 3). Full gate + e2e green.
+
+### Fixed design points
+
+- **No Cloudflare; self-hosted Node host.** The dedicated host is a plain Node process the owner runs on his netcup VPS (or locally). This amends the 008 "Infra: Cloudflare-native" fork for v1 (see amendment #2). The `packages/net` `Transport`/`TransportServer` seam is unchanged, so a managed/serverless host (Workers/DO) remains a drop-in future option, not a v1 dependency.
+- **TLS at the edge, reverse-proxy by default.** Caddy gives automatic HTTPS in ~one line and proxies `wss → ws` to the Node server on `localhost`; nginx is the manual alternative. Direct-TLS-in-Node (`TLS_CERT`/`TLS_KEY`) is supported for a proxy-less box. The Node server itself stays plain `ws` in the proxy case (TLS terminates at the proxy).
+- **Single dedicated host, single game.** Connection-order slot assignment + wait-for-all-then-start (010 policy) are unchanged. No room registry, no matchmaking, no multiple concurrent games. (Room codes were the original 011's Cloudflare-shaped feature; explicitly dropped.)
+- **Independently-deployed client & host ⇒ explicit version guard.** Unlike 010 (one machine, shared `content/`), the Pages client and VPS host are deployed separately and can drift (stale browser cache, un-redeployed host). The guard (S4) makes that a loud, friendly refusal instead of a silent desync — the single most likely real-world failure of a self-hosted match.
+- **Real RTT is the new risk.** 010 was localhost (sub-ms); 011 faces tens of ms + jitter + loss. The clock must bootstrap before the client leads (S3), and `inputDelayTicks`/`jitterBufferTicks` get internet-appropriate values **as data** (no code constants — hard rule 3). The TCP head-of-line caveat from 010 carries forward unchanged; the unreliable WebRTC DataChannel transport is still 012, swappable behind the same `Transport` seam.
+- **Trust posture (friends-only).** An internet-facing host with no auth lets anyone who knows the `wss://` URL occupy a slot. Acceptable for a pet project (obscure URL, single game among friends); an optional shared join token is noted as a possible add (OD) but is out of scope. No anti-cheat (a dedicated-trust / 012+ concern).
+- **No `packages/sim` change; no new game-feel tunables.** This phase is packaging + two `packages/net` hardenings + a shell menu. Server config is launch env; any client knob lands in the `net` block.
+
+### Tasks
+
+#### T11.1 — Graduate the dev host into `packages/server`
+Create the `packages/server` workspace; move the `ws`→`TransportServer` adapter, the `HostRuntime`+`HostSession` wiring, and the 60 Hz wall-clock loop out of `scripts/dev-host` into it (the adapter graduates **unchanged**, as 010 promised). Env config (`PORT`/`PLAYERS`/`SEED`/`ARENA`), `content/` pinned at init, `tsc` build + `start` entry. Add direct-TLS support (`TLS_CERT`/`TLS_KEY` → `wss`). Repoint `npm run dev:host` at the package; move the `ws-transport` test in with it. Add the `server-purity` rule to `.dependency-cruiser.cjs` (`server → {net, sim}` + Node/`ws`, no Phaser/DOM); update `typecheck`/`test` globs.
+**Accept:** S1, S2 (code part).
+
+#### T11.2 — Clock bootstrap + build-version guard (`packages/net`, headless)
+Add an initial clock-sync handshake so the `ClientSession` leads only after its host-tick estimate converges (fixes the 010-deferred bootstrap input loss). Extend `HelloMessage` (codec) with a build/content version field; add a typed `VersionMismatchError` and the host-side rejection + client-side surfacing path. Headless tests: convergence + bounded rollback + no opening-input loss under {40, 80, 120} ms fixed delay + jitter + loss on the loopback; version round-trip + mismatch rejection.
+**Accept:** S3, S4.
+
+#### T11.3 — Online join menu + waiting lobby (shell)
+TitleScene **Online** entry → `OnlineJoinScene` with a DOM URL-input overlay (default + `localStorage` persistence, reusing the `card-overlay` DOM-over-canvas pattern) and a **Connect** action; a waiting lobby (connected vs expected players) that transitions into `OnlineArenaScene` on host start. Wire the disconnect/error/host-full/version-mismatch → menu-with-message posture (S6). Keep the `?online=wss://…` deep-link as a menu bypass. Persist the last-used host URL.
+**Accept:** S5, S6.
+
+#### T11.4 — e2e + deployment docs + verification sweep
+Playwright: run `packages/server` as a second `webServer`, drive two tabs **through the Online menu** to a converging match (reuse `getNetProbe()` byte-identical assertion); zero console errors. Write the deployment doc (netcup VPS: build, run, env, Caddy/nginx `wss` + the direct-TLS option, the https→wss mixed-content note, recommended `net` values). Full local gate + e2e. Update CLAUDE.md (Commands: `dev:host` now runs `packages/server` + a `build`/`start` note; Project structure: `packages/server`; Decisions Log: the 011 re-scope + the Cloudflare-infra amendment) and the spec/backlog roadmap rows; mark Phase 011 done. Confirm `packages/sim` + golden artifacts byte-identical.
+**Accept:** S7; gate + e2e green; sim/golden artifacts untouched.
+
+### Open questions (resolve before / during 011)
+
+- **OA — TLS approach.** Reverse proxy (Caddy, recommended) vs direct-TLS in the Node server. Proposed: support both, document the proxy as the default (auto-HTTPS, server stays plain `ws`); direct-TLS for a proxy-less box.
+- **OB — Version-guard granularity.** What exactly goes in the `HelloMessage` version field: `SIM_VERSION`/`PROTOCOL_VERSION` + a hash of pinned `tuning` + `arena` (proposed), vs a git short-SHA injected at build time. Proposed: the content/protocol composite (deployment-agnostic, catches content drift); refine in T11.2.
+- **OC — Online roster & mode.** v1 = **FFA**, host-configured `PLAYERS`, identities from `content/players.json` by assigned slot; no team/character selection over the wire. Confirm FFA-only for v1 (teams/character-select online → 013/backlog).
+- **OD — Optional join token.** A trivial shared secret in the handshake to keep randoms out of an internet-facing host. Proposed **out of scope** (obscure URL is enough among friends); revisit only if griefing happens.
+- **OE — Host run ergonomics.** Whether to add an `npm run start:host` (built) distinct from `dev:host` (`tsx`), and a minimal process manager note (systemd/pm2) in the deploy doc. Proposed: document `systemd` on the VPS; keep npm scripts thin.
+
+### Out of scope for 011 (do not build, do not stub)
+
+- Cloudflare anything (Workers, Durable Objects, Pages Functions, TURN), room codes, matchmaking, or multiple concurrent games on one host.
+- WebRTC / DataChannel / P2P / listen-server (a browser as host), NAT traversal, TURN (012).
+- Mid-session reconnection/rejoin, host migration, spectators, lag-comp tuning, anti-cheat, metrics/telemetry (013).
+- Team selection / character selection / arena selection over the wire (host pins them at init; online lobby is join-and-wait only).
+- Snapshot delta/diff compression (deferred until measured necessary).
+- Touching `packages/sim` or regenerating any golden artifact (this phase needs neither).

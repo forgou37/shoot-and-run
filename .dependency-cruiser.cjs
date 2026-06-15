@@ -29,6 +29,16 @@ module.exports = {
       severity: "error",
       from: { path: "^packages/net/src" },
       to: { pathNot: ["^packages/net/src", "^packages/sim/src"] }
+    },
+    {
+      name: "server-purity",
+      comment:
+        "packages/server/src is the headless dedicated host: it may import " +
+        "@shoot-and-run/{net,sim}, ws, and Node builtins — never the Phaser shell " +
+        "(packages/game) or Phaser itself (spec 011; mirrors hard rule 2's intent)",
+      severity: "error",
+      from: { path: "^packages/server/src" },
+      to: { path: ["^packages/game", "node_modules/phaser"] }
     }
   ],
   options: {

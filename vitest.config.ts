@@ -2,8 +2,10 @@ import { defineConfig } from "vitest/config";
 
 export default defineConfig({
   test: {
-    // Package suites + the dev host's ws-adapter test (spec 010). All run in Node.
-    include: ["packages/*/test/**/*.test.ts", "scripts/dev-host/**/*.test.ts"],
+    // All package suites (sim/bots/net/server) run headless in Node. The server's
+    // ws-adapter test (spec 010, graduated to packages/server in 011) is included
+    // by the packages glob.
+    include: ["packages/*/test/**/*.test.ts"],
     environment: "node"
   }
 });

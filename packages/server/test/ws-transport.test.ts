@@ -3,13 +3,14 @@ import { describe, expect, it } from "vitest";
 import { WebSocket } from "ws";
 import { decodeMessage, encodeMessage, type Transport } from "@shoot-and-run/net";
 import { emptyInput } from "@shoot-and-run/sim";
-import { createWsTransportServer } from "./ws-transport-server";
+import { createWsTransportServer } from "../src/ws-transport-server";
 
 /**
  * T10.4 / W2 — the `ws`→TransportServer adapter exchanges real NetMessage
  * datagrams with a real `ws` client over loopback TCP, both directions. The
  * BROWSER WebSocketTransport (packages/game) is exercised against this same
  * adapter by the two-tab e2e (T10.6); here we prove the server side over TCP.
+ * (Graduated into packages/server with the adapter in spec 011, T11.1.)
  */
 describe("ws TransportServer adapter (T10.4 / W2)", () => {
   it("round-trips datagrams with a real ws client over loopback TCP", async () => {
