@@ -88,8 +88,7 @@ arcade-game/
 ├─ assets/                    # Aseprite sprite sources (art pass, spec 006); cards/ (cards.aseprite+cards.png — combined lobby character-card sheet, kept out of the export:art glob); fonts/ (FreePixel.ttf, the shell's pixel font)
 ├─ scripts/
 │  ├─ export-art.mjs          # assets/*.aseprite → packages/game/public/assets/ (sprite atlases)
-│  ├─ slice-cards.mjs         # assets/cards/cards.png → public/assets/card_<name>.png (per-slot master cards)
-│  └─ dev-host/               # spec 010: dev-only Node dedicated netcode host (run via tsx — `npm run dev:host`). ws→TransportServer adapter + HostRuntime + sim; graduates to packages/server (workerd/DO) in 011
+│  └─ slice-cards.mjs         # assets/cards/cards.png → public/assets/card_<name>.png (per-slot master cards)
 
 ├─ content/
 │  ├─ arenas/arena-001.json   # "crossfire" — sim-test + golden-log fixture
@@ -120,7 +119,8 @@ arcade-game/
 │  │     ├─ sense.ts          # wrap-aware perception primitives
 │  │     ├─ bot.ts            # behavior stack (dodge→engage→scavenge), makeBot, botSeed
 │  │     └─ config.ts         # content/bots.json validator
-│  ├─ net/                    # spec 008: host-authoritative rollback netcode (pure, headless, imports only sim). types: transport/protocol/session; impl (Phase 009): loopback (latency/jitter/loss), codec (NetMessage wire incl. hello, spec 010), host (authoritative loop), host-runtime (connection mgmt + slot assign + hello handshake + start gate, spec 010), clock (tick sync), rollback (predict+rollback), client (ClientSession orchestrator, spec 010), params (tuning.net validator). Real WebSocket transport lands in the shell + dev host (spec 010); Cloudflare in 011+
+│  ├─ net/                    # spec 008: host-authoritative rollback netcode (pure, headless, imports only sim). types: transport/protocol/session; impl (Phase 009): loopback (latency/jitter/loss), codec (NetMessage wire incl. hello, spec 010), host (authoritative loop), host-runtime (connection mgmt + slot assign + hello handshake + start gate, spec 010), clock (tick sync), rollback (predict+rollback), client (ClientSession orchestrator, spec 010), params (tuning.net validator). Real WebSocket transport lives in the shell + packages/server (spec 010/011); no Cloudflare (spec 011 re-scope)
+│  ├─ server/                 # spec 011: self-hosted dedicated host = sim + net + a Node `ws` transport. ws-transport-server (ws→TransportServer adapter, optional direct-TLS wss), start.ts (createHostRuntime + 60 Hz loop), main.ts (CLI entry — `npm run dev:host`/`start:host`, env PORT/HOST/PLAYERS/SEED/ARENA/CONTENT_DIR/TLS_CERT+TLS_KEY). Headless Node, never imports Phaser/game (server-purity cruiser rule)
 │  └─ game/
 │     ├─ index.html
 │     ├─ vite.config.ts
@@ -146,13 +146,14 @@ Keep this section current as scripts change.
 | Command | Purpose |
 |---|---|
 | `npm run dev` | Vite dev server for `packages/game` (tuning hot-reload from T0.5) |
-| `npm run dev:host` | Local dedicated netcode host (spec 010), run via `tsx`. Serves browser clients over WebSocket on `localhost`. Env: `PORT` (8787), `PLAYERS` (2), `SEED` (1), `ARENA` (arena-002.json). Open two tabs at `?online=ws://localhost:8787` to play |
+| `npm run dev:host` | Dedicated netcode host (`packages/server`, spec 010/011), run via `tsx`. Serves browser clients over WebSocket. Env: `PORT` (8787), `HOST` (all interfaces), `PLAYERS` (2), `SEED` (1), `ARENA` (arena-002.json), `CONTENT_DIR` (repo /content), `TLS_CERT`+`TLS_KEY` (optional → direct `wss://`). Open two tabs at `?online=ws://localhost:8787` to play |
+| `npm run start:host` | Same dedicated host via the package's `start` script (`npm run start -w @shoot-and-run/server`) — the documented production entry; see the deployment doc for running on a VPS behind TLS |
 | `npm run build` | Type-check both packages + production Vite build |
-| `npm run typecheck` | `tsc --noEmit` over sim src + tests, bots src + tests (no Node/DOM types — purity), net src, game, the dev host (`scripts/dev-host`, Node types), and e2e |
-| `npm test` | All Vitest suites (sim + bots + net tests run headless in Node; incl. the dev host's ws-adapter TCP test) |
+| `npm run typecheck` | `tsc --noEmit` over sim src + tests, bots src + tests (no Node/DOM types — purity), net src, game, server src + tests (Node types), and e2e |
+| `npm test` | All Vitest suites (sim + bots + net + server tests run headless in Node; incl. the server's ws-adapter TCP test) |
 | `npm run e2e` | Playwright suite (Chromium/SwiftShader, dev server, `window.__testApi`): shell smoke + lobby flow + gamepad shim + bots (`?bots=N` / lobby add-bot) + online two-tab match (spec 010, second `webServer` = `dev:host`) |
 | `npm run lint` | ESLint, incl. sim + bots determinism guards (no `Math.random`/`Date.now`/timers) |
-| `npm run check:deps` | dependency-cruiser: fails if `packages/sim/src`, `packages/bots/src`, or `packages/net/src` imports anything outside itself (bots + net may import the sim; sim imports nothing). Analyzes type-only edges (`tsPreCompilationDeps`) so the sim↔net types seam is enforced |
+| `npm run check:deps` | dependency-cruiser: fails if `packages/sim/src`, `packages/bots/src`, `packages/net/src`, or `packages/server/src` imports outside its allowed set (bots + net may import the sim; sim imports nothing; server may import net + sim + ws + Node, never Phaser/game). Analyzes type-only edges (`tsPreCompilationDeps`) so the sim↔net types seam is enforced |
 | `npm run export:art` | Re-export all `assets/*.aseprite` → `packages/game/public/assets/` atlases (needs local Aseprite; exports are committed, CI never runs this) |
 | `npm run export:cards` | Slice `assets/cards/cards.png` → per-slot `public/assets/card_<name>.png` master cards (pure Node, no Aseprite; outputs committed) |
 
