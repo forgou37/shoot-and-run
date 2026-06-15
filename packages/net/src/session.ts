@@ -4,7 +4,7 @@
  * spec 009; this file fixes the contract it will implement, built on the sim's
  * snapshot/restore + input wire from T8.1–T8.4.
  */
-import type { PlayerInput, SimSnapshot } from "@shoot-and-run/sim";
+import type { PlayerInput, SimEvent, SimSnapshot } from "@shoot-and-run/sim";
 
 /** One tick's inputs for every player, in slot order. */
 export type TickInputs = PlayerInput[];
@@ -30,8 +30,14 @@ export interface RollbackController {
   readonly confirmedTick: number;
   /** Tick the local predicted sim has advanced to. */
   readonly predictedTick: number;
-  /** Record the local player's input for a tick and predict forward. */
-  predict(tick: number, input: PlayerInput): void;
+  /**
+   * Record the local player's input for a tick and predict forward one tick.
+   * Returns the events the predicted step emitted (for shell juice / animation);
+   * empty when the controller is stalled at the rollback cap or `tick` is not the
+   * next predicted tick. Rollback re-simulations do NOT surface events here — only
+   * this single live forward step does — so juice fires once per real tick.
+   */
+  predict(tick: number, input: PlayerInput): SimEvent[];
   /**
    * Apply authoritative inputs for a tick. Rolls back to the last confirmed
    * tick and re-simulates if they differ from what was predicted; returns true

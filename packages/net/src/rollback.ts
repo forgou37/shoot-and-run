@@ -27,7 +27,9 @@ import {
   type PlayerInput,
   type PlayerSlotConfig,
   type Sim,
+  type SimEvent,
   type SimSnapshot,
+  type SimState,
   type Tuning
 } from "@shoot-and-run/sim";
 import type { RollbackController, TickInputs } from "./session";
@@ -49,6 +51,12 @@ export interface RollbackControllerHandle extends RollbackController {
   snapshotConfirmed(): SimSnapshot;
   /** Speculative state at predictedTick (what a renderer would show). */
   snapshotPredicted(): SimSnapshot;
+  /**
+   * Live readable predicted state at predictedTick — the renderer reads this
+   * each frame (cheaper than snapshotting). Readonly: mutating it corrupts the
+   * predicted sim. It jumps on a rollback correction (inherent to prediction).
+   */
+  predictedState(): Readonly<SimState>;
 }
 
 function inputsEqual(a: readonly PlayerInput[], b: readonly PlayerInput[]): boolean {
@@ -120,17 +128,18 @@ export function createRollbackController(
       return predictedTick;
     },
 
-    predict(tick: number, input: PlayerInput): void {
-      if (tick !== predictedTick) return; // must predict the next tick in order
+    predict(tick: number, input: PlayerInput): SimEvent[] {
+      if (tick !== predictedTick) return []; // must predict the next tick in order
       // Record the local input even when stalled at the rollback cap, so it is
       // never lost — it gets applied (and can be re-sent) once confirmation
       // catches up and prediction resumes.
       localInputs.set(tick, input);
-      if (predictedTick - confirmedTick >= maxRollback) return; // stalled: don't out-run confirmation
+      if (predictedTick - confirmedTick >= maxRollback) return []; // stalled: don't out-run confirmation
       const ins = resolveInputs(tick);
-      predictedSim.step(ins);
+      const events = predictedSim.step(ins);
       predictedLog.set(tick, ins);
       predictedTick = tick + 1;
+      return events;
     },
 
     confirm(tick: number, inputs: TickInputs): boolean {
@@ -192,6 +201,9 @@ export function createRollbackController(
     },
     snapshotPredicted(): SimSnapshot {
       return predictedSim.snapshot();
+    },
+    predictedState(): Readonly<SimState> {
+      return predictedSim.state;
     }
   };
 }

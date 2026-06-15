@@ -19,4 +19,5 @@ export * from "./codec";
 export * from "./host";
 export * from "./clock";
 export * from "./rollback";
+export * from "./client";
 export * from "./params";
