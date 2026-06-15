@@ -42,5 +42,11 @@
     "stickPuffParticles": 6,
     "bombBurstParticles": 48,
     "invisibilityOpacity": 0.2
+  },
+  "net": {
+    "inputDelayTicks": 3,
+    "snapshotIntervalTicks": 30,
+    "maxRollbackTicks": 120,
+    "jitterBufferTicks": 4
   }
 }

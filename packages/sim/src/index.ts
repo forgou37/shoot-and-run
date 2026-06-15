@@ -7,8 +7,9 @@ import { checkArrowKills, checkStomps, resolveExplosions } from "./kills";
 import { updatePlayer } from "./player";
 import { createRng, type Rng } from "./rng";
 import { updateRound } from "./round";
+import { deepClone, type SimSnapshot } from "./snapshot";
 import type { SimState } from "./state";
-import { deriveTuning, type Tuning } from "./tuning";
+import { deriveTuning, type DerivedTuning, type Tuning } from "./tuning";
 
 export const SIM_VERSION = "0.0.0";
 
@@ -24,6 +25,8 @@ export * from "./rng";
 export * from "./round";
 export * from "./state";
 export * from "./tuning";
+export * from "./wire";
+export type { SimSnapshot } from "./snapshot";
 
 export interface PlayerSlotConfig {
   slot: number;
@@ -56,6 +59,21 @@ export interface Sim {
    * determinism proof always pin one tuning snapshot at init instead.
    */
   setTuning(next: Tuning): void;
+  /**
+   * Deep, JSON-serializable capture of all state needed to resume bit-exactly:
+   * SimState + RNG state + entity-id counter. The snapshot owns no references
+   * into the live sim. Restore with `createSimFromSnapshot` (spec 008).
+   */
+  snapshot(): SimSnapshot;
+  /**
+   * The deterministic entity-id allocator's next value — hidden state that
+   * lives outside `SimState` (a closure counter). Exposed for snapshot/restore
+   * (spec 008); reading is harmless. NOT for use during normal play —
+   * `step()` owns the counter, and reseeding it mid-round corrupts entity
+   * identity. Restore reseeds it once, before the first `step()`.
+   */
+  getEntityIdCounter(): number;
+  setEntityIdCounter(value: number): void;
 }
 
 /**
@@ -74,12 +92,87 @@ function resolveTeamsMode(players: readonly PlayerSlotConfig[]): boolean {
   return true;
 }
 
+/**
+ * The shared sim engine: given already-resolved init constants, a seeded/restored
+ * RNG, a live SimState, and the entity-id counter's current value, returns the
+ * Sim. Both createSim (fresh) and createSimFromSnapshot (restore) funnel through
+ * here, so the step logic exists in exactly one place — the determinism proof
+ * covers the restore path for free.
+ */
+function buildSim(
+  arena: ArenaData,
+  initialTuning: DerivedTuning,
+  friendlyFire: boolean,
+  rng: Rng,
+  state: SimState,
+  initialNextEntityId: number
+): Sim {
+  let tuning = initialTuning;
+  let nextEntityId = initialNextEntityId;
+  const allocId = (): number => nextEntityId++;
+
+  return {
+    get state(): Readonly<SimState> {
+      return state;
+    },
+    step(inputs: readonly PlayerInput[]): SimEvent[] {
+      if (inputs.length !== state.players.length) {
+        throw new Error(
+          `step() got ${inputs.length} inputs for ${state.players.length} players`
+        );
+      }
+      const events: SimEvent[] = [];
+      if (state.tick === 0) {
+        events.push({ tick: 0, type: "round_started" });
+      }
+      if (state.round.phase === "running") {
+        state.players.forEach((p, i) => {
+          if (!p.alive) return;
+          updatePlayer(p, inputs[i]!, arena, tuning);
+        });
+        checkStomps(state.players, tuning, events, state.tick, friendlyFire);
+        handleShooting(state.players, inputs, state.arrows, allocId, tuning, events, state.tick);
+        updateArrows(arena, state.arrows, tuning, events, state.tick);
+        checkArrowKills(state.arrows, state.players, events, state.tick, friendlyFire);
+        resolveExplosions(state.arrows, state.players, tuning, events, state.tick, friendlyFire);
+        state.arrows = collectPickups(
+          state.arrows.filter((a) => a.phase !== "spent"),
+          state.players,
+          events,
+          state.tick
+        );
+        updateChests(state, arena, rng, allocId, tuning, events);
+      }
+      updateRound(state, arena, tuning, events);
+      state.tick++;
+      return events;
+    },
+    setTuning(next: Tuning): void {
+      tuning = deriveTuning(next);
+    },
+    snapshot(): SimSnapshot {
+      return {
+        version: SIM_VERSION,
+        state: deepClone(state),
+        rngState: rng.getState(),
+        nextEntityId
+      };
+    },
+    getEntityIdCounter(): number {
+      return nextEntityId;
+    },
+    setEntityIdCounter(value: number): void {
+      nextEntityId = value >>> 0;
+    }
+  };
+}
+
 export function createSim(config: SimConfig): Sim {
   // The only randomness source in the sim (hard rule 4). Unused until
   // gameplay needs it, but seeded at init so the seed is part of the
   // sim's identity from tick 0.
   const rng: Rng = createRng(config.seed);
-  let tuning = deriveTuning(config.tuning);
+  const tuning = deriveTuning(config.tuning);
 
   const teamsMode = resolveTeamsMode(config.players);
   const friendlyFire = config.friendlyFire ?? true;
@@ -134,44 +227,40 @@ export function createSim(config: SimConfig): Sim {
     nextChestTick: tuning.chestIntervalTicks
   };
 
-  return {
-    get state(): Readonly<SimState> {
-      return state;
-    },
-    step(inputs: readonly PlayerInput[]): SimEvent[] {
-      if (inputs.length !== state.players.length) {
-        throw new Error(
-          `step() got ${inputs.length} inputs for ${state.players.length} players`
-        );
-      }
-      const events: SimEvent[] = [];
-      if (state.tick === 0) {
-        events.push({ tick: 0, type: "round_started" });
-      }
-      if (state.round.phase === "running") {
-        state.players.forEach((p, i) => {
-          if (!p.alive) return;
-          updatePlayer(p, inputs[i]!, config.arena, tuning);
-        });
-        checkStomps(state.players, tuning, events, state.tick, friendlyFire);
-        handleShooting(state.players, inputs, state.arrows, allocId, tuning, events, state.tick);
-        updateArrows(config.arena, state.arrows, tuning, events, state.tick);
-        checkArrowKills(state.arrows, state.players, events, state.tick, friendlyFire);
-        resolveExplosions(state.arrows, state.players, tuning, events, state.tick, friendlyFire);
-        state.arrows = collectPickups(
-          state.arrows.filter((a) => a.phase !== "spent"),
-          state.players,
-          events,
-          state.tick
-        );
-        updateChests(state, config.arena, rng, allocId, tuning, events);
-      }
-      updateRound(state, config.arena, tuning, events);
-      state.tick++;
-      return events;
-    },
-    setTuning(next: Tuning): void {
-      tuning = deriveTuning(next);
-    }
-  };
+  return buildSim(config.arena, tuning, friendlyFire, rng, state, nextEntityId);
+}
+
+/**
+ * Init constants for restoring a sim from a snapshot — the session contract the
+ * snapshot intentionally does NOT carry. Seed is absent: the RNG is restored
+ * from the snapshot's captured state, not reseeded.
+ */
+export interface RestoreConfig {
+  arena: ArenaData;
+  tuning: Tuning;
+  players: PlayerSlotConfig[];
+  friendlyFire?: boolean;
+}
+
+/**
+ * Rebuild a sim from a snapshot so it is step()-for-step() identical to the
+ * sim the snapshot came from. The snapshot supplies the mutable state (SimState
+ * + RNG + entity-id counter); the caller supplies the immutable session
+ * constants (arena/tuning/players/friendlyFire), which must match the original
+ * session. (spec 008, T8.2)
+ */
+export function createSimFromSnapshot(snapshot: SimSnapshot, config: RestoreConfig): Sim {
+  const state = deepClone(snapshot.state);
+  if (config.players.length !== state.players.length) {
+    throw new Error(
+      `restore: config has ${config.players.length} players but the snapshot has ` +
+        `${state.players.length}`
+    );
+  }
+  const rng: Rng = createRng(0);
+  rng.setState(snapshot.rngState);
+  const tuning = deriveTuning(config.tuning);
+  const friendlyFire = config.friendlyFire ?? true;
+
+  return buildSim(config.arena, tuning, friendlyFire, rng, state, snapshot.nextEntityId);
 }

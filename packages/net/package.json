@@ -1,0 +1,12 @@
+{
+  "name": "@shoot-and-run/net",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@shoot-and-run/sim": "*"
+  }
+}

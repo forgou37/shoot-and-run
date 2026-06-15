@@ -1,6 +1,6 @@
 # Spec 008 — Online Multiplayer
 
-**Status:** planning. Owner-directed reversal of "online permanently out of scope" (hard rule 1 escape clause + "Explicitly never" in backlog). This spec is the umbrella; each phase below becomes its own numbered spec (008–013) when promoted. Only the **Foundation** phase (008) has a task-level breakdown here — later phases are scoped at the goal/acceptance level until their predecessors land.
+**Status:** planning. Owner-directed reversal of "online permanently out of scope" (hard rule 1 escape clause + "Explicitly never" in backlog). This spec is the umbrella; each phase below becomes its own numbered spec (008–013) when promoted. **Phases 008 and 009 are done** (T8.1–T8.6, T9.0–T9.6). Phases 010+ stay scoped at the goal/acceptance level until their predecessors land.
 
 **Goal:** 2–4 players play a full match over the internet with feel close to local play, hosted by **either** a dedicated headless process **or** one player's browser, sharing one codebase. No game logic leaves `packages/sim`.
 
@@ -63,8 +63,8 @@ Phases 008–009 are **fully headless and CI-gated** — all the hard determinis
 
 | Phase | Theme | First-playable? | Gate |
 |---|---|---|---|
-| **008** | Netcode foundation: snapshot/restore, input (de)serialization, determinism hardening, headless rollback harness | no | 007 done ✓ |
-| 009 | `packages/net` session layer: clock/tick sync, input delay, jitter buffer, prediction/rollback loop — over a loopback transport with injected latency/jitter/loss | no | 008 |
+| **008** | Netcode foundation: snapshot/restore, input (de)serialization, determinism hardening, headless rollback harness — **done** (T8.1–T8.6) | no | 007 done ✓ |
+| 009 | `packages/net` session layer: clock/tick sync, input delay, jitter buffer, prediction/rollback loop — over a loopback transport with injected latency/jitter/loss | no | 008 ✓ |
 | 010 | Real transport + Cloudflare signaling: WebSocket adapter (dedicated path), Worker + Durable Object signaling, room codes | no (LAN/localhost connect) | 009 |
 | 011 | **Dedicated server + browser client** — `packages/server` headless host on a Durable Object; browser becomes a pure prediction client | **yes — first internet match** | 010 |
 | 012 | Player-hosted / listen-server: one browser becomes the Host; WebRTC DataChannel P2P; NAT traversal + TURN; host-leaving policy | yes (P2P) | 011 |
@@ -88,16 +88,18 @@ Phases 008–009 are **fully headless and CI-gated** — all the hard determinis
 
 **Definition of done:** the acceptance criteria below pass in `npm test` and the existing CI gate; sim purity (`check:deps`) still passes with `packages/net` added.
 
+**Status: done** (T8.1–T8.6 landed 2026-06-15). Full gate green — typecheck/lint/check:deps + 161 Vitest tests; golden FFA event log byte-identical.
+
 ### Spec-level acceptance criteria
 
-- [ ] N1. `sim.snapshot()` returns a structurally-cloned, JSON-serializable value capturing **all** sim state needed to resume: `SimState`, the RNG internal state, and `nextEntityId`. `createSimFromSnapshot(snapshot, { arena, tuning, players, friendlyFire })` reconstructs a sim that is `step()`-for-`step()` identical to the original.
-- [ ] N2. **Rollback identity:** create sim A, step N ticks with input log L, snapshot at tick K<N, then: (a) continuing A to N and (b) restoring from the K-snapshot and stepping the tail of L produce byte-identical state and event logs at tick N.
-- [ ] N3. **Divergence + reconverge:** from a tick-K snapshot, stepping a *different* tail L′ diverges; re-restoring K and stepping the original L returns to A's tick-N state byte-for-byte (proves restore fully resets hidden state — RNG, counters).
-- [ ] N4. RNG exposes `getState()/setState()` (or equivalent); `createRng` seeded then advanced M times, state captured, a fresh rng `setState`'d to it, produces an identical next stream. No behavioral change to the existing seed→stream mapping (golden log unaffected).
-- [ ] N5. `serializeInput(PlayerInput): Uint8Array` (1 byte) and `deserializeInput`; round-trips for all 128 combinations. A versioned `serializeInputFrame(tick, inputs[])` / parser, tagged with `SIM_VERSION`; a version mismatch is a typed, catchable error.
-- [ ] N6. **Cross-engine determinism guard:** a checked-in golden state-hash sequence (e.g. FNV-1a over `snapshot()` every K ticks of the scripted-bot round) re-verified in CI. Extends the existing Windows/Linux golden-log proof to a state-level hash. (Browser-engine verification is wired in 010 when a browser is in the loop; 008 covers the Node/V8 + state-hash guard.)
-- [ ] N7. `packages/net` workspace exists with the transport **interface only** (no implementation) and is added to `check:deps`: `net → sim` allowed, `sim → net` forbidden, neither imports Phaser/DOM.
-- [ ] N8. The existing golden FFA determinism log stays **byte-identical** (snapshot/RNG-exposure changes are additive; no gameplay path changes).
+- [x] N1. `sim.snapshot()` returns a structurally-cloned, JSON-serializable value capturing **all** sim state needed to resume: `SimState`, the RNG internal state, and `nextEntityId`. `createSimFromSnapshot(snapshot, { arena, tuning, players, friendlyFire })` reconstructs a sim that is `step()`-for-`step()` identical to the original. _(snapshot.test.ts)_
+- [x] N2. **Rollback identity:** create sim A, step N ticks with input log L, snapshot at tick K<N, then: (a) continuing A to N and (b) restoring from the K-snapshot and stepping the tail of L produce byte-identical state and event logs at tick N. _(rollback.test.ts)_
+- [x] N3. **Divergence + reconverge:** from a tick-K snapshot, stepping a *different* tail L′ diverges; re-restoring K and stepping the original L returns to A's tick-N state byte-for-byte (proves restore fully resets hidden state — RNG, counters). _(rollback.test.ts)_
+- [x] N4. RNG exposes `getState()/setState()` (or equivalent); `createRng` seeded then advanced M times, state captured, a fresh rng `setState`'d to it, produces an identical next stream. No behavioral change to the existing seed→stream mapping (golden log unaffected). _(rng.test.ts)_
+- [x] N5. `serializeInput(PlayerInput): Uint8Array` (1 byte) and `deserializeInput`; round-trips for all 128 combinations. A versioned `serializeInputFrame(tick, inputs[])` / parser, tagged with `SIM_VERSION`; a version mismatch is a typed, catchable error. _(wire.test.ts; the frame carries a numeric `PROTOCOL_VERSION` bumped in lockstep with `SIM_VERSION`, kept compact rather than embedding the version string per tick.)_
+- [x] N6. **Cross-engine determinism guard:** a checked-in golden state-hash sequence (e.g. FNV-1a over `snapshot()` every K ticks of the scripted-bot round) re-verified in CI. Extends the existing Windows/Linux golden-log proof to a state-level hash. (Browser-engine verification is wired in 010 when a browser is in the loop; 008 covers the Node/V8 + state-hash guard.) _(cross-engine.test.ts + golden-state-hashes.json)_
+- [x] N7. `packages/net` workspace exists with the transport **interface only** (no implementation) and is added to `check:deps`: `net → sim` allowed, `sim → net` forbidden, neither imports Phaser/DOM. _(`net-purity` rule; `tsPreCompilationDeps:true` added so the type-only sim↔net seam is actually analyzed — verified a deliberate `sim→net` import fails the gate, then reverted.)_
+- [x] N8. The existing golden FFA determinism log stays **byte-identical** (snapshot/RNG-exposure changes are additive; no gameplay path changes).
 
 ### Fixed design points
 
@@ -139,3 +141,76 @@ Create the workspace with the transport interface and prediction/rollback types 
 - Lag compensation, spectators, reconnection, host migration (012–013).
 - Snapshot **delta/diff** compression — full snapshots are tiny; deltas are a 009+ optimization only if measured necessary.
 - Touching `setTuning` behavior beyond documenting that net sessions pin tuning.
+
+---
+
+## Phase 009 — Session layer: predict / rollback over a loopback transport
+
+**Status: done** (T9.0–T9.6, 2026-06-15). Full gate green — typecheck/lint/check:deps + all Vitest suites (34 net tests); the sim is untouched, so the golden event log and `golden-state-hashes.json` are byte-identical.
+
+**Goal:** a complete host-authoritative session — clock/tick sync, input delay, jitter buffer, host loop, and client prediction + rollback — running entirely inside `packages/net`, headless, over an **in-process loopback transport** with injected latency / jitter / loss. No browser, no real network, no Cloudflare. When 009 lands, the hard real-time risk (does prediction + rollback actually converge under bad network conditions?) is retired in a deterministic, CI-gated test bed; 010 only swaps the loopback for a real transport.
+
+This is pure `packages/net` work on top of the 008 primitives (`snapshot`/`createSimFromSnapshot`/`step`, the input wire, the transport + session **types**). **The sim is not touched at all** — so the golden FFA log and `golden-state-hashes.json` stay byte-identical by construction.
+
+**Definition of done:** the acceptance criteria below pass in `npm test` + the CI gate; `check:deps` still green (`net → sim` only); the sim is unchanged.
+
+### Spec-level acceptance criteria
+
+- [x] M1. **Loopback transport.** An in-process `LoopbackNetwork` implements the 008 `Transport` / `TransportServer` interfaces and connects one host to N clients. It is driven by an explicit tick clock (no wall-time) and injects, per a **seeded mulberry32** (from the sim, reused — not the sim's PRNG instance): fixed + jittered delivery delay and per-message drop probability. Same seed + same sends ⇒ identical delivery schedule (the whole test bed is deterministic). _(loopback.ts)_
+- [x] M2. **Message codec.** Encode/parse for the remaining `NetMessage` kinds on top of T8.4's input frame: `AuthoritativeInputsMessage`, `SnapshotMessage`, `AckMessage`, behind a 1-byte message-type tag and the existing `PROTOCOL_VERSION`. Exhaustive round-trips; a version/format mismatch is a typed, catchable error (`ProtocolVersionError` / `WireFormatError`). _(codec.ts)_
+- [x] M3. **Host session.** `HostSession` buffers client inputs keyed by `(tick, slot)`, applies a fixed input-delay window, and on each authoritative tick: fills any missing client input by a **deterministic** policy (repeat-last, else neutral), `step()`s the canonical sim, and broadcasts `AuthoritativeInputs(tick)` + a `Snapshot` every `snapshotIntervalTicks` + `Ack`s. Late inputs for an already-committed tick are dropped (counted, not applied). _(host.ts)_
+- [x] M4. **Clock / tick sync.** A client estimates the host's current tick from ack round-trips (RTT/2 + smoothing) and targets `hostTick + inputDelay` so its inputs arrive just in time. Converges to within ±1 tick under fixed delay and stays bounded under jitter. _(clock.ts)_
+- [x] M5. **Client prediction + rollback.** `RollbackController` predicts the local input immediately and guesses remote inputs (repeat-last); on `AuthoritativeInputs(tick, inputs)` it confirms cheaply if the prediction matched, else restores the last confirmed snapshot and **re-simulates forward** — a visible correction occurs **iff** a remote input actually differed from the guess. `resync(snapshot)` hard-resets to a host snapshot. Rollback never exceeds `maxRollbackTicks` (beyond it, wait for the next snapshot). _(rollback.ts)_
+- [x] M6. **End-to-end convergence.** Host + 2–4 bot-driven clients over the lossy loopback play a full round. Every client's **confirmed** state equals the host's state at each confirmed tick **byte-for-byte** under `{0% loss, 10% loss, heavy jitter}`; a client forced past `maxRollbackTicks` recovers via the next snapshot; and the whole run is reproducible (same seed ⇒ identical result). _(convergence.test.ts; clients are deterministic scripted inputs — real bots integrate at the shell in 011)_
+- [x] M7. **Net params are data.** Session knobs (`inputDelayTicks`, `snapshotIntervalTicks`, `maxRollbackTicks`, `jitterBufferTicks`) live in a shell/net-only `net` block in `content/tuning.json` (owner-confirmed; mirrors the sim-ignored `juice`/`input`/`ui` blocks), validated by `parseNetParams` in `packages/net`; the sim ignores them. _(params.ts)_
+
+### Fixed design points
+
+- 009 is **headless and engine-free**: `packages/net` still imports only `@shoot-and-run/sim`. The loopback, host, and client are plain objects driven by an explicit `advance(tick)` loop in tests (the real 60 Hz accumulator wiring is the shell's job in 011).
+- Convergence is the invariant, not timing: host authority + deterministic re-sim mean the **converged** state is identical regardless of delivery order; only the *path* (mispredictions, rollbacks) varies with the network. Tests assert the invariant and bound the path.
+- All injected randomness (jitter/loss) uses a **seeded** PRNG so failures reproduce; no `Math.random`/`Date.now` (lint guard already enforces this in `packages/net`... extend the guard's glob to net if needed).
+- Snapshots cross the wire as the plain 008 `SimSnapshot` (JSON-encoded payload for now). **Delta/diff compression stays deferred** (008 out-of-scope) until a measurement says full snapshots cost too much.
+- No lag compensation, reconnection, spectators, or host migration (012–013). No security/anti-cheat (a client can lie to the loopback; trust posture is a dedicated-server concern, 012).
+
+### Tasks
+
+#### T9.0 — Loopback transport (latency / jitter / loss, seeded, clock-driven)
+Implement `LoopbackNetwork` + the `Transport`/`TransportServer` impls in `packages/net`; deterministic delivery schedule from a seeded PRNG; `advance(tick)` delivers all due datagrams. Unit tests for delay, reordering, drop, and seed-reproducibility.
+**Accept:** M1.
+
+#### T9.1 — NetMessage wire codec
+Add tagged encode/parse for `AuthoritativeInputsMessage` / `SnapshotMessage` / `AckMessage` (inputs already covered by T8.4), versioned, with typed errors. Round-trip tests for every kind.
+**Accept:** M2.
+
+#### T9.2 — Host session loop
+Implement `HostSession`: input buffer, input-delay window, deterministic missing-input fill, canonical `step()`, broadcast of authoritative inputs + periodic snapshots + acks; drop+count late inputs. Tests over the loopback with one scripted client.
+**Accept:** M3.
+
+#### T9.3 — Clock / tick sync
+Client-side host-tick estimator from acks (RTT/2 + smoothing) targeting `hostTick + inputDelay`. Tests: convergence under fixed delay, boundedness under jitter.
+**Accept:** M4.
+
+#### T9.4 — Client prediction + rollback controller
+Implement `RollbackController` (predict local + guess remote, confirm/rollback/re-sim, `resync`, `maxRollbackTicks` cap). Tests: matched prediction = no correction; one changed remote input = exactly one bounded rollback that matches the host.
+**Accept:** M5.
+
+#### T9.5 — End-to-end convergence harness (lossy loopback)
+Host + 2–4 bot clients over the lossy loopback for a full round; assert byte-identical client/host confirmed state under {0%, 10% loss, heavy jitter}, snapshot recovery past `maxRollback`, and seed-reproducible traces.
+**Accept:** M6.
+
+#### T9.6 — Net params as data + verification sweep + docs
+Move the session knobs into content (per O1), validate in `packages/net`; full gate sweep; update CLAUDE.md (content-as-data table, structure, Decisions Log) and mark Phase 009 done in this spec.
+**Accept:** M7; gate green; sim/golden artifacts untouched.
+
+### Open questions (resolve before / during T9.6)
+
+- **O1 — where do net params live? RESOLVED (owner, 2026-06-15):** a shell/net-only `net` block in `content/tuning.json`, mirroring the sim-ignored `juice`/`input`/`ui` blocks, validated by a new `parseNetParams` in `packages/net`. (Separate `content/net.json` rejected.)
+- **O2 — missing-input fill policy.** Repeat-last is proposed for both host (committing a tick with a missing client input) and client (predicting remote inputs). Confirm this over alternatives (hold-neutral, or freeze-and-wait) — repeat-last is the standard rollback choice and minimizes corrections for held inputs.
+- **O3 — loopback fidelity.** The loopback models delay/jitter/loss but not bandwidth or duplication. Assumed sufficient for proving convergence; real-transport quirks (TCP head-of-line, WebRTC dup) are exercised in 010+.
+
+### Out of scope for 009 (do not build, do not stub)
+
+- Any real transport (WebSocket/WebRTC), signaling, room codes, Cloudflare/`workerd`, or `packages/server` (010–011).
+- Any browser / Phaser wiring of the session into the live game loop (011).
+- Lag compensation, reconnection, spectators, host migration, anti-cheat (012–013).
+- Snapshot delta compression (deferred until measured necessary).

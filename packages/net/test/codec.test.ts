@@ -1,0 +1,84 @@
+import { describe, expect, it } from "vitest";
+import arena001 from "../../../content/arenas/arena-001.json";
+import tuningJson from "../../../content/tuning.json";
+import {
+  ProtocolVersionError,
+  WireFormatError,
+  createSim,
+  emptyInput,
+  parseArena,
+  parseTuning,
+  type PlayerInput
+} from "@shoot-and-run/sim";
+import { decodeMessage, encodeMessage } from "../src/codec";
+import type { NetMessage } from "../src/protocol";
+
+function input(bits: number): PlayerInput {
+  return {
+    left: (bits & 1) !== 0,
+    right: (bits & 2) !== 0,
+    up: (bits & 4) !== 0,
+    down: (bits & 8) !== 0,
+    jump: (bits & 16) !== 0,
+    shoot: (bits & 32) !== 0,
+    dash: (bits & 64) !== 0
+  };
+}
+
+function makeSnapshot() {
+  const sim = createSim({
+    arena: parseArena(arena001),
+    tuning: parseTuning(tuningJson),
+    players: [{ slot: 0 }, { slot: 1 }],
+    seed: 0xc0ffee
+  });
+  for (let t = 0; t < 40; t++) sim.step([emptyInput(), emptyInput()]);
+  return sim.snapshot();
+}
+
+describe("NetMessage codec (T9.1 / M2)", () => {
+  it("round-trips input messages across tick varint sizes and all input bits", () => {
+    for (const tick of [0, 1, 200, 100_000]) {
+      for (let bits = 0; bits < 128; bits += 17) {
+        const msg: NetMessage = { type: "input", tick, input: input(bits) };
+        expect(decodeMessage(encodeMessage(msg))).toEqual(msg);
+      }
+    }
+  });
+
+  it("round-trips authoritative messages with 1..4 players", () => {
+    for (let n = 1; n <= 4; n++) {
+      const inputs = Array.from({ length: n }, (_, i) => input(i * 9));
+      const msg: NetMessage = { type: "authoritative", tick: 1234, inputs };
+      expect(decodeMessage(encodeMessage(msg))).toEqual(msg);
+    }
+  });
+
+  it("round-trips ack messages", () => {
+    const msg: NetMessage = { type: "ack", tick: 54321 };
+    expect(decodeMessage(encodeMessage(msg))).toEqual(msg);
+  });
+
+  it("round-trips a real snapshot message byte-for-byte", () => {
+    const snapshot = makeSnapshot();
+    const msg: NetMessage = { type: "snapshot", snapshot };
+    const decoded = decodeMessage(encodeMessage(msg));
+    expect(decoded.type).toBe("snapshot");
+    expect(JSON.stringify(decoded)).toBe(JSON.stringify(msg));
+  });
+
+  it("rejects a mismatched protocol version with a typed, catchable error", () => {
+    const bytes = encodeMessage({ type: "ack", tick: 1 });
+    bytes[0] = bytes[0]! + 1; // bump the version varint (single byte for v1)
+    expect(() => decodeMessage(bytes)).toThrow(ProtocolVersionError);
+  });
+
+  it("rejects an unknown tag and a truncated buffer with WireFormatError", () => {
+    const ack = encodeMessage({ type: "ack", tick: 1 });
+    ack[1] = 99; // clobber the tag
+    expect(() => decodeMessage(ack)).toThrow(WireFormatError);
+
+    const auth = encodeMessage({ type: "authoritative", tick: 5, inputs: [emptyInput(), emptyInput()] });
+    expect(() => decodeMessage(auth.slice(0, auth.length - 1))).toThrow(WireFormatError);
+  });
+});

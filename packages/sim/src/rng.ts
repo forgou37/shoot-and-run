@@ -8,6 +8,13 @@ export interface Rng {
   next(): number;
   /** Next integer in [0, max). */
   nextInt(max: number): number;
+  /**
+   * The full internal state (one uint32) — everything needed to resume the
+   * stream. For snapshot/restore (spec 008); not used during normal play.
+   */
+  getState(): number;
+  /** Reseed the internal state to a previously captured `getState()` value. */
+  setState(state: number): void;
 }
 
 export function createRng(seed: number): Rng {
@@ -23,6 +30,10 @@ export function createRng(seed: number): Rng {
 
   return {
     next,
-    nextInt: (max: number) => Math.floor(next() * max)
+    nextInt: (max: number) => Math.floor(next() * max),
+    getState: () => a,
+    setState: (state: number) => {
+      a = state >>> 0;
+    }
   };
 }
