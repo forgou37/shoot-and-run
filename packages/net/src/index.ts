@@ -17,3 +17,4 @@ export * from "./session";
 export * from "./loopback";
 export * from "./codec";
 export * from "./host";
+export * from "./clock";
