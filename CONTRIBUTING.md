@@ -28,14 +28,15 @@ The point of the split: the agent that writes the change is no longer the only t
 
 ### Enforcement
 
-CI runs on every PR and on push to `main`, so a broken change is always *visible* before merge. Server-side **branch protection is not active**: GitHub gates both classic protection and rulesets behind a paid plan for private repos, and this repo is private on Free. So "don't merge a red PR / don't push straight to `main`" is currently a **convention**, not a hard block.
+`main` is protected server-side by an **active repository ruleset** ("Protect main"):
 
-To make it a real block, pick one (no code change needed):
-- **Make the repo public** — unlocks protection + rulesets + GitHub Pages, for free. Best fit if the project is meant to be open anyway.
-- **GitHub Pro** (~$4/mo) — keeps it private and unlocks protection.
-- **Move under an org** on a plan that includes protection.
+- Required status checks: `gate` + `e2e`, strict (branch must be up to date with `main`).
+- A pull request is **required** to merge; **0** approvals — GitHub forbids self-approval, so 0 lets the solo maintainer self-merge once checks pass.
+- **Squash** is the only allowed merge method (one commit per task on `main`, hard rule 5).
+- Force-push and branch deletion are blocked.
+- The repo **admin bypasses** the ruleset (`always`) — the owner is never locked out for an emergency push.
 
-Once unlocked, enable a ruleset on `main`: require status checks `gate` + `e2e`, require a PR (0 approvals is fine solo), block force-push/deletion, allow admin bypass.
+So "don't merge a red PR / don't push straight to `main`" is a hard block, not just a convention. This became possible when the repo was made public (2026-06-15) — protection and rulesets are free on public repos. Going public also lifts the old "Pages unavailable on private Free" blocker on continuous deploy (still unwired — see Releases).
 
 ### When a full PR is overkill
 
