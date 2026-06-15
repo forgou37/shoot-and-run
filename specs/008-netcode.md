@@ -1,6 +1,6 @@
 # Spec 008 — Online Multiplayer
 
-**Status:** planning. Owner-directed reversal of "online permanently out of scope" (hard rule 1 escape clause + "Explicitly never" in backlog). This spec is the umbrella; each phase below becomes its own numbered spec (008–013) when promoted. Only the **Foundation** phase (008) has a task-level breakdown here — later phases are scoped at the goal/acceptance level until their predecessors land.
+**Status:** planning. Owner-directed reversal of "online permanently out of scope" (hard rule 1 escape clause + "Explicitly never" in backlog). This spec is the umbrella; each phase below becomes its own numbered spec (008–013) when promoted. **Phase 008 is done** (T8.1–T8.6); **Phase 009 is task-broken-out below** (awaiting owner confirmation before code). Phases 010+ stay scoped at the goal/acceptance level until their predecessors land.
 
 **Goal:** 2–4 players play a full match over the internet with feel close to local play, hosted by **either** a dedicated headless process **or** one player's browser, sharing one codebase. No game logic leaves `packages/sim`.
 
@@ -141,3 +141,76 @@ Create the workspace with the transport interface and prediction/rollback types 
 - Lag compensation, spectators, reconnection, host migration (012–013).
 - Snapshot **delta/diff** compression — full snapshots are tiny; deltas are a 009+ optimization only if measured necessary.
 - Touching `setTuning` behavior beyond documenting that net sessions pin tuning.
+
+---
+
+## Phase 009 — Session layer: predict / rollback over a loopback transport
+
+**Status: planning — awaiting owner confirmation of this breakdown before code.**
+
+**Goal:** a complete host-authoritative session — clock/tick sync, input delay, jitter buffer, host loop, and client prediction + rollback — running entirely inside `packages/net`, headless, over an **in-process loopback transport** with injected latency / jitter / loss. No browser, no real network, no Cloudflare. When 009 lands, the hard real-time risk (does prediction + rollback actually converge under bad network conditions?) is retired in a deterministic, CI-gated test bed; 010 only swaps the loopback for a real transport.
+
+This is pure `packages/net` work on top of the 008 primitives (`snapshot`/`createSimFromSnapshot`/`step`, the input wire, the transport + session **types**). **The sim is not touched at all** — so the golden FFA log and `golden-state-hashes.json` stay byte-identical by construction.
+
+**Definition of done:** the acceptance criteria below pass in `npm test` + the CI gate; `check:deps` still green (`net → sim` only); the sim is unchanged.
+
+### Spec-level acceptance criteria
+
+- [ ] M1. **Loopback transport.** An in-process `LoopbackNetwork` implements the 008 `Transport` / `TransportServer` interfaces and connects one host to N clients. It is driven by an explicit tick clock (no wall-time) and injects, per a **seeded mulberry32** (from the sim, reused — not the sim's PRNG instance): fixed + jittered delivery delay and per-message drop probability. Same seed + same sends ⇒ identical delivery schedule (the whole test bed is deterministic).
+- [ ] M2. **Message codec.** Encode/parse for the remaining `NetMessage` kinds on top of T8.4's input frame: `AuthoritativeInputsMessage`, `SnapshotMessage`, `AckMessage`, behind a 1-byte message-type tag and the existing `PROTOCOL_VERSION`. Exhaustive round-trips; a version/format mismatch is a typed, catchable error (`ProtocolVersionError` / `WireFormatError`).
+- [ ] M3. **Host session.** `HostSession` buffers client inputs keyed by `(tick, slot)`, applies a fixed input-delay window, and on each authoritative tick: fills any missing client input by a **deterministic** policy (repeat-last, else neutral), `step()`s the canonical sim, and broadcasts `AuthoritativeInputs(tick)` + a `Snapshot` every `snapshotIntervalTicks` + `Ack`s. Late inputs for an already-committed tick are dropped (counted, not applied).
+- [ ] M4. **Clock / tick sync.** A client estimates the host's current tick from ack round-trips (RTT/2 + smoothing) and targets `hostTick + inputDelay` so its inputs arrive just in time. Converges to within ±1 tick under fixed delay and stays bounded under jitter.
+- [ ] M5. **Client prediction + rollback.** `RollbackController` predicts the local input immediately and guesses remote inputs (repeat-last); on `AuthoritativeInputs(tick, inputs)` it confirms cheaply if the prediction matched, else restores the last confirmed snapshot and **re-simulates forward** — a visible correction occurs **iff** a remote input actually differed from the guess. `resync(snapshot)` hard-resets to a host snapshot. Rollback never exceeds `maxRollbackTicks` (beyond it, wait for the next snapshot).
+- [ ] M6. **End-to-end convergence.** Host + 2–4 bot-driven clients over the lossy loopback play a full round. Every client's **confirmed** state equals the host's state at each confirmed tick **byte-for-byte** (FNV-1a over snapshots) under `{0% loss, 10% loss, heavy jitter}`; a client forced past `maxRollbackTicks` recovers via the next snapshot; and the whole run is reproducible (same seed ⇒ identical rollback/correction trace).
+- [ ] M7. **Net params are data.** Session knobs (`inputDelayTicks`, `snapshotIntervalTicks`, `maxRollbackTicks`, `jitterBufferTicks`) live in a shell/net-only `net` block in `content/tuning.json` (owner-confirmed; mirrors the sim-ignored `juice`/`input`/`ui` blocks), validated by `parseNetParams` in `packages/net`; the sim ignores them.
+
+### Fixed design points
+
+- 009 is **headless and engine-free**: `packages/net` still imports only `@shoot-and-run/sim`. The loopback, host, and client are plain objects driven by an explicit `advance(tick)` loop in tests (the real 60 Hz accumulator wiring is the shell's job in 011).
+- Convergence is the invariant, not timing: host authority + deterministic re-sim mean the **converged** state is identical regardless of delivery order; only the *path* (mispredictions, rollbacks) varies with the network. Tests assert the invariant and bound the path.
+- All injected randomness (jitter/loss) uses a **seeded** PRNG so failures reproduce; no `Math.random`/`Date.now` (lint guard already enforces this in `packages/net`... extend the guard's glob to net if needed).
+- Snapshots cross the wire as the plain 008 `SimSnapshot` (JSON-encoded payload for now). **Delta/diff compression stays deferred** (008 out-of-scope) until a measurement says full snapshots cost too much.
+- No lag compensation, reconnection, spectators, or host migration (012–013). No security/anti-cheat (a client can lie to the loopback; trust posture is a dedicated-server concern, 012).
+
+### Tasks
+
+#### T9.0 — Loopback transport (latency / jitter / loss, seeded, clock-driven)
+Implement `LoopbackNetwork` + the `Transport`/`TransportServer` impls in `packages/net`; deterministic delivery schedule from a seeded PRNG; `advance(tick)` delivers all due datagrams. Unit tests for delay, reordering, drop, and seed-reproducibility.
+**Accept:** M1.
+
+#### T9.1 — NetMessage wire codec
+Add tagged encode/parse for `AuthoritativeInputsMessage` / `SnapshotMessage` / `AckMessage` (inputs already covered by T8.4), versioned, with typed errors. Round-trip tests for every kind.
+**Accept:** M2.
+
+#### T9.2 — Host session loop
+Implement `HostSession`: input buffer, input-delay window, deterministic missing-input fill, canonical `step()`, broadcast of authoritative inputs + periodic snapshots + acks; drop+count late inputs. Tests over the loopback with one scripted client.
+**Accept:** M3.
+
+#### T9.3 — Clock / tick sync
+Client-side host-tick estimator from acks (RTT/2 + smoothing) targeting `hostTick + inputDelay`. Tests: convergence under fixed delay, boundedness under jitter.
+**Accept:** M4.
+
+#### T9.4 — Client prediction + rollback controller
+Implement `RollbackController` (predict local + guess remote, confirm/rollback/re-sim, `resync`, `maxRollbackTicks` cap). Tests: matched prediction = no correction; one changed remote input = exactly one bounded rollback that matches the host.
+**Accept:** M5.
+
+#### T9.5 — End-to-end convergence harness (lossy loopback)
+Host + 2–4 bot clients over the lossy loopback for a full round; assert byte-identical client/host confirmed state under {0%, 10% loss, heavy jitter}, snapshot recovery past `maxRollback`, and seed-reproducible traces.
+**Accept:** M6.
+
+#### T9.6 — Net params as data + verification sweep + docs
+Move the session knobs into content (per O1), validate in `packages/net`; full gate sweep; update CLAUDE.md (content-as-data table, structure, Decisions Log) and mark Phase 009 done in this spec.
+**Accept:** M7; gate green; sim/golden artifacts untouched.
+
+### Open questions (resolve before / during T9.6)
+
+- **O1 — where do net params live? RESOLVED (owner, 2026-06-15):** a shell/net-only `net` block in `content/tuning.json`, mirroring the sim-ignored `juice`/`input`/`ui` blocks, validated by a new `parseNetParams` in `packages/net`. (Separate `content/net.json` rejected.)
+- **O2 — missing-input fill policy.** Repeat-last is proposed for both host (committing a tick with a missing client input) and client (predicting remote inputs). Confirm this over alternatives (hold-neutral, or freeze-and-wait) — repeat-last is the standard rollback choice and minimizes corrections for held inputs.
+- **O3 — loopback fidelity.** The loopback models delay/jitter/loss but not bandwidth or duplication. Assumed sufficient for proving convergence; real-transport quirks (TCP head-of-line, WebRTC dup) are exercised in 010+.
+
+### Out of scope for 009 (do not build, do not stub)
+
+- Any real transport (WebSocket/WebRTC), signaling, room codes, Cloudflare/`workerd`, or `packages/server` (010–011).
+- Any browser / Phaser wiring of the session into the live game loop (011).
+- Lag compensation, reconnection, spectators, host migration, anti-cheat (012–013).
+- Snapshot delta compression (deferred until measured necessary).
