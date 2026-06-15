@@ -8,8 +8,9 @@
   ],
   "scripts": {
     "dev": "npm run dev -w @shoot-and-run/game",
+    "dev:host": "tsx scripts/dev-host/main.ts",
     "build": "npm run typecheck && npm run build -w @shoot-and-run/game",
-    "typecheck": "tsc --noEmit -p packages/sim && tsc --noEmit -p packages/sim/tsconfig.test.json && tsc --noEmit -p packages/bots && tsc --noEmit -p packages/bots/tsconfig.test.json && tsc --noEmit -p packages/net && tsc --noEmit -p packages/net/tsconfig.test.json && tsc --noEmit -p packages/game && tsc --noEmit -p e2e",
+    "typecheck": "tsc --noEmit -p packages/sim && tsc --noEmit -p packages/sim/tsconfig.test.json && tsc --noEmit -p packages/bots && tsc --noEmit -p packages/bots/tsconfig.test.json && tsc --noEmit -p packages/net && tsc --noEmit -p packages/net/tsconfig.test.json && tsc --noEmit -p packages/game && tsc --noEmit -p scripts/dev-host && tsc --noEmit -p e2e",
     "test": "vitest run",
     "e2e": "playwright test",
     "lint": "eslint .",
@@ -21,10 +22,13 @@
     "@eslint/js": "^10.0.1",
     "@playwright/test": "^1.60.0",
     "@types/node": "^25.9.3",
+    "@types/ws": "^8.5.13",
     "dependency-cruiser": "^17.4.3",
     "eslint": "^10.4.1",
+    "tsx": "^4.19.2",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.61.0",
-    "vitest": "^4.1.8"
+    "vitest": "^4.1.8",
+    "ws": "^8.18.0"
   }
 }

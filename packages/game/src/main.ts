@@ -3,6 +3,7 @@ import { ARENA_HEIGHT, ARENA_WIDTH, SIM_VERSION } from "@shoot-and-run/sim";
 import { ArenaScene } from "./scenes/ArenaScene";
 import { BootScene } from "./scenes/BootScene";
 import { LobbyScene } from "./scenes/LobbyScene";
+import { OnlineArenaScene } from "./scenes/OnlineArenaScene";
 import { TitleScene } from "./scenes/TitleScene";
 import { loadFont } from "./theme";
 
@@ -22,9 +23,9 @@ void loadFont().finally(() => {
       mode: Phaser.Scale.NONE,
       autoCenter: Phaser.Scale.CENTER_BOTH
     },
-    // BootScene (first → auto-started) builds shared input and routes to title
-    // or, with ?quickstart=1, straight into the match.
-    scene: [BootScene, TitleScene, LobbyScene, ArenaScene]
+    // BootScene (first → auto-started) builds shared input and routes to title,
+    // or straight into the match (?quickstart=1) / the online match (?online=…).
+    scene: [BootScene, TitleScene, LobbyScene, ArenaScene, OnlineArenaScene]
   });
 
   // Pixel-perfect scaling. The canvas backing stays 320×240; we size its CSS box

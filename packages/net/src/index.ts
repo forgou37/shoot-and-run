@@ -17,6 +17,8 @@ export * from "./session";
 export * from "./loopback";
 export * from "./codec";
 export * from "./host";
+export * from "./host-runtime";
 export * from "./clock";
 export * from "./rollback";
+export * from "./client";
 export * from "./params";

@@ -50,10 +50,23 @@ export class BootScene extends Phaser.Scene {
     });
     installBaseTestApi(this.game);
 
+    const params = new URLSearchParams(window.location.search);
+
+    // ?online=ws://host:port (or ?online=1 → ws://<host>:8787) connects to a
+    // dedicated host as a pure prediction client (spec 010). No Cloudflare/lobby
+    // yet — the address is passed directly, mirroring ?quickstart.
+    const online = params.get("online");
+    if (online !== null) {
+      const url = online.startsWith("ws")
+        ? online
+        : `ws://${window.location.hostname}:8787`;
+      this.scene.start("online", { url });
+      return;
+    }
+
     // ?bots=N (1–3) boots a quick human-vs-bots match for dev/e2e, optionally
     // ?difficulty=easy|normal|hard; it implies quickstart. ?quickstart=1 alone
     // is still the original two-keyboard match.
-    const params = new URLSearchParams(window.location.search);
     const botCount = Math.max(0, Math.min(3, Number.parseInt(params.get("bots") ?? "", 10) || 0));
     const quickstart = params.get("quickstart") === "1" || botCount > 0;
     if (quickstart) {

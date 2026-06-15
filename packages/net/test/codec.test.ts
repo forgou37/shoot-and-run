@@ -59,6 +59,22 @@ describe("NetMessage codec (T9.1 / M2)", () => {
     expect(decodeMessage(encodeMessage(msg))).toEqual(msg);
   });
 
+  it("round-trips hello messages across slot/seed/playerCount and arena ids", () => {
+    for (const slot of [0, 1, 3]) {
+      for (const seed of [0, 1, 0xfeed, 0xffffffff]) {
+        for (const arenaId of ["", "canopy", "crossfire", "árena-é日本"]) {
+          const msg: NetMessage = { type: "hello", slot, seed, playerCount: 4, arenaId };
+          expect(decodeMessage(encodeMessage(msg))).toEqual(msg);
+        }
+      }
+    }
+  });
+
+  it("rejects a truncated hello buffer with WireFormatError", () => {
+    const hello = encodeMessage({ type: "hello", slot: 1, seed: 99, playerCount: 2, arenaId: "canopy" });
+    expect(() => decodeMessage(hello.slice(0, hello.length - 2))).toThrow(WireFormatError);
+  });
+
   it("round-trips a real snapshot message byte-for-byte", () => {
     const snapshot = makeSnapshot();
     const msg: NetMessage = { type: "snapshot", snapshot };

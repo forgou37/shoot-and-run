@@ -1,6 +1,6 @@
 # Spec 008 — Online Multiplayer
 
-**Status:** planning. Owner-directed reversal of "online permanently out of scope" (hard rule 1 escape clause + "Explicitly never" in backlog). This spec is the umbrella; each phase below becomes its own numbered spec (008–013) when promoted. **Phases 008 and 009 are done** (T8.1–T8.6, T9.0–T9.6). Phases 010+ stay scoped at the goal/acceptance level until their predecessors land.
+**Status:** planning. Owner-directed reversal of "online permanently out of scope" (hard rule 1 escape clause + "Explicitly never" in backlog). This spec is the umbrella; each phase below becomes its own numbered spec (008–013) when promoted. **Phases 008, 009, and 010 are done** (T8.1–T8.6, T9.0–T9.6, T10.0–T10.6). Phase 010 was owner-re-scoped 2026-06-15 to the cheapest tangible win — a real WebSocket transport + local two-tab play, *before* any Cloudflare — and landed: two browser tabs play a full match against a local dedicated Node host on `localhost`, converging byte-for-byte. Phases 011+ stay scoped at the goal/acceptance level until their predecessors land.
 
 **Goal:** 2–4 players play a full match over the internet with feel close to local play, hosted by **either** a dedicated headless process **or** one player's browser, sharing one codebase. No game logic leaves `packages/sim`.
 
@@ -65,24 +65,24 @@ Phases 008–009 are **fully headless and CI-gated** — all the hard determinis
 |---|---|---|---|
 | **008** | Netcode foundation: snapshot/restore, input (de)serialization, determinism hardening, headless rollback harness — **done** (T8.1–T8.6) | no | 007 done ✓ |
 | 009 | `packages/net` session layer: clock/tick sync, input delay, jitter buffer, prediction/rollback loop — over a loopback transport with injected latency/jitter/loss | no | 008 ✓ |
-| 010 | Real transport + Cloudflare signaling: WebSocket adapter (dedicated path), Worker + Durable Object signaling, room codes | no (LAN/localhost connect) | 009 |
-| 011 | **Dedicated server + browser client** — `packages/server` headless host on a Durable Object; browser becomes a pure prediction client | **yes — first internet match** | 010 |
+| **010** | **Real WebSocket transport + local online play**: browser + Node `ws` adapters on the 009 `Transport` seam, a local dedicated Node host, and an online Phaser scene — **two browser tabs play a full match on `localhost`**. No Cloudflare, no signaling, no room codes, no `packages/server`. **Done** (T10.0–T10.6, below). | no (localhost only) | 009 ✓ |
+| 011 | **Cloudflare signaling + dedicated server — first internet match**: `packages/server` headless host on a Durable Object, Worker + DO signaling + room codes (moved here from 010); browser stays a pure prediction client | **yes — first internet match** | 010 |
 | 012 | Player-hosted / listen-server: one browser becomes the Host; WebRTC DataChannel P2P; NAT traversal + TURN; host-leaving policy | yes (P2P) | 011 |
 | 013 | Polish: lag-comp tuning, spectators, reconnection, metrics/telemetry, anti-cheat posture, host migration | — | 012 |
 
 ### Transport note (consequence of "dedicated first")
 
-011 starts on **WebSocket** (TCP) to the Durable Object — simplest, Cloudflare-native, no signaling/TURN. The rollback design tolerates moderate jitter/loss, but TCP head-of-line blocking hitches under packet loss. The `packages/net` transport interface (009) keeps this swappable: WebRTC **DataChannel (unreliable + unordered)** arrives with player-hosting in 012, and WebTransport datagrams are a later drop-in if CF/browser support firms up. Document the TCP-HOL caveat honestly in 011.
+Online play starts on **WebSocket** (TCP): **010** runs it to a local dedicated Node host (no signaling/TURN); **011** moves the same adapter to the Durable Object. The rollback design tolerates moderate jitter/loss, but TCP head-of-line blocking hitches under packet loss. The `packages/net` transport interface (009) keeps this swappable: WebRTC **DataChannel (unreliable + unordered)** arrives with player-hosting in 012, and WebTransport datagrams are a later drop-in if CF/browser support firms up. Document the TCP-HOL caveat honestly in 010 (carried into 011).
 
 ### New workspaces
 
-- `packages/net` — depends on `sim`, **never Phaser/DOM**. Transport interface + session/prediction/rollback logic. Loopback-testable in Node. (Add to the dependency-cruiser allow-list: `net` may import `sim`; `sim` still imports nothing outside itself.)
-- `packages/server` — the dedicated host = `sim` + `net`, runs in `workerd` (Durable Object) and Node. No renderer.
-- `packages/game` gains an online ArenaScene + online lobby/join; reuses the existing accumulator-freeze for disconnect-pause.
+- `packages/net` — depends on `sim`, **never Phaser/DOM**. Transport interface + session/prediction/rollback logic, plus (010) the pure transport-agnostic `ClientSession` + `HostRuntime` orchestrators. Loopback-testable in Node. (`net` may import `sim`; `sim` still imports nothing outside itself.)
+- `packages/server` — the dedicated host = `sim` + `net`, runs in `workerd` (Durable Object) and Node. No renderer. **Created in 011**; 010's localhost host is a dev-only Node script (run via `tsx`) instead, carrying the `ws`→`TransportServer` adapter that graduates into `packages/server` then.
+- `packages/game` gains (010) a browser `WebSocketTransport` + an online ArenaScene driving a `ClientSession`; the online lobby/join UI + disconnect polish land with 011+. Reuses the existing accumulator-freeze for pause.
 
 ---
 
-## Phase 008 — Netcode foundation (the only phase task-broken-out here)
+## Phase 008 — Netcode foundation
 
 **Goal:** the sim can be snapshotted, restored, and re-simulated bit-identically; inputs serialize to a compact versioned wire format; cross-engine determinism is proven and guarded — all headless, no transport, no browser.
 
@@ -214,3 +214,113 @@ Move the session knobs into content (per O1), validate in `packages/net`; full g
 - Any browser / Phaser wiring of the session into the live game loop (011).
 - Lag compensation, reconnection, spectators, host migration, anti-cheat (012–013).
 - Snapshot delta compression (deferred until measured necessary).
+
+---
+
+## Phase 010 — Real WebSocket transport + local online play
+
+**Status: done** (T10.0–T10.6, landed 2026-06-15; **owner re-scoped** the original "010 = real transport + Cloudflare signaling" line). The cheapest tangible win was pulled out front: a real WebSocket transport on the existing `Transport` seam, wired into the Phaser shell so **two browser tabs play a full match on `localhost`** against a local dedicated Node host — verified converging byte-for-byte by a Playwright two-tab e2e. Everything Cloudflare — signaling (Worker + Durable Object), room codes, and the `packages/server` workspace — moves to **011** (a Cloudflare account is still a pending owner decision and is **not** assumed by this phase). Full gate green: typecheck/lint/check:deps + 211 unit tests + 11 e2e + build; `packages/sim` untouched (golden artifacts byte-identical).
+
+**Goal:** prove the host-authoritative session (008 primitives + the 009 host/clock/prediction/rollback layer) runs over a **real, non-loopback** transport and is wired into the live game loop, on the lowest-risk path: localhost, no internet, no Cloudflare. When 010 lands, the only thing standing between us and an internet match is *where the host runs* and *how clients find it* — i.e. 011 is "move the host to a Durable Object + add signaling/room codes," not "make rollback work over a wire."
+
+This is the first phase that is **not** fully headless. The boundary stays strict: every impure dependency (the DOM `WebSocket`, Node `ws`, a wall-clock `setInterval`, the Phaser scene) lives in `packages/game` or the dev host; `packages/net` gains only **pure, transport-agnostic** orchestration (`ClientSession`, `HostRuntime`) driven by an explicit `tick()`/`step()` over a `Transport`. `packages/sim` is **not touched at all**, so the golden FFA log and `golden-state-hashes.json` stay byte-identical by construction.
+
+### Architecture for this phase
+
+```
+   Node dev host  (tsx, 60 Hz setInterval)        Browser tab A (client)        Browser tab B (client)
+   ┌───────────────────────────────────┐          ┌─────────────────────┐       ┌─────────────────────┐
+   │ ws WebSocketServer → TransportServer │◄──ws───►│ WebSocket→Transport  │       │ WebSocket→Transport  │
+   │ HostRuntime (slot assign, decode)    │◄──ws──────────────────────────────────►│                      │
+   │ HostSession (canonical sim, 008/009) │          │ ClientSession:       │       │ ClientSession:       │
+   │                                       │          │  ClockSync +         │       │  ClockSync +         │
+   │                                       │          │  RollbackController  │       │  RollbackController  │
+   └───────────────────────────────────┘          │ OnlineArenaScene     │       │ OnlineArenaScene     │
+        authoritative (dedicated, Node)             └─────────────────────┘       └─────────────────────┘
+                                                       predicts + rolls back          predicts + rolls back
+```
+
+The host is the existing `HostSession`, now driven by a real wall clock; the clients are the existing `ClockSync` + `RollbackController`, now routed through a real `WebSocket` and a reusable `ClientSession`. The genuinely new code is small: two `Transport` adapters (browser + Node), a one-message handshake (slot + session params), the host's wall-clock loop, and the client-session orchestrator + its integration into a live Phaser scene.
+
+**Definition of done:** the acceptance criteria below pass in `npm test`, the e2e two-tab test passes in `npm run e2e`, and the full CI gate is green; `check:deps` still passes (`net → sim` only, the `ws`/host live outside `packages/net`); `packages/sim` is unchanged (golden artifacts byte-identical).
+
+### Spec-level acceptance criteria
+
+(Criteria are prefixed **W#** — "wire-up / WebSocket"; tasks below cite the W# they satisfy, mirroring 008's N# / 009's M#.)
+
+- [x] W1. **Browser WebSocket transport.** `WebSocketTransport` in `packages/game` wraps a browser `WebSocket` (binary frames) and implements the 008 `Transport` interface (`send`/`onMessage`/`onClose`/`close`, stable `id`). It lives in the shell (it names the DOM `WebSocket`), never in `packages/net`. Round-trips bytes against a local ws echo (smoke, exercised by the e2e at minimum).
+- [x] W2. **Node WebSocket server transport.** A `ws`-based adapter (in the dev host, importing `ws` — never `packages/net`) implements the 008 `TransportServer`, yielding one `Transport` per inbound connection with a host-assigned id. A connect/echo test proves a client `WebSocketTransport` and a server-side `Transport` exchange datagrams over real loopback TCP.
+- [x] W3. **Reusable pure `ClientSession` (`packages/net`).** A headless `ClientSession` ties `ClockSync` + `RollbackController` + message routing over any `Transport`: it decodes inbound (`authoritative`→`confirm`, `snapshot`→`resync`, `ack`→clock, `hello`→bootstrap) and, on an explicit `tick(localInput)` (no wall-time), records the local input and sends it tagged at `clockSync.targetTick(...)`. Headless test over the loopback reproduces the 009 convergence result **through the orchestrator** (not inline test wiring): confirmed state stays byte-identical to the host's.
+- [x] W4. **Host runtime + handshake (`packages/net`).** A pure `HostRuntime` manages a `TransportServer`: assigns each connection a slot in connection order, sends a `HelloMessage` ({assigned `slot`, `seed`, `playerCount`, `arenaId`}), decodes inbound `input` → `HostSession.receiveInput`, and exposes `step()` (tick the canonical sim + broadcast). The v1 start policy is **wait for all expected clients, then run from tick 0**. `HelloMessage` is added to the protocol + codec behind a new tag and the existing `PROTOCOL_VERSION`, with exhaustive round-trip + version/format-error tests.
+- [x] W5. **Local dedicated host process.** A dev-only Node entry (`npm run dev:host`, run via `tsx`) starts the `ws` `TransportServer`, builds `HostRuntime` + `HostSession` from local `content/` (arena/tuning/players pinned at init), and drives `step()` at 60 Hz on a wall clock. Port + expected player count are dev launch config (CLI/env), **not** `content/tuning.json`. This is the dedicated host of the dedicated-first plan, minus Cloudflare.
+- [x] W6. **Online Phaser scene + boot path.** An online play path: an `OnlineArenaScene` (or an online mode of `ArenaScene`) that, instead of stepping its own sim, drives a `ClientSession` on the existing fixed-timestep accumulator — sampling the local device for its slot each tick — and renders the predicted sim state through the existing renderers (archer/arrow/environment) with the existing wrap-aware interpolation. Tuning hot-reload is **disabled** in online mode (amendment #4: tuning pinned for the net session). Reached via a URL param for the cheapest win (e.g. `?online=ws://localhost:PORT`), mirroring `?quickstart`.
+- [x] W7. **Two-tab match end-to-end.** A Playwright test starts the dev host (a second `webServer`) and opens **two** browser pages as clients; both reach the `match` phase, the match runs with inputs flowing both ways, and a new dev-only `getNetProbe()` hook proves convergence: at a shared confirmed tick each tab's confirmed-state hash equals the other's (byte-identical), and both advance. Zero console / page errors.
+- [x] W8. **Purity + determinism held.** `packages/sim` untouched (golden FFA log + `golden-state-hashes.json` byte-identical). `packages/net` gains only pure additions (still imports only the sim); `check:deps` green; `ws`/`tsx` and the Node host live outside `packages/net`. No new game-feel tunables — or any added are justified in the `net` block of `content/tuning.json` (hard rule 3).
+
+### Fixed design points
+
+- **Strict impurity boundary.** All wall-clock, DOM, and Node-only code is in `packages/game` + the dev host. `packages/net` stays pure and transport-agnostic: `ClientSession`/`HostRuntime` take a `Transport`/`TransportServer` and are driven by explicit `tick()`/`step()` — exactly like 009's loopback bed, so they remain unit-testable headlessly and the `net-purity` cruiser rule is unaffected.
+- **Dedicated host, not listen-server.** The authoritative host is a real separate Node process (the dedicated-first plan, minus Cloudflare). Neither browser is the host — a browser cannot accept WebSocket connections, and player-hosting/listen-server is explicitly 012. "Two tabs on localhost" means **two clients of one local dedicated host**, three processes total.
+- **WebSocket is required (owner-specified), and forces a server endpoint.** Browsers can't peer directly over WS, so a Node `ws` endpoint is necessary even on localhost. (Same-origin tricks like `BroadcastChannel` are rejected: not a WebSocket, and the wrong abstraction to invest in — it doesn't generalize to internet play.)
+- **Clock-driven prediction is the main new risk.** The client advances its predicted sim on the shell's existing accumulator; `ClockSync` sets the tick its outgoing inputs are tagged with so they reach the host ~`inputDelayTicks` before it commits that tick. Keeping the predicted lead inside the `maxRollbackTicks` window under **real, variable, wall-clock** latency — not 009's virtual clock — is the integration risk this phase retires. `ClockSync` is integrated end-to-end with prediction here for the first time.
+- **Session params by deployment, not by wire (for now).** Both sides load the same `content/` (localhost), so the `HelloMessage` carries only `seed`, `arenaId`, `playerCount`, and the assigned `slot`; arena/tuning are taken from shared local content and pinned at session init. Over-the-wire content/tuning negotiation (and the cross-build mismatch story beyond `PROTOCOL_VERSION`) is 011+.
+- **Wire shapes unchanged from 009.** Inputs are 1 byte/tick; snapshots cross as the JSON `SimSnapshot` (009 codec); WS frames are binary. Snapshot delta compression stays deferred until measured necessary.
+- **TCP head-of-line caveat, documented honestly.** WebSocket is TCP, so packet loss hitches all subsequent frames; rollback tolerates jitter/reorder but cannot hide HOL stalls. Acceptable for localhost/v1; the unreliable transport (WebRTC DataChannel) is 012, swappable behind the same `Transport` seam.
+- **No `packages/sim` change; no new game-feel tunables.** This phase is transport + wiring, not feel.
+
+### Tasks
+
+#### T10.0 — Handshake message + codec (`HelloMessage`)
+Add `HelloMessage { type: "hello", slot, seed, playerCount, arenaId }` to [protocol.ts](packages/net/src/protocol.ts); encode/decode in [codec.ts](packages/net/src/codec.ts) behind a new 1-byte tag and the existing `PROTOCOL_VERSION`; exhaustive round-trip + `ProtocolVersionError`/`WireFormatError` tests (incl. an unknown/short `arenaId`).
+**Accept:** W4 (codec part).
+
+#### T10.1 — Pure `ClientSession` orchestrator (`packages/net`)
+Implement `ClientSession`: bootstrap from `hello`, route `authoritative`/`snapshot`/`ack` into `RollbackController` + `ClockSync`, and on an explicit `tick(localInput)` record + send the local input tagged at the clock-targeted tick. Expose readables a renderer needs (e.g. `predictedState()` / `confirmedTick`). Headless test over the loopback reproduces 009 convergence through the orchestrator (byte-identical confirmed state under clean + lossy + jittery networks).
+**Accept:** W3.
+
+#### T10.2 — Pure `HostRuntime` (`packages/net`)
+Implement `HostRuntime` over `TransportServer`: connection→slot assignment, `hello` on connect, decode `input` → `HostSession.receiveInput`, `step()` wrapper; "wait for all expected, start at tick 0" policy + drop/count of unknown-client traffic. Headless test: `HostRuntime` + N `ClientSession`s over the loopback converge byte-for-byte (the 009 convergence proof, re-expressed on the reusable runtime + session pair).
+**Accept:** W4 (runtime part); folds the loopback convergence proof onto the reusable pieces.
+
+#### T10.3 — Browser `WebSocketTransport` (`packages/game`)
+Wrap a browser `WebSocket` (binary `arraybuffer`) as a 008 `Transport` in `packages/game/src/net/`. Handle open buffering, `onmessage`→handler (`Uint8Array`), `onclose`→close handler. Smoke-tested via the e2e (and/or a small ws echo).
+**Accept:** W1.
+
+#### T10.4 — Node `ws` `TransportServer` + dev host entry
+Implement the `ws`→`TransportServer` adapter and a dev-only Node entry (`scripts/dev-host.ts` or similar) run via `tsx` as `npm run dev:host`: build `HostRuntime` + `HostSession` from local `content/`, 60 Hz wall-clock loop, port + player count from CLI/env. Add `ws` + `tsx` as root devDeps; add the `dev:host` script.
+**Accept:** W2, W5.
+
+#### T10.5 — Online Phaser scene + boot route
+`OnlineArenaScene` driving a `ClientSession` on the existing accumulator (sample local device → `tick(localInput)`), rendering predicted state through the existing renderers + interpolation; `?online=ws://...` boot route (in `BootScene`, alongside `?quickstart`); disable tuning hot-reload online; add online `__testApi` probes (`getNetProbe()`; `getState()` reads predicted state). Minimal disconnect handling: a closed socket pauses/ends via the existing accumulator-freeze.
+**Accept:** W6.
+
+#### T10.6 — Two-tab e2e + verification sweep + docs
+Playwright two-page online test with the dev host as a second `webServer`; assert both tabs reach `match`, inputs flow both ways, and `getNetProbe()` shows byte-identical confirmed-state hashes at a shared confirmed tick; zero console errors. Full local gate + e2e sweep. Update CLAUDE.md (Commands: `dev:host`; Project structure: shell `net/` + dev host + `ws`/`tsx` devDeps; Content-as-data note that the `net` block is unchanged; Decisions Log: the 010 re-scope, WS-on-localhost + dedicated-Node-host, and the TCP-HOL caveat) and the specs roadmap rows; mark Phase 010 done.
+**Accept:** W7, W8; gate + e2e green; sim/golden artifacts untouched.
+
+### Open questions (resolve before / during 010)
+
+- **OA — Host process home.** Dev-only `scripts/` entry run via `tsx` (proposed) vs creating a minimal `packages/server` workspace now. Proposed: keep it a script — `packages/server` (the `workerd`/DO target) is explicitly deferred to 011 per owner. The `ws`→`TransportServer` adapter is written so it graduates into `packages/server` unchanged.
+- **OB — Start / join policy.** "Host waits for all expected clients, then starts at tick 0" (proposed, simplest, no mid-join catch-up) vs allowing late join via the periodic snapshot (`resync` already supports it). Proposed: wait-for-all for v1; mid-session join is 011+.
+- **OC — Content negotiation.** Both sides share `content/` by deployment, so `HelloMessage` carries only `seed`/`arenaId`/`playerCount`/`slot` and arena+tuning come from local content. Real over-the-wire content/tuning negotiation (host and client on different builds) is 011+; `PROTOCOL_VERSION` already rejects mismatched protocol builds today.
+- **OD — New tunables.** Expected: none (port/player-count are launch config; interpolation reuses the existing `alpha`). If a genuine client knob emerges (extra interpolation delay, input resend cadence, a tighter prediction clamp), it lands in the `net` block of `content/tuning.json` (hard rule 3), never in source — flagged here so it's a conscious choice, not a drive-by constant.
+- **OE — Run-it script ergonomics.** Whether `npm run dev` should optionally spawn the dev host too (one command for the demo) or stay separate (`dev` + `dev:host` in two terminals). Proposed: keep them separate for clarity; revisit if the e2e or the owner wants a single command.
+
+### Out of scope for 010 (do not build, do not stub)
+
+- Any Cloudflare Worker / Durable Object / Pages Functions, the `packages/server` workspace, or deploying the host anywhere but `localhost` (011).
+- Signaling service, room codes, matchmaking, or a lobby-driven online-join UI (011) — 010 connects via a URL param to a known host address.
+- WebRTC / DataChannel / P2P / listen-server (a browser as host), NAT traversal, TURN (012).
+- Lag compensation, reconnection, spectators, host migration, anti-cheat (012–013).
+- Snapshot delta/diff compression (deferred until measured necessary).
+- Over-the-wire content/tuning negotiation, and late/mid-session join beyond the existing snapshot `resync` (011+).
+- TCP head-of-line mitigation — 010 documents the caveat; the unreliable transport is 012.
+- Touching `packages/sim` or regenerating any golden artifact (this phase needs neither).
+
+### Post-implementation review notes (deferred, non-blocking)
+
+`/code-review` (multi-angle, recall mode) + `/security-review` ran on the landed branch. The core was confirmed solid — confirmed state stays byte-identical to the host across cap stalls, reorder/dup/stale authoritative, multi-remote mispredicts, 4-player, resync, and high-loss/jitter; security review found no exploitable surface (the untrusted codec is bounds-checked; no XSS/secret/auth sink). Two findings were **fixed in a follow-up** (HostRuntime now validates a dense, in-range roster at init; the online scene snaps interpolation instead of smearing a multi-tick prediction jump). Three were **consciously deferred** as non-correctness (convergence is unaffected):
+
+- **Bootstrap input loss before clock sync.** Until the first ack, the client leads off `confirmedTick` (which lags real host time by ~latency), so the local player's opening inputs for ~`latency`+`inputDelay` ticks are tagged late and repeat-last-filled by the host. Negligible on localhost (sub-tick latency); revisit when clock/timing is hardened for real RTT in **011**.
+- **Interpolation teleport on a rollback correction.** Authoritative/snapshot messages arrive between frames and can roll the predicted sim back after `prev` was captured, so the next frame interpolates across the jump (inherent to prediction; self-heals next tick). Visual smoothing belongs to **013** (polish).
+- **Pre-open datagrams dropped if the socket fails mid-handshake.** Benign — the connection is already terminal and the protocol tolerates loss; the scene shows "Disconnected".

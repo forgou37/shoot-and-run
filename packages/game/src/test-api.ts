@@ -23,6 +23,12 @@ export interface TestApi {
   /** Sprite smoke probe (spec 006): loaded archer texture keys plus any
    *  missing per-slot animation keys (empty when healthy). */
   getSpriteProbe?(): { textures: string[]; missingAnims: string[] };
+  /** Online net probe (spec 010): the client session's progress + the confirmed
+   *  state hash at the current confirmed tick (for cross-tab convergence). */
+  getNetProbe?(): { ready: boolean; confirmedTick: number; predictedTick: number; confirmedHash: number };
+  /** Online (spec 010): the recorded confirmed-state hash at a specific tick,
+   *  or null if not yet confirmed / evicted — lets two tabs compare a shared tick. */
+  getConfirmedHashAt?(tick: number): number | null;
 }
 
 declare global {
@@ -37,7 +43,7 @@ export function installBaseTestApi(game: Phaser.Game): void {
   window.__testApi = {
     getPhase: () => {
       const sm = game.scene;
-      if (sm.isActive("arena")) return "match";
+      if (sm.isActive("arena") || sm.isActive("online")) return "match";
       if (sm.isActive("lobby")) return "lobby";
       return "title";
     }
