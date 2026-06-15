@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@shoot-and-run/bots": "*",
+    "@shoot-and-run/net": "*",
     "@shoot-and-run/sim": "*",
     "phaser": "^3.90.0"
   },
