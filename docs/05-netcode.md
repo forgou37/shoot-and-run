@@ -1,6 +1,6 @@
 # 05 — Netcode (онлайн-мультиплеєр)
 
-Host-authoritative rollback-netcode (специфікації 008–010). `packages/net` — чистий і headless: може імпортувати лише `@shoot-and-run/sim`, нічого з Phaser/DOM (enforced правилом `net-purity`). Єдині «брудні» шари — браузерний `WebSocketTransport` і `ws`-адаптер хоста — живуть **поза** пакетом.
+Host-authoritative rollback-netcode (специфікації 008–011). `packages/net` — чистий і headless: може імпортувати лише `@shoot-and-run/sim`, нічого з Phaser/DOM (enforced правилом `net-purity`). Єдині «брудні» шари — браузерний `WebSocketTransport` (`packages/game`) і `ws`-адаптер хоста (`packages/server`) — живуть **поза** пакетом.
 
 ## Чому rollback (а не lockstep чи snapshot-interpolation)
 
@@ -45,15 +45,24 @@ interface TransportServer {
 ## Протокол повідомлень (`protocol.ts`)
 
 ```ts
-interface HelloMessage { type:"hello"; slot; seed; playerCount; arenaId }   // Host→Client, раз на конекті
+interface HelloMessage { type:"hello"; slot; seed; playerCount; arenaId; version }  // Host→Client, раз на конекті
 interface InputMessage { type:"input"; tick; input: PlayerInput }            // Client→Host
 interface AuthoritativeInputsMessage { type:"authoritative"; tick; inputs: PlayerInput[] }  // Host→Client, slot order
 interface SnapshotMessage { type:"snapshot"; snapshot: SimSnapshot }         // Host→Client, періодичний
 interface AckMessage { type:"ack"; tick; inputTick }                          // Host→Client, RTT/clock
-type NetMessage = HelloMessage | InputMessage | AuthoritativeInputsMessage | SnapshotMessage | AckMessage;
+interface PingMessage { type:"ping"; id }                                     // Client→Host, clock-bootstrap (011)
+interface PongMessage { type:"pong"; id; hostTick }                           // Host→Client, відповідь на ping (011)
+interface LobbyMessage { type:"lobby"; connected; expected }                  // Host→Client, лоббі-статус (011)
+type NetMessage = HelloMessage | InputMessage | AuthoritativeInputsMessage | SnapshotMessage
+  | AckMessage | PingMessage | PongMessage | LobbyMessage;
 ```
 
 `inputTick` у ack — ключовий механізм: ack відлунює тік підтвердженого інпуту, тож клієнт парує ack↔send за цим тіком (а не за порядком прибуття).
+
+**Додатки 011:**
+- **`version` у hello** — відбиток контенту хоста (`computeContentVersion` = FNV-1a над `{PROTOCOL_VERSION, arena, tuning}`). Клієнт рахує те саме над **своїм** локальним контентом і відмовляє від сесії з `VersionMismatchError`, якщо не збігається — бо в 011 клієнт (Pages) і хост (VPS) деплояться **незалежно** і можуть розійтися (несумісний кеш / не передеплоєний хост). Голосна відмова замість тихого десинку.
+- **ping/pong** — синхронізація годинника **до** того, як клієнт почне лідирувати, без надсилання геймплейного інпуту (див. ClockSync нижче).
+- **lobby** — хост транслює `{connected, expected}` поки клієнти приєднуються; екран очікування показує заповнення roster'у. Втрачає сенс щойно матч стартує.
 
 ## Wire-codec (`codec.ts`)
 
@@ -65,7 +74,10 @@ type NetMessage = HelloMessage | InputMessage | AuthoritativeInputsMessage | Sna
 | authoritative | `1` | `[uvarint tick][uvarint count][count input-байтів]` |
 | snapshot | `2` | `[uvarint utf8Len][utf8(JSON.stringify(snapshot))]` |
 | ack | `3` | `[uvarint tick][uvarint inputTick]` |
-| hello | `4` | `[uvarint slot][uvarint seed][uvarint playerCount][uvarint len][utf8(arenaId)]` |
+| hello | `4` | `[uvarint slot][uvarint seed][uvarint playerCount][uvarint version][uvarint len][utf8(arenaId)]` |
+| ping | `5` | `[uvarint id]` |
+| pong | `6` | `[uvarint id][uvarint hostTick]` |
+| lobby | `7` | `[uvarint connected][uvarint expected]` |
 
 - **Повторне використання sim-хелперів:** `PROTOCOL_VERSION` (1), `ProtocolVersionError`, `WireFormatError`, `encodeInputByte`/`decodeInputByte`, `writeVarint`/`readVarint` — одна реалізація wire, не дві (security-review замінив приватну копію varint на експорт із sim).
 - Локальний — лише DOM-free UTF-8 кодек (`encodeUtf8`/`decodeUtf8`), бо sim не має `TextEncoder`/`TextDecoder`.
@@ -127,6 +139,8 @@ interface LoopbackOptions { seed; latencyTicks?; jitterTicks?; lossRate? }
 - На `onAck(inputTick, hostTick, localNow)`: `rtt = localNow - sentLocal`, `oneWay = rtt/2`, `sampleOffset = hostTick + oneWay - localNow`. EMA-згладжування `offset += smoothing * (sampleOffset - offset)` (α=0.2).
 - За фіксованої затримки D `sampleOffset` точно дорівнює істинному offset K (`hostTick = localTick + K`).
 - Виходи: `estimateHostTick(localNow) = round(localNow + offset)`, `targetTick(localNow, inputDelayTicks) = estimateHostTick + inputDelayTicks`.
+- **Ping-path (011):** `onPingSent(id, localTick)` / `onPong(id, hostTick, localNow)` годують той самий естиматор через **окремий** id-простір (`pingSentAt`), щоб семпли ping і input не колізіонували. Це дає клієнту синхронізувати годинник **до** того, як він почне слати геймплейний інпут (інакше на реальному RTT перші інпути тегуються на вже-закомічені тіки й дропаються).
+- **`oneWayEst`** (EMA) + `estimateOneWay()` (округлення вгору) — оцінка one-way затримки; клієнт флорить вихідні input-тіки на `estimateHostTick + estimateOneWay`, тож не шле інпути на тіки, які хост уже закомітить до їх прибуття.
 
 ## RollbackController (`rollback.ts`) — серце алгоритму
 
@@ -185,23 +199,23 @@ return false;
 
 Зв'язує ClockSync + RollbackController + codec над одним `Transport`. Керується `tick(localInput)` раз на крок.
 
-- `onMessage`: `hello` → `bootstrap`; `authoritative` → `controller.confirm`; `snapshot` → `controller.resync`; `ack` → `clock.onAck(inputTick, hostTick, localTick)`; `input` ігнорується.
+- `onMessage`: `hello` → `onHello` (звірка `version`: збіг → `bootstrap`, інакше `VersionMismatchError` + close); `authoritative`/`snapshot` → `confirm`/`resync` (+ ставлять `hostStarted`); `ack` → `clock.onAck`; `pong` → `clock.onPong`; `lobby` → оновити `lobbyStatus`; `input`/`ping` ігноруються.
 - `bootstrap`: будує FFA-roster `{slot:i}` × playerCount, створює RollbackController з `localSlot: slot`.
-- **`tick(localInput)`:**
+- **`tick(localInput)` (011, три фази):**
   ```ts
   localTick++;
-  const target = clock.synced ? clock.targetTick(localTick, inputDelayTicks)
-                              : controller.confirmedTick + inputDelayTicks;  // bootstrap-lead до першого ack
-  while (controller.predictedTick <= target) {
-    const tk = controller.predictedTick;
-    if (tk - controller.confirmedTick >= maxRollbackTicks) break;
-    const stepEvents = controller.predict(tk, localInput);
-    if (controller.predictedTick === tk) break;  // не просунувся (cap) — уникнути spin
-    transport.send(encodeMessage({ type:"input", tick:tk, input: localInput }));
-    clock.onSend(tk, localTick);
-    events.push(...stepEvents);
+  if (clock.synced) {
+    // усталений режим: лідирувати від синхрон. годинника, але СЛАТИ лише інпути,
+    // які хост ще не закомітить до прибуття (floor = estimateHostTick + estimateOneWay)
+    const floor = clock.estimateHostTick(localTick) + clock.estimateOneWay();
+    predictTo(clock.targetTick(localTick, inputDelayTicks), localInput, floor);
+  } else if (!hostStarted) {
+    predictTo(confirmedTick + inputDelayTicks, localInput, -Infinity);  // pre-start: хост на тіку 0 → pre-fill буфера, слати все
+  } else {
+    sendPing();  // хост біжить, годинник ще не синхрон. — тримати й пінгувати (НЕ лідирувати від відстаючого confirmedTick)
   }
   ```
+  `predictTo(target, input, floor)` крокує prediction до `target`, шле кожен передбачений інпут (лише `tk >= floor`) і кличе `clock.onSend`. Це усуває bootstrap-втрату інпутів 010 на реальному RTT (тіки нижче floor усе одно не встигли б — пропуск нічого не втрачає).
 
 ## Налаштування (`params.ts` + `content/tuning.json` → блок `net`)
 
@@ -211,14 +225,53 @@ interface NetParams { inputDelayTicks; snapshotIntervalTicks; maxRollbackTicks; 
 
 Поточні: `inputDelayTicks: 3`, `snapshotIntervalTicks: 30`, `maxRollbackTicks: 120`, `jitterBufferTicks: 4`. `parseNetParams` валідує (невід'ємні цілі; `snapshotIntervalTicks >= 1`, `maxRollbackTicks >= 1`). `jitterBufferTicks` — **зарезервовано**, ще не споживається (rollback уже толерує переупорядкування). Sim ігнорує блок `net` — golden-артефакти недоторкані.
 
-## Dev-host (`scripts/dev-host/`) — локальний dedicated-хост
+## Виділений хост — `packages/server`
 
-Node-процес, що крутить авторитетний `HostRuntime` + sim і обслуговує браузерні клієнти по реальному WebSocket на localhost. Запуск через `tsx` (`npm run dev:host`) — без build-кроку. Єдиний Node-/`ws`-специфічний код; `packages/net` лишається headless. У спеці 011 «випускається» в Cloudflare Durable Object заміною лише транспорту + bootstrap'у.
+Node-процес, що крутить авторитетний `HostRuntime` + sim і обслуговує браузерні клієнти по реальному WebSocket. Headless: імпортує `@shoot-and-run/{net,sim}` + `ws` + Node, **ніколи** Phaser/`packages/game` (правило `server-purity`). У 010 жив як скрипт у `scripts/dev-host/`; у 011 «випущений» у власний пакет — без окремого build-кроку, через `tsx` (як Vite/Vitest споживають TS напряму).
 
-- **`ws-transport-server.ts`** — адаптер `ws` → `TransportServer`: `WsTransport implements Transport` (`binaryType="nodebuffer"`, `toUint8` нормалізує `RawData`, `send` лише при `OPEN`). `createWsTransportServer({port, host?})` — монотонний connection-id (одна сесія на процес).
-- **`main.ts`** — bootstrap. Env (launch, не геймфіл-тюнінг): `PORT` (8787), `PLAYERS` (2), `SEED` (1), `ARENA` (`arena-002.json`). Читає `content/tuning.json` + арену, парсить, створює `HostRuntime`, **цикл 60 Гц** `setInterval(() => runtime.step(), 1000/TICK_RATE)`. `runtime.step()` no-op поки не підключилися всі. `SIGINT`/`SIGTERM` → чистий shutdown.
+- **`ws-transport-server.ts`** — адаптер `ws` → `TransportServer`: `WsTransport implements Transport` (`binaryType="nodebuffer"`, `toUint8` нормалізує `RawData`, `send` лише при `OPEN`). `createWsTransportServer({port, host?, tls?})` — монотонний connection-id (одна сесія на процес). З `tls:{cert,key}` слухає `wss://` напряму (`https.Server` + `ws`), інакше — звичайний `ws` (TLS термінує реверс-проксі).
+- **`start.ts`** — `startHost(config)`: створює ws-сервер + `HostRuntime`, **цикл 60 Гц** `setInterval(() => runtime.step(), 1000/TICK_RATE)` (no-op поки не підключилися всі), повертає `{runtime, stop}`.
+- **`main.ts`** — CLI-вхід. Env (launch, не геймфіл-тюнінг): `PORT` (8787), `HOST` (всі інтерфейси), `PLAYERS` (2), `SEED` (1), `ARENA` (`arena-002.json`), `CONTENT_DIR` (репо `/content`), `TLS_CERT`+`TLS_KEY` (опц. → прямий `wss://`). `SIGINT`/`SIGTERM` → чистий shutdown.
 
-**Як грати:** відкрий дві вкладки на `?online=ws://localhost:8787`. Хост призначає слоти в порядку конекту через hello, чекає `PLAYERS` клієнтів, біжить із тіка 0.
+Локально: `npm run dev:host` (через `tsx`) або `npm run start:host`. Дві вкладки на `?online=ws://localhost:8787` (або через меню **ONLINE**) грають повний матч.
+
+### Self-hosting на VPS (netcup) — перший інтернет-матч
+
+011 свідомо **без Cloudflare**: хост — звичайний Node-процес, який власник тримає на своєму VPS (або машині), а друзі під'єднуються з Pages-клієнта через меню **ONLINE**.
+
+**Критичне: `wss://` обов'язковий.** Pages-клієнт віддається по **HTTPS**, а браузер на https-сторінці **не може** відкрити незахищений `ws://` (mixed-content блок). Тож інтернет-хост має бути `wss://` (TLS). `ws://localhost` працює лише як локальний виняток (dev/e2e).
+
+**Рекомендовано — реверс-проксі з TLS (Caddy):**
+
+```
+# /etc/caddy/Caddyfile
+game.example.com {
+    reverse_proxy localhost:8787
+}
+```
+
+Caddy сам бере/оновлює Let's Encrypt-сертифікат і термінує TLS, проксіюючи `wss://game.example.com` → `ws://localhost:8787`. Node-хост лишається звичайним `ws`:
+
+```
+git clone … && cd arcade-game && npm ci
+PORT=8787 PLAYERS=2 SEED=1 npm run start:host
+```
+
+(Тримати живим через `systemd`/`pm2`; nginx із `proxy_pass` + `Upgrade`/`Connection` headers — ручна альтернатива Caddy.)
+
+**Без проксі — прямий TLS у Node:**
+
+```
+TLS_CERT=/etc/letsencrypt/live/game.example.com/fullchain.pem \
+TLS_KEY=/etc/letsencrypt/live/game.example.com/privkey.pem \
+PORT=8787 PLAYERS=2 npm run start:host        # слухає wss:// напряму
+```
+
+Друзі: Pages-URL → **ONLINE** → ввести `wss://game.example.com` (порт :443 за проксі, або `:8787` за прямого TLS) → Connect. Адреса запам'ятовується в `localStorage`.
+
+**`inputDelayTicks` під інтернет.** Має покривати one-way затримку, інакше інпути спізнюються. Дефолт `3` (≈ 100 мс RTT) годиться для близьких друзів; за вищого пінгу підняти (`net`-блок у `content/tuning.json`, напр. `5–8`) ціною трохи більшого лагу вводу — це дані (hard rule 3), однакові на хості й клієнті в межах сесії.
+
+**Trust-постура (друзі).** Інтернет-хост без авторизації: будь-хто з URL може зайняти слот — прийнятно для пет-проекту (непублічний URL, один матч). Опційний shared-токен — беклог; анти-чіт — поза скоупом.
 
 ## WebSocketTransport (браузер, `packages/game/src/net/`)
 
@@ -234,4 +287,4 @@ Node-процес, що крутить авторитетний `HostRuntime` + 
 
 Обидві sim'и стартують з однакового детермінованого стану на тіку 0. Хост комітить кожен тік (repeat-last fill) і транслює авторитетні інпути + періодичні снапшоти. Confirmed-sim клієнта replay'ить рівно ті авторитетні інпути → побайтово рівна хосту на кожному підтвердженому тіку (доведено determinism-guard'ом). Predicted-sim біжить попереду, відкочуючись лише коли авторитетний віддалений інпут відрізнявся від здогаду. Діри від втрат лікуються снапшотами через `resync()`. Усе це прогнано headless над `LoopbackNetwork` (seeded loss/jitter, явний `advance`) і end-to-end у двох вкладках проти Node dev-хоста — обидва сходяться побайтово (e2e `online.spec.ts` порівнює `getConfirmedHashAt`).
 
-Наступні фази (не реалізовано): **011** Cloudflare signaling (Worker + Durable Object) + room codes + перший інтернет-матч; **012** player-hosted listen-server (WebRTC P2P, NAT/TURN); **013** netplay-поліш (lag-comp, спектатори, reconnection, host migration).
+**011 реалізовано** — self-hosted dedicated server (`packages/server`) + меню **ONLINE**, **без Cloudflare** (re-scope власника). Наступні фази (не реалізовано): **012** player-hosted listen-server (WebRTC P2P, NAT/TURN); **013** netplay-поліш (lag-comp, спектатори, reconnection, host migration, опційний join-токен).
