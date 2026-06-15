@@ -7,6 +7,24 @@
  */
 import type { PlayerInput, SimSnapshot } from "@shoot-and-run/sim";
 
+/**
+ * Host -> Client: the connection handshake (spec 010). Sent once, right after a
+ * client connects, before any authoritative tick. It tells the freshly-joined
+ * client who it is and the session contract it must reconstruct its sim with:
+ * the `slot` the Host assigned it (connection order), the session `seed`, the
+ * total `playerCount`, and the `arenaId` so the client loads the matching arena
+ * from its shared local content. Tuning is pinned from that same local content
+ * at session init (amendment #4). Over-the-wire content/tuning negotiation is a
+ * later phase; on localhost both peers share `content/`.
+ */
+export interface HelloMessage {
+  type: "hello";
+  slot: number;
+  seed: number;
+  playerCount: number;
+  arenaId: string;
+}
+
 /** Client -> Host: this client's input for a target tick (the Host applies its
  *  input-delay window before stepping). On the wire: a serializeInputFrame. */
 export interface InputMessage {
@@ -42,6 +60,7 @@ export interface AckMessage {
 }
 
 export type NetMessage =
+  | HelloMessage
   | InputMessage
   | AuthoritativeInputsMessage
   | SnapshotMessage

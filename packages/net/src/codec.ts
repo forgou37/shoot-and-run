@@ -6,6 +6,7 @@
  * buffers raise `WireFormatError`.
  *
  * Layout: `[uvarint PROTOCOL_VERSION][uint8 tag][payload]`
+ *   hello        → [uvarint slot][uvarint seed][uvarint playerCount][uvarint utf8Len][utf8(arenaId)]
  *   input        → [uvarint tick][input byte]
  *   authoritative→ [uvarint tick][uvarint count][count input bytes]
  *   ack          → [uvarint tick][uvarint inputTick]
@@ -41,6 +42,7 @@ const TAG_INPUT = 0;
 const TAG_AUTHORITATIVE = 1;
 const TAG_SNAPSHOT = 2;
 const TAG_ACK = 3;
+const TAG_HELLO = 4;
 
 // --- minimal DOM-free UTF-8 (TextEncoder/Decoder are not in the no-DOM lib) ---
 
@@ -122,6 +124,16 @@ export function encodeMessage(msg: NetMessage): Uint8Array {
   const out: number[] = [];
   writeVarint(out, PROTOCOL_VERSION);
   switch (msg.type) {
+    case "hello": {
+      out.push(TAG_HELLO);
+      writeVarint(out, msg.slot);
+      writeVarint(out, msg.seed);
+      writeVarint(out, msg.playerCount);
+      const id = encodeUtf8(msg.arenaId);
+      writeVarint(out, id.length);
+      for (const b of id) out.push(b);
+      break;
+    }
     case "input":
       out.push(TAG_INPUT);
       writeVarint(out, msg.tick);
@@ -161,6 +173,22 @@ export function decodeMessage(bytes: Uint8Array): NetMessage {
   const tag = bytes[pos++]!;
 
   switch (tag) {
+    case TAG_HELLO: {
+      const slot = readVarint(bytes, pos);
+      const seed = readVarint(bytes, slot.next);
+      const playerCount = readVarint(bytes, seed.next);
+      const len = readVarint(bytes, playerCount.next);
+      pos = len.next;
+      if (bytes.length - pos < len.value) throw new WireFormatError("hello message truncated");
+      const arenaId = decodeUtf8(bytes.subarray(pos, pos + len.value));
+      return {
+        type: "hello",
+        slot: slot.value,
+        seed: seed.value,
+        playerCount: playerCount.value,
+        arenaId
+      };
+    }
     case TAG_INPUT: {
       const tick = readVarint(bytes, pos);
       pos = tick.next;
