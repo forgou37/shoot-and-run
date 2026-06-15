@@ -13,10 +13,21 @@ export default defineConfig({
     // first boot into an idle (loader-less) scene like the title screen.
     launchOptions: { args: ["--use-gl=angle", "--use-angle=swiftshader"] }
   },
-  webServer: {
-    command: "npm run dev",
-    url: "http://localhost:5173",
-    reuseExistingServer: !process.env.CI,
-    timeout: 60_000
-  }
+  webServer: [
+    {
+      command: "npm run dev",
+      url: "http://localhost:5173",
+      reuseExistingServer: !process.env.CI,
+      timeout: 60_000
+    },
+    {
+      // Dedicated host for the spec-010 online e2e (two tabs on localhost). It's
+      // a ws server, so readiness is a TCP port check (it doesn't answer HTTP).
+      command: "npm run dev:host",
+      port: 8787,
+      env: { PORT: "8787", PLAYERS: "2", SEED: "1" },
+      reuseExistingServer: !process.env.CI,
+      timeout: 60_000
+    }
+  ]
 });
