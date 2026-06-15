@@ -9,7 +9,7 @@
   "scripts": {
     "dev": "npm run dev -w @shoot-and-run/game",
     "build": "npm run typecheck && npm run build -w @shoot-and-run/game",
-    "typecheck": "tsc --noEmit -p packages/sim && tsc --noEmit -p packages/sim/tsconfig.test.json && tsc --noEmit -p packages/bots && tsc --noEmit -p packages/bots/tsconfig.test.json && tsc --noEmit -p packages/net && tsc --noEmit -p packages/game && tsc --noEmit -p e2e",
+    "typecheck": "tsc --noEmit -p packages/sim && tsc --noEmit -p packages/sim/tsconfig.test.json && tsc --noEmit -p packages/bots && tsc --noEmit -p packages/bots/tsconfig.test.json && tsc --noEmit -p packages/net && tsc --noEmit -p packages/net/tsconfig.test.json && tsc --noEmit -p packages/game && tsc --noEmit -p e2e",
     "test": "vitest run",
     "e2e": "playwright test",
     "lint": "eslint .",
