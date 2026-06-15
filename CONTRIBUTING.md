@@ -36,7 +36,7 @@ The point of the split: the agent that writes the change is no longer the only t
 - Force-push and branch deletion are blocked.
 - The repo **admin bypasses** the ruleset (`always`) — the owner is never locked out for an emergency push.
 
-So "don't merge a red PR / don't push straight to `main`" is a hard block, not just a convention. This became possible when the repo was made public (2026-06-15) — protection and rulesets are free on public repos. Going public also lifts the old "Pages unavailable on private Free" blocker on continuous deploy (still unwired — see Releases).
+So "don't merge a red PR / don't push straight to `main`" is a hard block, not just a convention. This became possible when the repo was made public (2026-06-15) — protection and rulesets are free on public repos. Going public also lifts the old "Pages unavailable on private Free" blocker on continuous deploy (now live — see Releases).
 
 ### When a full PR is overkill
 
@@ -65,11 +65,12 @@ A change is done when **all** of these hold (this is the PR checklist):
 
 ## Releases
 
-Static client; deploy target still owner-decided (see Decisions Log — Pages needs public/paid, Cloudflare needs an account call).
+The client is static. **Continuous deploy to GitHub Pages is live** — [`deploy.yml`](.github/workflows/deploy.yml) publishes every green push to `main` at <https://forgou37.github.io/shoot-and-run/>. Tagged releases are a separate, occasional ritual on top of that:
 
 1. Update `CHANGELOG.md` — move `Unreleased` items under the new version.
 2. Tag `vMAJOR.MINOR.PATCH` on a green `main`.
 3. `.github/workflows/release.yml` builds the client, zips `packages/game/dist`, and publishes a GitHub Release with auto-generated notes.
-4. **Deploy is intentionally not wired** — the release ships an artifact. Hook up the deploy step (Cloudflare Pages / itch.io via `butler`) once hosting is chosen.
+
+Deploy is continuous (above), not tied to tags; itch.io distribution via `butler` stays a later add-on once the game is fun.
 
 Semantic versioning: **MAJOR** for breaking sim API / save-format changes, **MINOR** for a shipped spec / feature, **PATCH** for fixes and content.
