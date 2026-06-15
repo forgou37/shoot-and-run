@@ -36,6 +36,7 @@ import { ClockSync } from "./clock";
 import { decodeMessage, encodeMessage } from "./codec";
 import { createRollbackController, type RollbackControllerHandle } from "./rollback";
 import type { Transport } from "./transport";
+import { VersionMismatchError, computeContentVersion } from "./version";
 
 export interface ClientSessionConfig {
   /** The channel to the Host. The client registers its sole message handler. */
@@ -49,6 +50,12 @@ export interface ClientSessionConfig {
   inputDelayTicks: number;
   /** Max ticks prediction may run ahead of confirmed (bounds rollback). */
   maxRollbackTicks: number;
+  /**
+   * Fatal-error sink (T11.2). Invoked once with a typed error the session cannot
+   * recover from — currently only `VersionMismatchError` (host on a drifted
+   * build). The shell surfaces it (e.g. "refresh the page") and leaves the menu.
+   */
+  onError?: (err: Error) => void;
 }
 
 export class ClientSession {
@@ -60,6 +67,14 @@ export class ClientSession {
   private arenaId = "";
   /** Datagrams that failed to decode (version/format mismatch) — diagnostics. */
   private malformed = 0;
+  /** True once the first authoritative tick has arrived — i.e. the host's loop is
+   *  running (it parks at tick 0 until all clients connect). Before this the
+   *  client pre-fills the opening buffer; after it, it syncs the clock then leads. */
+  private hostStarted = false;
+  /** Monotonic ping id for clock-bootstrap probes (T11.2). */
+  private nextPingId = 0;
+  /** Set if the host's content fingerprint differs from ours — session refused. */
+  private versionMismatched = false;
 
   constructor(private readonly config: ClientSessionConfig) {
     config.transport.onMessage((data) => this.onMessage(data));
@@ -68,6 +83,10 @@ export class ClientSession {
   /** True once the Host's hello has bootstrapped the rollback controller. */
   get ready(): boolean {
     return this.controller !== null;
+  }
+  /** True if the host rejected us for a content/version mismatch (S4). */
+  get versionMismatch(): boolean {
+    return this.versionMismatched;
   }
   /** Slot the Host assigned this client (−1 until bootstrapped). */
   get localSlot(): number {
@@ -108,27 +127,69 @@ export class ClientSession {
   tick(localInput: PlayerInput): SimEvent[] {
     this.localTick++;
     const controller = this.controller;
-    if (!controller) return [];
+    if (!controller) return []; // not bootstrapped (or the session was refused)
 
-    // Where the predicted sim should reach: the estimated host tick plus the
-    // input-delay lead so our inputs land just before the host commits them.
-    // Before the first ack the clock has no estimate, so lead off the confirmed
-    // tick — enough to start inputs (and therefore acks) flowing.
-    const target = this.clock.synced
-      ? this.clock.targetTick(this.localTick, this.config.inputDelayTicks)
-      : controller.confirmedTick + this.config.inputDelayTicks;
+    if (this.clock.synced) {
+      // Steady state: lead off the synced clock, but only SEND inputs the host
+      // won't have committed by the time they ARRIVE — i.e. tick >= the host tick
+      // one one-way-delay from now. Otherwise the opening catch-up right after sync
+      // re-tags ticks the host already (or imminently) commits, which it drops —
+      // the 010 bootstrap input loss at real RTT. (Inputs below the floor can't
+      // reach the host in time anyway, so skipping them loses nothing.)
+      const sendFloor = this.clock.estimateHostTick(this.localTick) + this.clock.estimateOneWay();
+      const target = this.clock.targetTick(this.localTick, this.config.inputDelayTicks);
+      return this.predictTo(controller, target, localInput, sendFloor);
+    }
 
+    if (!this.hostStarted) {
+      // Pre-start: the host is parked at tick 0 waiting for all clients. Lead off
+      // the confirmed tick to PRE-FILL its opening-input buffer — correct because
+      // the host begins at tick 0, so nothing sent here is late (send everything).
+      const target = controller.confirmedTick + this.config.inputDelayTicks;
+      return this.predictTo(controller, target, localInput, -Infinity);
+    }
+
+    // Host is running but the clock hasn't converged yet: do NOT lead off the now-
+    // lagging confirmed tick (that tags inputs for committed ticks → late-dropped).
+    // Hold prediction (confirm() keeps predictedTick tracking confirmedTick) and
+    // ping until the first pong syncs the clock; the next tick then leads correctly.
+    this.sendPing();
+    return [];
+  }
+
+  /**
+   * Predict forward to `target`, applying `localInput` each step and sending each
+   * predicted input tagged with its tick — but only for ticks `>= sendFloor`. The
+   * floor keeps the client from sending inputs for ticks the host has already
+   * committed (which it would just drop); pass `-Infinity` to send unconditionally.
+   */
+  private predictTo(
+    controller: RollbackControllerHandle,
+    target: number,
+    localInput: PlayerInput,
+    sendFloor: number
+  ): SimEvent[] {
     const events: SimEvent[] = [];
     while (controller.predictedTick <= target) {
       const tk = controller.predictedTick;
       if (tk - controller.confirmedTick >= this.config.maxRollbackTicks) break; // capped
       const stepEvents = controller.predict(tk, localInput);
       if (controller.predictedTick === tk) break; // didn't advance (capped) — avoid spin
-      this.config.transport.send(encodeMessage({ type: "input", tick: tk, input: localInput }));
-      this.clock.onSend(tk, this.localTick);
+      if (tk >= sendFloor) {
+        this.config.transport.send(encodeMessage({ type: "input", tick: tk, input: localInput }));
+        this.clock.onSend(tk, this.localTick);
+      }
       for (const e of stepEvents) events.push(e);
     }
     return events;
+  }
+
+  /** Emit a clock-sync probe and record its send time, so the matching pong
+   *  converges the clock without committing any gameplay input (T11.2). */
+  private sendPing(): void {
+    const id = this.nextPingId++;
+    this.clock.onPingSent(id, this.localTick);
+    this.config.transport.send(encodeMessage({ type: "ping", id }));
   }
 
   /** Tear the session down. */
@@ -146,20 +207,43 @@ export class ClientSession {
     }
     switch (msg.type) {
       case "hello":
-        if (!this.controller) this.bootstrap(msg.slot, msg.seed, msg.playerCount, msg.arenaId);
+        this.onHello(msg.slot, msg.seed, msg.playerCount, msg.arenaId, msg.version);
         break;
       case "authoritative":
+        this.hostStarted = true; // the host's authoritative loop is running
         this.controller?.confirm(msg.tick, msg.inputs);
         break;
       case "snapshot":
+        this.hostStarted = true;
         this.controller?.resync(msg.snapshot);
         break;
       case "ack":
         this.clock.onAck(msg.inputTick, msg.tick, this.localTick);
         break;
+      case "pong":
+        this.clock.onPong(msg.id, msg.hostTick, this.localTick);
+        break;
       case "input":
-        break; // clients never receive raw inputs
+      case "ping":
+        break; // clients never receive these
     }
+  }
+
+  /**
+   * Handle the host's hello: reject (once) if its content fingerprint differs
+   * from ours — the host is on a drifted build and a shared deterministic sim is
+   * impossible (S4) — otherwise bootstrap the rollback controller.
+   */
+  private onHello(slot: number, seed: number, playerCount: number, arenaId: string, version: number): void {
+    if (this.controller || this.versionMismatched) return; // already bootstrapped / refused
+    const localVersion = computeContentVersion(this.config.arena, this.config.tuning);
+    if (version !== localVersion) {
+      this.versionMismatched = true;
+      this.config.onError?.(new VersionMismatchError(localVersion, version));
+      this.config.transport.close(); // refuse the drifted session
+      return;
+    }
+    this.bootstrap(slot, seed, playerCount, arenaId);
   }
 
   private bootstrap(slot: number, seed: number, playerCount: number, arenaId: string): void {

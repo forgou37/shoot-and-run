@@ -25,6 +25,7 @@ import type {
 import { decodeMessage, encodeMessage } from "./codec";
 import { createHostSession, type HostSessionHandle } from "./host";
 import type { Transport, TransportServer } from "./transport";
+import { computeContentVersion } from "./version";
 
 export interface HostRuntimeConfig {
   /** Listener that yields one Transport per inbound client connection. */
@@ -88,6 +89,9 @@ export function createHostRuntime(config: HostRuntimeConfig): HostRuntimeHandle 
   const transports = new Map<string, Transport>();
   let connections = 0;
   let malformed = 0;
+  // Content fingerprint stamped into every hello so a client on a drifted build
+  // (different pinned arena/tuning) is rejected loudly instead of desyncing (S4).
+  const version = computeContentVersion(config.arena, config.tuning);
 
   const host: HostSessionHandle = createHostSession({
     arena: config.arena,
@@ -116,6 +120,7 @@ export function createHostRuntime(config: HostRuntimeConfig): HostRuntimeHandle 
         slot: config.players[k]!.slot,
         seed: config.seed,
         playerCount,
+        version,
         arenaId: config.arenaId
       })
     );
@@ -128,7 +133,13 @@ export function createHostRuntime(config: HostRuntimeConfig): HostRuntimeHandle 
         malformed++; // version/format mismatch — drop, keep serving
         return;
       }
-      if (msg.type === "input") host.receiveInput(clientId, msg.tick, msg.input);
+      if (msg.type === "input") {
+        host.receiveInput(clientId, msg.tick, msg.input);
+      } else if (msg.type === "ping") {
+        // Clock-sync probe: answer with the host's current tick so the client can
+        // converge its clock before it leads (T11.2). Echo the ping id to pair it.
+        transport.send(encodeMessage({ type: "pong", id: msg.id, hostTick: host.tick }));
+      }
       // The host originates everything else; ignore other inbound kinds.
     });
 

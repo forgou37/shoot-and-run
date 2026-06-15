@@ -6,11 +6,13 @@
  * buffers raise `WireFormatError`.
  *
  * Layout: `[uvarint PROTOCOL_VERSION][uint8 tag][payload]`
- *   hello        → [uvarint slot][uvarint seed][uvarint playerCount][uvarint utf8Len][utf8(arenaId)]
+ *   hello        → [uvarint slot][uvarint seed][uvarint playerCount][uvarint version][uvarint utf8Len][utf8(arenaId)]
  *   input        → [uvarint tick][input byte]
  *   authoritative→ [uvarint tick][uvarint count][count input bytes]
  *   ack          → [uvarint tick][uvarint inputTick]
  *   snapshot     → [uvarint utf8Len][utf8(JSON.stringify(snapshot))]
+ *   ping         → [uvarint id]
+ *   pong         → [uvarint id][uvarint hostTick]
  *
  * Reuses the sim's exported byte primitives — `encodeInputByte`, the
  * `writeVarint`/`readVarint` LEB128 helpers, and the version + error types — so
@@ -43,6 +45,8 @@ const TAG_AUTHORITATIVE = 1;
 const TAG_SNAPSHOT = 2;
 const TAG_ACK = 3;
 const TAG_HELLO = 4;
+const TAG_PING = 5;
+const TAG_PONG = 6;
 
 // --- minimal DOM-free UTF-8 (TextEncoder/Decoder are not in the no-DOM lib) ---
 
@@ -129,6 +133,7 @@ export function encodeMessage(msg: NetMessage): Uint8Array {
       writeVarint(out, msg.slot);
       writeVarint(out, msg.seed);
       writeVarint(out, msg.playerCount);
+      writeVarint(out, msg.version);
       const id = encodeUtf8(msg.arenaId);
       writeVarint(out, id.length);
       for (const b of id) out.push(b);
@@ -157,6 +162,15 @@ export function encodeMessage(msg: NetMessage): Uint8Array {
       for (const b of json) out.push(b);
       break;
     }
+    case "ping":
+      out.push(TAG_PING);
+      writeVarint(out, msg.id);
+      break;
+    case "pong":
+      out.push(TAG_PONG);
+      writeVarint(out, msg.id);
+      writeVarint(out, msg.hostTick);
+      break;
   }
   return Uint8Array.from(out);
 }
@@ -177,7 +191,8 @@ export function decodeMessage(bytes: Uint8Array): NetMessage {
       const slot = readVarint(bytes, pos);
       const seed = readVarint(bytes, slot.next);
       const playerCount = readVarint(bytes, seed.next);
-      const len = readVarint(bytes, playerCount.next);
+      const version = readVarint(bytes, playerCount.next);
+      const len = readVarint(bytes, version.next);
       pos = len.next;
       if (bytes.length - pos < len.value) throw new WireFormatError("hello message truncated");
       const arenaId = decodeUtf8(bytes.subarray(pos, pos + len.value));
@@ -186,6 +201,7 @@ export function decodeMessage(bytes: Uint8Array): NetMessage {
         slot: slot.value,
         seed: seed.value,
         playerCount: playerCount.value,
+        version: version.value,
         arenaId
       };
     }
@@ -210,6 +226,15 @@ export function decodeMessage(bytes: Uint8Array): NetMessage {
       const tick = readVarint(bytes, pos);
       const inputTick = readVarint(bytes, tick.next);
       return { type: "ack", tick: tick.value, inputTick: inputTick.value };
+    }
+    case TAG_PING: {
+      const id = readVarint(bytes, pos);
+      return { type: "ping", id: id.value };
+    }
+    case TAG_PONG: {
+      const id = readVarint(bytes, pos);
+      const hostTick = readVarint(bytes, id.next);
+      return { type: "pong", id: id.value, hostTick: hostTick.value };
     }
     case TAG_SNAPSHOT: {
       const len = readVarint(bytes, pos);

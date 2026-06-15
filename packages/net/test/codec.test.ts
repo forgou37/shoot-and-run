@@ -59,19 +59,32 @@ describe("NetMessage codec (T9.1 / M2)", () => {
     expect(decodeMessage(encodeMessage(msg))).toEqual(msg);
   });
 
-  it("round-trips hello messages across slot/seed/playerCount and arena ids", () => {
+  it("round-trips hello messages across slot/seed/playerCount/version and arena ids", () => {
     for (const slot of [0, 1, 3]) {
       for (const seed of [0, 1, 0xfeed, 0xffffffff]) {
-        for (const arenaId of ["", "canopy", "crossfire", "árena-é日本"]) {
-          const msg: NetMessage = { type: "hello", slot, seed, playerCount: 4, arenaId };
-          expect(decodeMessage(encodeMessage(msg))).toEqual(msg);
+        for (const version of [0, 1, 0x9abcdef0]) {
+          for (const arenaId of ["", "canopy", "crossfire", "árena-é日本"]) {
+            const msg: NetMessage = { type: "hello", slot, seed, playerCount: 4, version, arenaId };
+            expect(decodeMessage(encodeMessage(msg))).toEqual(msg);
+          }
         }
       }
     }
   });
 
+  it("round-trips ping and pong messages", () => {
+    for (const id of [0, 1, 255, 100_000]) {
+      const ping: NetMessage = { type: "ping", id };
+      expect(decodeMessage(encodeMessage(ping))).toEqual(ping);
+      for (const hostTick of [0, 7, 99_999]) {
+        const pong: NetMessage = { type: "pong", id, hostTick };
+        expect(decodeMessage(encodeMessage(pong))).toEqual(pong);
+      }
+    }
+  });
+
   it("rejects a truncated hello buffer with WireFormatError", () => {
-    const hello = encodeMessage({ type: "hello", slot: 1, seed: 99, playerCount: 2, arenaId: "canopy" });
+    const hello = encodeMessage({ type: "hello", slot: 1, seed: 99, playerCount: 2, version: 42, arenaId: "canopy" });
     expect(() => decodeMessage(hello.slice(0, hello.length - 2))).toThrow(WireFormatError);
   });
 

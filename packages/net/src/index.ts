@@ -22,3 +22,4 @@ export * from "./clock";
 export * from "./rollback";
 export * from "./client";
 export * from "./params";
+export * from "./version";

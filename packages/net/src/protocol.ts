@@ -12,10 +12,12 @@ import type { PlayerInput, SimSnapshot } from "@shoot-and-run/sim";
  * client connects, before any authoritative tick. It tells the freshly-joined
  * client who it is and the session contract it must reconstruct its sim with:
  * the `slot` the Host assigned it (connection order), the session `seed`, the
- * total `playerCount`, and the `arenaId` so the client loads the matching arena
- * from its shared local content. Tuning is pinned from that same local content
- * at session init (amendment #4). Over-the-wire content/tuning negotiation is a
- * later phase; on localhost both peers share `content/`.
+ * total `playerCount`, the `arenaId` so the client loads the matching arena from
+ * its content, and a `version` — a fingerprint of the host's pinned content
+ * (arena + tuning + protocol; see version.ts). In 011 the client and host are
+ * deployed independently (Pages vs VPS), so the client compares `version` to its
+ * own and refuses a mismatched session (VersionMismatchError) rather than silently
+ * desyncing. Tuning is pinned from local content at session init (amendment #4).
  */
 export interface HelloMessage {
   type: "hello";
@@ -23,6 +25,8 @@ export interface HelloMessage {
   seed: number;
   playerCount: number;
   arenaId: string;
+  /** Host's content fingerprint (computeContentVersion) — client must match. */
+  version: number;
 }
 
 /** Client -> Host: this client's input for a target tick (the Host applies its
@@ -59,9 +63,30 @@ export interface AckMessage {
   inputTick: number;
 }
 
+/**
+ * Client -> Host: a clock-sync probe (spec 011, T11.2). Carries no gameplay
+ * input, so a freshly-connected client can converge its clock BEFORE it leads —
+ * `id` is an opaque client-local counter the host echoes in its pong.
+ */
+export interface PingMessage {
+  type: "ping";
+  id: number;
+}
+
+/** Host -> Client: the answer to a ping. `hostTick` is the host's current
+ *  committed tick when it replied; `id` echoes the ping it answers (so the
+ *  client pairs it robustly to its send, like an ack). */
+export interface PongMessage {
+  type: "pong";
+  id: number;
+  hostTick: number;
+}
+
 export type NetMessage =
   | HelloMessage
   | InputMessage
   | AuthoritativeInputsMessage
   | SnapshotMessage
-  | AckMessage;
+  | AckMessage
+  | PingMessage
+  | PongMessage;
