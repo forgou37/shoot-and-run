@@ -16,8 +16,8 @@ Everything that is not in the current spec lives here. New ideas land here first
 | 005 | AI pipeline: headless `run-rounds` eval runner → arena generator + metrics + judge loop | 004 done |
 | 008 | Online multiplayer umbrella + netcode foundation (snapshot/restore, input serialization, determinism hardening) — **planning** (specs/008-netcode.md; owner reversed "online never" 2026-06-14) | 007 done ✓ |
 | 009 | Netcode session layer (`packages/net`): clock sync, input delay, jitter buffer, prediction/rollback over loopback | 008 |
-| 010 | Real transport + Cloudflare signaling (WebSocket adapter, Worker + Durable Object, room codes) | 009 |
-| 011 | Dedicated server (`packages/server` on a Durable Object) + browser prediction client — **first internet match** | 010 |
+| 010 | Real WebSocket transport + local online play: browser + Node `ws` adapters on the `Transport` seam, a local dedicated Node host, an online Phaser scene — two browser tabs on `localhost` (no Cloudflare/signaling/room codes) — **planning** (task-broken-out in specs/008-netcode.md § Phase 010, owner re-scope 2026-06-15) | 009 |
+| 011 | Cloudflare signaling (Worker + Durable Object) + dedicated server (`packages/server` on a DO) + room codes + browser prediction client — **first internet match** | 010 |
 | 012 | Player-hosted / listen-server: WebRTC DataChannel P2P, NAT traversal + TURN, host-leaving policy | 011 |
 | 013 | Netplay polish: lag-comp tuning, spectators, reconnection, metrics, anti-cheat posture, host migration | 012 |
 
