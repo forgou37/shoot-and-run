@@ -27,4 +27,11 @@ export type SimEvent =
   | { tick: number; type: "round_ended"; winner: number | "draw" }
   | { tick: number; type: "match_ended"; winner: number; scores: number[] }
   | { tick: number; type: "chest_spawned"; chestId: number; x: number; y: number; contents: ChestContents }
-  | { tick: number; type: "chest_opened"; chestId: number; slot: number; contents: ChestContents };
+  | { tick: number; type: "chest_opened"; chestId: number; slot: number; contents: ChestContents }
+  | {
+      tick: number;
+      type: "booster_collected";
+      boosterId: number;
+      slot: number;
+      contents: ChestContents;
+    };

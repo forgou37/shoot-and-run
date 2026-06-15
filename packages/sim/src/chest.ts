@@ -1,9 +1,10 @@
 import { ARENA_HEIGHT, ARENA_WIDTH, type ArenaData } from "./arena";
+import { spawnBooster } from "./booster";
 import { CHEST_HEIGHT, CHEST_WIDTH, PLAYER_HEIGHT, PLAYER_WIDTH } from "./constants";
 import type { SimEvent } from "./events";
 import { wrapDelta } from "./physics";
 import type { Rng } from "./rng";
-import type { ChestContents, PlayerState, SimState } from "./state";
+import type { ChestContents, SimState } from "./state";
 import type { DerivedTuning } from "./tuning";
 
 /** Equal weights for now (spec 002 fixed point); weighted tables are backlog. */
@@ -19,7 +20,8 @@ const CHEST_CONTENTS_POOL: readonly ChestContents[] = [
  * Chest lifecycle, all PRNG-driven and deterministic per seed:
  * every chestIntervalTicks, if below maxChestsAlive and a free spot exists,
  * spawn a chest at a random free spot with random contents. Touching a chest
- * opens it instantly.
+ * opens it — popping a floating booster (spec 014); the contents are granted
+ * later, when a player collects that booster (see booster.ts).
  */
 export function updateChests(
   state: SimState,
@@ -64,7 +66,7 @@ export function updateChests(
         Math.abs(dx) < (PLAYER_WIDTH + CHEST_WIDTH) / 2 &&
         Math.abs(dy) < (PLAYER_HEIGHT + CHEST_HEIGHT) / 2
       ) {
-        grant(p, chest.contents, t);
+        spawnBooster(state, chest.x, chest.y, chest.contents, allocId, t);
         events.push({
           tick: state.tick,
           type: "chest_opened",
@@ -77,20 +79,4 @@ export function updateChests(
     }
     return true;
   });
-}
-
-function grant(p: PlayerState, contents: ChestContents, t: DerivedTuning): void {
-  switch (contents) {
-    case "bomb":
-    case "laser":
-    case "bounce":
-      for (let i = 0; i < t.specialArrowsPerChest; i++) p.quiver.unshift(contents);
-      break;
-    case "invisibility":
-      p.invisibleTicksLeft = t.invisibilityTicks;
-      break;
-    case "flight":
-      p.flightTicksLeft = t.flightTicks;
-      break;
-  }
 }

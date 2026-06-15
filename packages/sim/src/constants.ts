@@ -16,6 +16,10 @@ export const PICKUP_RADIUS = 12;
 export const CHEST_WIDTH = 10;
 export const CHEST_HEIGHT = 8;
 
+/** Pickup hitbox of a floating booster (spec 014) — geometry, not game feel. */
+export const BOOSTER_WIDTH = 10;
+export const BOOSTER_HEIGHT = 10;
+
 /** Ticks during which an arrow cannot kill its own shooter (muzzle overlap). */
 export const MUZZLE_IMMUNITY_TICKS = 6;
 /** Vertical band below a victim's head top that counts as a stomp contact. */

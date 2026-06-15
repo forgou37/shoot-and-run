@@ -74,6 +74,7 @@ export function mkState(players: PlayerState[], arrows: ArrowState[] = [], chest
     players,
     arrows,
     chests,
+    boosters: [],
     nextChestTick: 999999
   };
 }

@@ -48,7 +48,7 @@ describe("treasure chests (spec 002 T2.3)", () => {
     expect(a.state.chests.length).toBeLessThanOrEqual(TEST_TUNING.maxChestsAlive);
   });
 
-  it("walking into a chest opens it and grants its contents", () => {
+  it("walking into a chest opens it, popping a booster without granting (spec 014)", () => {
     const sim = makeSim(42);
     const events = idle(sim, INTERVAL_TICKS + 2);
     const spawned = events.find((e) => e.type === "chest_spawned");
@@ -66,20 +66,16 @@ describe("treasure chests (spec 002 T2.3)", () => {
     expect(opened).toMatchObject({ slot: 0, contents: spawned.contents });
     expect(sim.state.chests).toHaveLength(0);
 
+    // Opening now pops a floating booster; the contents are NOT granted yet, and
+    // nothing was collected at the open moment (the booster floats overhead).
+    expect(all.filter((e) => e.type === "booster_collected")).toHaveLength(0);
+    expect(sim.state.boosters).toHaveLength(1);
+    expect(sim.state.boosters[0]).toMatchObject({ contents: spawned.contents });
+
     const p = sim.state.players[0]!;
-    if (spawned.contents === "invisibility") {
-      expect(p.invisibleTicksLeft).toBeGreaterThan(0);
-    } else if (spawned.contents === "flight") {
-      expect(p.flightTicksLeft).toBeGreaterThan(0);
-    } else {
-      // Special arrows land at the front of the quiver.
-      expect(p.quiver.slice(0, TEST_TUNING.specialArrowsPerChest)).toEqual(
-        Array.from({ length: TEST_TUNING.specialArrowsPerChest }, () => spawned.contents)
-      );
-      expect(p.quiver.length).toBe(
-        TEST_TUNING.startingArrows + TEST_TUNING.specialArrowsPerChest
-      );
-    }
+    expect(p.quiver.length).toBe(TEST_TUNING.startingArrows);
+    expect(p.invisibleTicksLeft).toBe(0);
+    expect(p.flightTicksLeft).toBe(0);
   });
 
   it("arenas without chestSpots never spawn chests", () => {

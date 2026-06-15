@@ -87,6 +87,21 @@ export interface ChestState {
   contents: ChestContents;
 }
 
+/**
+ * A floating booster popped by an opened chest (spec 014): it hovers at a fixed
+ * point `boosterFloatOffsetPx` above the chest's spot until an alive player
+ * touches it, granting the contents then. The visual up/down bob is cosmetic
+ * (shell-only) and never affects the fixed pickup position.
+ */
+export interface BoosterState {
+  id: number;
+  x: number;
+  y: number;
+  contents: ChestContents;
+  /** Tick the booster was spawned on; drives the shell's cosmetic bob phase. */
+  spawnTick: number;
+}
+
 export interface MatchState {
   /** Per-player round-survival count, by player index (parallel to players).
    *  In teams mode this still tallies individual survivals but does not decide
@@ -107,6 +122,8 @@ export interface SimState {
   players: PlayerState[];
   arrows: ArrowState[];
   chests: ChestState[];
+  /** Floating boosters popped by opened chests, awaiting pickup (spec 014). */
+  boosters: BoosterState[];
   /** Next tick a chest spawn is attempted (arena must have chestSpots). */
   nextChestTick: number;
 }

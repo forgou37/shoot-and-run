@@ -32,7 +32,8 @@ export const TEST_TUNING: Tuning = {
   flapVelocity: 220,
   chestIntervalMs: 2000, // 120 ticks: fast for tests
   maxChestsAlive: 2,
-  specialArrowsPerChest: 3
+  specialArrowsPerChest: 3,
+  boosterFloatOffsetPx: 20
 };
 
 /** Flat full-width floor (rows 13–14), nothing else. For wrap-X tests. */

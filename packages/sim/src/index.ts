@@ -1,5 +1,6 @@
 import type { ArenaData } from "./arena";
 import { collectPickups, handleShooting, updateArrows } from "./arrow";
+import { updateBoosters } from "./booster";
 import { updateChests } from "./chest";
 import type { SimEvent } from "./events";
 import type { PlayerInput } from "./input";
@@ -15,6 +16,7 @@ export const SIM_VERSION = "0.0.0";
 
 export * from "./arena";
 export * from "./arrow";
+export * from "./booster";
 export * from "./chest";
 export * from "./constants";
 export * from "./events";
@@ -142,6 +144,7 @@ function buildSim(
           state.tick
         );
         updateChests(state, arena, rng, allocId, tuning, events);
+        updateBoosters(state, tuning, events);
       }
       updateRound(state, arena, tuning, events);
       state.tick++;
@@ -224,6 +227,7 @@ export function createSim(config: SimConfig): Sim {
     }),
     arrows: [],
     chests: [],
+    boosters: [],
     nextChestTick: tuning.chestIntervalTicks
   };
 
