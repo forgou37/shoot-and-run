@@ -6,7 +6,8 @@ import { BotDevice } from "../input/bot-device";
 import type { InputDevice } from "../input/device";
 import { EdgeReader } from "../input/menu-input";
 import type { MatchConfig, RosterEntry } from "../match-config";
-import { CARD_SRC_H, CARD_SRC_W, cardTextureKey, loadCardAssets } from "../render/cards";
+import { CardOverlay } from "../render/card-overlay";
+import { cardImageUrl } from "../render/cards";
 import { addPixelText } from "../theme";
 
 type Mode = "ffa" | "teams";
@@ -31,18 +32,19 @@ const MAX_SLOTS = 4;
  *  Date.now is fine here (this is the shell, not the deterministic sim). */
 const seedNow = (): number => Date.now() & 0x7fffffff;
 
-// Card layout in the 320×240 logical buffer: four columns, equal side margins.
-// The card art is 96×180; four at native width (384) overflow the 320 buffer, so
-// they're drawn at 0.75 scale (72×135) — a uniform 4→3 pixel drop, the cleanest
-// fractional downscale for nearest-sampled pixel art.
-const CARD_SCALE = 0.75;
-const CARD_W = Math.round(CARD_SRC_W * CARD_SCALE);
-const CARD_H = Math.round(CARD_SRC_H * CARD_SCALE);
-const CARD_GAP = 6;
+// Card layout in the 320×240 logical buffer: four columns evenly spread (side
+// margins ≈ inter-card gaps). The illustrated cards are tall narrow banners; the
+// rects below are their footprint in logical space, but the art itself is drawn
+// by a hi-res DOM overlay (see render/card-overlay.ts), not through the buffer,
+// so it stays crisp. The pixel UI (status text, highlight borders) uses these
+// same rects to line up with the overlaid cards.
+const CARD_W = 42;
+const CARD_H = 150;
+const CARD_GAP = 30;
 const CARD_MARGIN = (ARENA_WIDTH - MAX_SLOTS * CARD_W - (MAX_SLOTS - 1) * CARD_GAP) / 2;
-const CARD_TOP = 22;
-// The name is baked into the card art; status/device chip stack just beneath it.
-const STATUS_Y = CARD_TOP + CARD_H + 4;
+const CARD_TOP = 16;
+// The frame/portrait fills the card; status/device chip stack just beneath it.
+const STATUS_Y = CARD_TOP + CARD_H + 2;
 const CHIP_Y = STATUS_Y + 10;
 
 const COLOR_TEXT = "#f0e6c8";
@@ -69,8 +71,9 @@ function deviceLabel(device: InputDevice): string {
  * the free slots. Other joined-unready humans switch team with left/right.
  * With ≥2 participants (humans + bots) and all humans ready, a countdown starts
  * the match. Bots are always ready and count toward the participant total, so a
- * lone human can start a match against bots. Rendered as four character-select
- * cards (scaled archer portrait + name + status/device-or-BOT/difficulty chip).
+ * lone human can start a match against bots. Rendered as four illustrated
+ * character-select cards (owner-supplied art) with the slot name + device-or-
+ * BOT/difficulty line beneath each.
  */
 export class LobbyScene extends Phaser.Scene {
   private app!: AppContext;
@@ -85,7 +88,8 @@ export class LobbyScene extends Phaser.Scene {
   private countdownMsLeft!: number | null;
   // Persistent card display objects, rebuilt only in create(); render() mutates them.
   private frameGfx!: Phaser.GameObjects.Graphics;
-  private cards!: Phaser.GameObjects.Image[];
+  // Hi-res card art lives in a DOM layer over the canvas, not on the display list.
+  private cardOverlay!: CardOverlay;
   private statuses!: Phaser.GameObjects.BitmapText[];
   private chips!: Phaser.GameObjects.BitmapText[];
   private headerIdle!: Phaser.GameObjects.BitmapText;
@@ -95,13 +99,6 @@ export class LobbyScene extends Phaser.Scene {
 
   constructor() {
     super("lobby");
-  }
-
-  preload(): void {
-    // Owner-supplied character-select card art (one PNG per slot identity).
-    // (preload runs before create, so read slots straight from the registry.)
-    // loadCardAssets skips any already cached on lobby→match→lobby re-entry.
-    loadCardAssets(this, getAppContext(this).slots);
   }
 
   create(): void {
@@ -116,7 +113,7 @@ export class LobbyScene extends Phaser.Scene {
     this.countdownMsLeft = null;
     this.cameras.main.setBackgroundColor("#10121f");
 
-    this.headerIdle = addPixelText(this, ARENA_WIDTH / 2, 6, "CHOOSE YOUR FIGHTER", 11, COLOR_TEXT)
+    this.headerIdle = addPixelText(this, ARENA_WIDTH / 2, 4, "CHOOSE YOUR FIGHTER", 11, COLOR_TEXT)
       .setOrigin(0.5, 0);
     this.headerFight = addPixelText(this, ARENA_WIDTH / 2, 2, "FIGHT!", 18, "#ffd24a")
       .setOrigin(0.5, 0)
@@ -126,18 +123,23 @@ export class LobbyScene extends Phaser.Scene {
     // ready/bot highlight outline drawn around each occupied card.
     this.frameGfx = this.add.graphics();
 
-    this.cards = [];
     this.statuses = [];
     this.chips = [];
     for (let i = 0; i < MAX_SLOTS; i++) {
       const cx = cardCenter(i);
-      const tex = cardTextureKey(this.app.slots[i]?.name ?? "");
-      this.cards.push(
-        this.add.image(cx, CARD_TOP, tex).setOrigin(0.5, 0).setScale(CARD_SCALE)
-      );
       this.statuses.push(addPixelText(this, cx, STATUS_Y, "", 8, COLOR_MUTED));
       this.chips.push(addPixelText(this, cx, CHIP_Y, "", 8, COLOR_MUTED));
     }
+
+    // Hi-res card art as a DOM layer over the canvas (see CardOverlay), built from
+    // the same logical rects the pixel UI lines up against, and torn down when the
+    // lobby hands off to the match or is otherwise shut down.
+    this.cardOverlay = new CardOverlay(
+      this.game.canvas,
+      Array.from({ length: MAX_SLOTS }, (_, i) => cardImageUrl(this.app.slots[i]?.name ?? "")),
+      Array.from({ length: MAX_SLOTS }, (_, i) => ({ x: cardLeft(i), y: CARD_TOP, w: CARD_W, h: CARD_H }))
+    );
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.cardOverlay.destroy());
 
     this.modeLine = addPixelText(this, ARENA_WIDTH / 2, ARENA_HEIGHT - 50, "", 9, COLOR_TEXT);
     addPixelText(this, ARENA_WIDTH / 2, ARENA_HEIGHT - 36, "jump=join/ready   shoot=back", 8, COLOR_MUTED)
@@ -350,6 +352,10 @@ export class LobbyScene extends Phaser.Scene {
   }
 
   private render(): void {
+    // Keep the hi-res card layer aligned to the canvas (it settles a few frames
+    // after create and can move on resize); no-ops once the box is stable.
+    this.cardOverlay.layout();
+
     const counting = this.countdownMsLeft !== null;
     this.headerIdle.setVisible(!counting);
     this.headerFight.setVisible(counting);
@@ -362,9 +368,9 @@ export class LobbyScene extends Phaser.Scene {
       const bot = this.bots.get(i);
       const occupied = entry !== undefined || bot !== undefined;
 
-      // The card art (frame + portrait + baked name banner) is the card; dim it
+      // The card art (ornate frame + full-body portrait) is the card; dim it
       // while the slot is empty so a lit card reads as "claimed".
-      this.cards[i]!.setAlpha(occupied ? 1 : 0.35);
+      this.cardOverlay.setAlpha(i, occupied ? 1 : 0.35);
 
       // Highlight outline: green when a human is ready, purple for a bot (always
       // ready). Drawn fully outside the art (frameGfx is below the cards) so the
@@ -374,27 +380,37 @@ export class LobbyScene extends Phaser.Scene {
         this.drawBorder(cardLeft(i) - 2, CARD_TOP - 2, CARD_W + 4, CARD_H + 4, 2, hexToInt(highlight), 1);
       }
 
-      let status: string;
-      let statusColor: string;
+      // Row 1 = occupant identity (the cards carry no baked name): the slot's
+      // player name for humans, "BOT" for computer players, dimmed when empty.
+      // Readiness reads off the name colour + the green highlight border above.
+      // Row 2 = device/difficulty (+ team), or the join prompt when empty.
+      const slotName = this.app.slots[i]?.name ?? "";
+      const teamTag = (t: 0 | 1): string => (this.mode === "teams" ? `  T${String(t + 1)}` : "");
+      let name: string;
+      let nameColor: string;
       let chip: string;
+      let chipColor: string;
       if (entry !== undefined) {
-        status = entry.ready ? "READY" : "joined";
-        statusColor = entry.ready ? COLOR_READY : COLOR_TEXT;
-        chip = `${deviceLabel(entry.device)}${this.mode === "teams" ? `  T${String(entry.team + 1)}` : ""}`;
+        name = slotName; // ready reads off the green name colour + highlight border
+        nameColor = entry.ready ? COLOR_READY : COLOR_TEXT;
+        chip = `${deviceLabel(entry.device)}${teamTag(entry.team)}`;
+        chipColor = COLOR_MUTED;
+        // The lowest-slot human owns the mode/bot toggles; mark it (see bottom hint).
+        if (this.isController(entry)) name += " *";
       } else if (bot !== undefined) {
-        status = "BOT";
-        statusColor = COLOR_BOT;
-        chip = `${bot.difficultyName}${this.mode === "teams" ? `  T${String(bot.team + 1)}` : ""}`;
+        name = "BOT";
+        nameColor = COLOR_BOT;
+        chip = `${bot.difficultyName}${teamTag(bot.team)}`;
+        chipColor = COLOR_BOT;
       } else {
-        status = "press jump";
-        statusColor = COLOR_MUTED;
-        chip = "";
+        name = slotName;
+        nameColor = COLOR_MUTED;
+        chip = "press jump";
+        chipColor = COLOR_MUTED;
       }
-      // The lowest-slot human owns the mode/bot toggles; mark it (see bottom hint).
-      if (entry !== undefined && this.isController(entry)) status += " *";
-      this.statuses[i]!.setTint(hexToInt(statusColor));
-      this.centerText(this.statuses[i]!, cx, status);
-      this.chips[i]!.setTint(hexToInt(bot !== undefined ? COLOR_BOT : COLOR_MUTED));
+      this.statuses[i]!.setTint(hexToInt(nameColor));
+      this.centerText(this.statuses[i]!, cx, name);
+      this.chips[i]!.setTint(hexToInt(chipColor));
       this.centerText(this.chips[i]!, cx, chip);
     }
 

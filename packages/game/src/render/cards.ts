@@ -1,31 +1,23 @@
-import type Phaser from "phaser";
-
 /**
- * Character-select card art (spec: owner-supplied lobby cards). Each slot has a
- * single static 96×180 illustration with its frame, portrait and name banner
- * baked in — committed under packages/game/public/assets/card_<name>.png.
+ * Character-select card art (owner-supplied lobby cards). Each slot has a single
+ * static illustration — ornate frame + full-body portrait — committed at full
+ * master resolution under packages/game/public/assets/card_<name>.png.
  *
- * Keys/paths are derived from the slot's players.json name (lowercased, spaces
+ * The owner delivers all four as one transparent sheet (assets/cards.aseprite);
+ * scripts/slice-cards.mjs auto-detects each card's column and writes the per-slot
+ * PNGs at master resolution. They are drawn by the lobby's hi-res DOM overlay
+ * (see render/card-overlay.ts) rather than through the 320×240 pixel buffer, so
+ * the painted detail survives instead of being crushed to the buffer footprint.
+ *
+ * URLs are derived from the slot's players.json name (lowercased, spaces
  * stripped: "Lyosha"→lyosha, "Igor B"→igorb) so the mapping follows roster
  * identity rather than a hardcoded slot order.
  */
 
-/** Native pixel dimensions of every card PNG. */
-export const CARD_SRC_W = 96;
-export const CARD_SRC_H = 180;
-
 const normalize = (slotName: string): string => slotName.toLowerCase().replace(/\s+/g, "");
 
-/** Texture key for a slot's card (e.g. "card-igorb"). */
-export function cardTextureKey(slotName: string): string {
-  return `card-${normalize(slotName)}`;
-}
-
-/** Load each slot's card image, skipping any already cached (lobby is re-entered
- *  after a match, when the textures persist). Safe to call from preload(). */
-export function loadCardAssets(scene: Phaser.Scene, slots: readonly { name: string }[]): void {
-  for (const s of slots) {
-    const key = cardTextureKey(s.name);
-    if (!scene.textures.exists(key)) scene.load.image(key, `assets/card_${normalize(s.name)}.png`);
-  }
+/** Public URL of a slot's full-resolution card image (relative, like the Phaser
+ *  loader paths, so it resolves under the GitHub Pages project subpath too). */
+export function cardImageUrl(slotName: string): string {
+  return `assets/card_${normalize(slotName)}.png`;
 }
