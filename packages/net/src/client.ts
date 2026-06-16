@@ -349,8 +349,10 @@ export class ClientSession {
         break;
       case "snapshot":
         this.hostStarted = true;
-        this.resyncCount++;
-        this.controller?.resync(msg.snapshot);
+        // Count only a real heal: a periodic snapshot the client has already
+        // confirmed is a no-op, so resyncs stays an honest connection-health
+        // signal (mirrors how rollbackCount tracks confirm()'s correction flag).
+        if (this.controller?.resync(msg.snapshot)) this.resyncCount++;
         break;
       case "ack":
         this.clock.onAck(msg.inputTick, msg.tick, this.localTick);
