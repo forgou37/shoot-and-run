@@ -107,8 +107,17 @@ describe("NetMessage codec (T9.1 / M2)", () => {
     }
   });
 
-  it("round-trips reject messages for every reason (T13.1)", () => {
-    for (const reason of ["version", "full"] as const) {
+  it("round-trips a join carrying a joinToken (T13.5)", () => {
+    for (const joinToken of ["secret", "tøk-é"]) {
+      const m1: NetMessage = { type: "join", role: "player", version: 7, joinToken };
+      expect(decodeMessage(encodeMessage(m1))).toEqual(m1);
+      const m2: NetMessage = { type: "join", role: "spectator", version: 9, reconnectToken: "r", joinToken };
+      expect(decodeMessage(encodeMessage(m2))).toEqual(m2);
+    }
+  });
+
+  it("round-trips reject messages for every reason (T13.1 + T13.5)", () => {
+    for (const reason of ["version", "full", "token"] as const) {
       const msg: NetMessage = { type: "reject", reason };
       expect(decodeMessage(encodeMessage(msg))).toEqual(msg);
     }

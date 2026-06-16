@@ -39,6 +39,18 @@ export interface NetParams extends PredictionParams {
   reconnectAttempts: number;
   /** Ticks between auto-reconnect attempts (client/shell-side, spec 013, T13.3). */
   reconnectBackoffTicks: number;
+  /**
+   * Host hardening (spec 013, T13.5): max inputs accepted per connection per
+   * second (60-tick window); a flood past this is dropped + counted. Generous —
+   * it catches abuse, not a client's normal startup/catch-up bursts. 0 disables.
+   */
+  maxInputsPerSecond: number;
+  /**
+   * Host hardening (spec 013, T13.5): reject an input tagged more than this many
+   * ticks ahead of the host's committed tick (a malformed/abusive future tag),
+   * pairing with the existing late-drop of past-tick inputs. 0 disables.
+   */
+  maxInputLeadTicks: number;
 }
 
 const NET_KEYS: readonly (keyof NetParams)[] = [
@@ -49,7 +61,9 @@ const NET_KEYS: readonly (keyof NetParams)[] = [
   "maxSpectators",
   "reconnectGraceTicks",
   "reconnectAttempts",
-  "reconnectBackoffTicks"
+  "reconnectBackoffTicks",
+  "maxInputsPerSecond",
+  "maxInputLeadTicks"
 ];
 
 /** Validate the `net` block of a parsed content/tuning.json object. */

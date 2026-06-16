@@ -82,6 +82,12 @@ export interface HostRuntimeConfig {
    * tests use the deterministic default). Only called when reconnect is enabled.
    */
   generateToken?: () => string;
+  /** Hardening (spec 013, T13.5): max inputs/connection/second; 0 = no limit. */
+  maxInputsPerSecond?: number;
+  /** Hardening (T13.5): reject inputs tagged > this far ahead of committed; 0 = off. */
+  maxInputLeadTicks?: number;
+  /** Hardening (T13.5): when set, a join must present this exact `joinToken`. */
+  joinToken?: string;
 }
 
 /** Host-side health snapshot (spec 013, T13.4) — for the server's periodic log. */
@@ -97,6 +103,10 @@ export interface HostMetrics {
   lateDroppedBySlot: readonly number[];
   /** Datagrams from clients that failed to decode. */
   malformed: number;
+  /** Hardening drops (T13.5): oversize datagrams, rate-limited + far-future inputs. */
+  oversized: number;
+  rateLimited: number;
+  farFuture: number;
 }
 
 export interface HostRuntimeHandle {
@@ -125,6 +135,12 @@ export interface HostRuntimeHandle {
 const DEFAULT_JOIN_GRACE_TICKS = 180;
 /** Default spectator cap when the caller doesn't pass one (tests). */
 const DEFAULT_MAX_SPECTATORS = 4;
+/** Hardening (T13.5): inbound datagrams over this many bytes are dropped before
+ *  decode. The only inbound kinds are join/input/ping — all tiny — so this is a
+ *  generous DoS bound, not a tuning knob (a protocol safety limit). */
+const MAX_INBOUND_DATAGRAM_BYTES = 256;
+/** Ticks per rate-limit window (1 s at 60 Hz). */
+const RATE_WINDOW_TICKS = 60;
 
 /** A connection awaiting admission (its join), then admitted as a player/spectator. */
 interface PendingConnection {
@@ -151,6 +167,8 @@ interface PlayerSlot {
   state: "empty" | "connected" | "reserved" | "lost";
   /** Ticks since the slot was reserved (reconnect-grace countdown). */
   disconnectAge: number;
+  /** Inputs accepted from the current occupant this rate-limit window (T13.5). */
+  inputsThisWindow: number;
 }
 
 export function createHostRuntime(config: HostRuntimeConfig): HostRuntimeHandle {
@@ -159,6 +177,9 @@ export function createHostRuntime(config: HostRuntimeConfig): HostRuntimeHandle 
   const joinGraceTicks = config.joinGraceTicks ?? DEFAULT_JOIN_GRACE_TICKS;
   const maxSpectators = config.maxSpectators ?? DEFAULT_MAX_SPECTATORS;
   const reconnectGraceTicks = config.reconnectGraceTicks ?? 0;
+  const maxInputsPerSecond = config.maxInputsPerSecond ?? 0;
+  const maxInputLeadTicks = config.maxInputLeadTicks ?? 0;
+  const joinToken = config.joinToken ?? "";
   let tokenCounter = 0;
   const mintToken = config.generateToken ?? ((): string => `tk${String(tokenCounter++)}`);
 
@@ -192,12 +213,17 @@ export function createHostRuntime(config: HostRuntimeConfig): HostRuntimeHandle 
     token: "",
     transport: null,
     state: "empty" as const,
-    disconnectAge: 0
+    disconnectAge: 0,
+    inputsThisWindow: 0
   }));
   /** Latches true once `expected` slots have first connected — the loop then runs
    *  even while a slot is reserved/lost (its input is repeat-last-filled). */
   let started = false;
   let malformed = 0;
+  // Hardening counters (T13.5): inbound datagrams refused by each guard.
+  let oversized = 0;
+  let rateLimited = 0;
+  let farFuture = 0;
   // Content fingerprint stamped into every hello so a client on a drifted build
   // (different pinned arena/tuning) is rejected loudly instead of desyncing (S4).
   const version = computeContentVersion(config.arena, config.tuning);
@@ -336,6 +362,19 @@ export function createHostRuntime(config: HostRuntimeConfig): HostRuntimeHandle 
       // answer regardless of role. Echo the ping id to pair it.
       conn.transport.send(encodeMessage({ type: "pong", id: msg.id, hostTick: host.tick }));
     } else if (msg.type === "input" && conn.role === "player") {
+      // Far-future clamp (T13.5): an input tagged absurdly ahead is abusive/malformed
+      // — pairs with HostSession's existing late-drop of past-tick inputs.
+      if (maxInputLeadTicks > 0 && msg.tick > host.tick + maxInputLeadTicks) {
+        farFuture++;
+        return;
+      }
+      const slot = conn.slotIndex !== undefined ? slots[conn.slotIndex] : undefined;
+      // Per-connection rate limit (T13.5): drop floods, keep normal/catch-up bursts.
+      if (slot && maxInputsPerSecond > 0 && slot.inputsThisWindow >= maxInputsPerSecond) {
+        rateLimited++;
+        return;
+      }
+      if (slot) slot.inputsThisWindow++;
       host.receiveInput(conn.clientId!, msg.tick, msg.input); // spectators send none; ignore if they do
     }
     // The host originates everything else; ignore other inbound kinds.
@@ -346,6 +385,10 @@ export function createHostRuntime(config: HostRuntimeConfig): HostRuntimeHandle 
     pending.push(conn);
 
     transport.onMessage((data) => {
+      if (data.length > MAX_INBOUND_DATAGRAM_BYTES) {
+        oversized++; // a junk/abusive datagram — drop before decode (T13.5)
+        return;
+      }
       let msg;
       try {
         msg = decodeMessage(data);
@@ -355,6 +398,13 @@ export function createHostRuntime(config: HostRuntimeConfig): HostRuntimeHandle 
       }
       if (conn.state === "pending") {
         if (msg.type === "join") {
+          if (joinToken !== "" && (msg.joinToken ?? "") !== joinToken) {
+            // Wrong/missing shared secret on a gated host — refuse (T13.5).
+            conn.state = "rejected";
+            dropPending(conn);
+            transport.send(encodeMessage({ type: "reject", reason: "token" }));
+            return;
+          }
           if (msg.version !== version) {
             // Drifted build: refuse loudly, without consuming a slot. We do NOT
             // close — the client closes on `reject`, so the reason is never lost
@@ -450,6 +500,8 @@ export function createHostRuntime(config: HostRuntimeConfig): HostRuntimeHandle 
         if (slot.state === "reserved" && ++slot.disconnectAge >= reconnectGraceTicks) slot.state = "lost";
       }
       if (!started) return false;
+      // Reset the per-slot input rate-limit windows once a second (T13.5).
+      if (host.tick % RATE_WINDOW_TICKS === 0) for (const slot of slots) slot.inputsThisWindow = 0;
       host.step();
       return true;
     },
@@ -465,7 +517,10 @@ export function createHostRuntime(config: HostRuntimeConfig): HostRuntimeHandle 
         spectators: spectators.size,
         lateDropped: host.lateDropped,
         lateDroppedBySlot: host.lateDroppedBySlot,
-        malformed
+        malformed,
+        oversized,
+        rateLimited,
+        farFuture
       };
     }
   };

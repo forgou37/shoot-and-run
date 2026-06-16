@@ -16,6 +16,7 @@
  *   ARENA       (default arena-002.json)    — arena file under content/arenas/
  *   CONTENT_DIR (default repo /content)     — content root (for non-repo deploys)
  *   TLS_CERT / TLS_KEY (optional)           — PEM file paths → serve wss:// directly
+ *   JOIN_TOKEN  (optional)                  — shared secret clients must present (T13.5)
  *
  * Run via tsx so it consumes the workspace TypeScript (@shoot-and-run/net + sim)
  * directly, the same way Vite/Vitest do — no separate build step.
@@ -64,6 +65,9 @@ const { stop } = startHost({
   snapshotIntervalTicks: net.snapshotIntervalTicks,
   maxSpectators: net.maxSpectators,
   reconnectGraceTicks: net.reconnectGraceTicks,
+  maxInputsPerSecond: net.maxInputsPerSecond,
+  maxInputLeadTicks: net.maxInputLeadTicks,
+  joinToken: process.env["JOIN_TOKEN"], // optional shared secret (T13.5)
   tls,
   onStarted: () => console.log(`[host] all ${String(PLAYERS)} clients connected — match started`)
 });

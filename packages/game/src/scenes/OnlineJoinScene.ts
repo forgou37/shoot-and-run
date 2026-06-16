@@ -3,6 +3,7 @@ import { ARENA_HEIGHT, ARENA_WIDTH } from "@shoot-and-run/sim";
 import { addPixelText } from "../theme";
 
 const STORAGE_KEY = "shootAndRun.onlineHost";
+const TOKEN_STORAGE_KEY = "shootAndRun.joinToken";
 
 /** localStorage host URL, else a sensible default for this page (wss:// when the
  *  page is https, since a browser on https can't open a plaintext ws:// socket). */
@@ -18,11 +19,47 @@ function defaultUrl(): string {
   return `${scheme}://${host}:8787`;
 }
 
+/** Remembered join token (spec 013, T13.5), else empty. */
+function defaultToken(): string {
+  try {
+    return window.localStorage.getItem(TOKEN_STORAGE_KEY) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+/** Build a styled text field layered over the canvas, appended to the body. */
+function makeField(value: string, testid: string, ariaLabel: string): HTMLInputElement {
+  const input = document.createElement("input");
+  input.type = "text";
+  input.value = value;
+  input.spellcheck = false;
+  input.autocomplete = "off";
+  input.setAttribute("data-testid", testid);
+  input.setAttribute("aria-label", ariaLabel);
+  Object.assign(input.style, {
+    position: "fixed",
+    boxSizing: "border-box",
+    textAlign: "center",
+    fontFamily: "monospace",
+    color: "#f0e6c8",
+    background: "#1a1d2e",
+    border: "2px solid #3a4060",
+    borderRadius: "2px",
+    outline: "none",
+    zIndex: "20"
+  } satisfies Partial<CSSStyleDeclaration>);
+  document.body.appendChild(input);
+  return input;
+}
+
 interface JoinData {
   /** Pre-fill the field with this (e.g. returning from a failed connection). */
   url?: string;
   /** Restore the play/spectate choice (e.g. returning from a failed connection). */
   spectate?: boolean;
+  /** Restore the join token (e.g. returning from a failed connection). */
+  joinToken?: string;
 }
 
 /**
@@ -34,9 +71,11 @@ interface JoinData {
  */
 export class OnlineJoinScene extends Phaser.Scene {
   private urlInput!: HTMLInputElement;
+  private tokenInput!: HTMLInputElement;
   private onResize!: () => void;
   private onKey!: (e: KeyboardEvent) => void;
   private initialUrl = "";
+  private initialToken = "";
   /** Play (false) vs spectate (true); toggled with Tab (spec 013, T13.2). */
   private spectate = false;
   private modeText!: Phaser.GameObjects.BitmapText;
@@ -47,6 +86,7 @@ export class OnlineJoinScene extends Phaser.Scene {
 
   init(data: JoinData): void {
     this.initialUrl = data.url ?? defaultUrl();
+    this.initialToken = data.joinToken ?? defaultToken();
     this.spectate = data.spectate ?? false;
   }
 
@@ -61,28 +101,11 @@ export class OnlineJoinScene extends Phaser.Scene {
     addPixelText(this, ARENA_WIDTH / 2, ARENA_HEIGHT - 14, "esc back", 9, "#5a6079").setOrigin(0.5);
     this.renderMode();
 
-    // DOM text field over the canvas — the pixel buffer can't host text entry.
-    const input = document.createElement("input");
-    input.type = "text";
-    input.value = this.initialUrl;
-    input.spellcheck = false;
-    input.autocomplete = "off";
-    input.setAttribute("data-testid", "online-host-url");
-    input.setAttribute("aria-label", "Host address");
-    Object.assign(input.style, {
-      position: "fixed",
-      boxSizing: "border-box",
-      textAlign: "center",
-      fontFamily: "monospace",
-      color: "#f0e6c8",
-      background: "#1a1d2e",
-      border: "2px solid #3a4060",
-      borderRadius: "2px",
-      outline: "none",
-      zIndex: "20"
-    } satisfies Partial<CSSStyleDeclaration>);
-    document.body.appendChild(input);
-    this.urlInput = input;
+    // DOM text fields over the canvas — the pixel buffer can't host text entry.
+    // One for the host URL, one for the optional join token (T13.5).
+    this.urlInput = makeField(this.initialUrl, "online-host-url", "Host address");
+    this.tokenInput = makeField(this.initialToken, "online-join-token", "Join token");
+    this.tokenInput.placeholder = "join token (optional)";
 
     this.onKey = (e: KeyboardEvent): void => {
       if (e.key === "Enter") {
@@ -97,13 +120,14 @@ export class OnlineJoinScene extends Phaser.Scene {
         this.renderMode();
       }
     };
-    input.addEventListener("keydown", this.onKey);
+    this.urlInput.addEventListener("keydown", this.onKey);
+    this.tokenInput.addEventListener("keydown", this.onKey);
 
     this.onResize = (): void => this.layout();
     window.addEventListener("resize", this.onResize);
     this.layout();
     // Focus after the canvas settles so the field is ready to type into.
-    this.time.delayedCall(0, () => input.focus());
+    this.time.delayedCall(0, () => this.urlInput.focus());
 
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.teardown());
   }
@@ -112,16 +136,23 @@ export class OnlineJoinScene extends Phaser.Scene {
     this.layout(); // cheap; re-syncs if the canvas box moved/resized
   }
 
-  /** Center the input over the canvas, scaled to its on-screen box. */
+  /** Center the URL field over the canvas (token field just below it), scaled to
+   *  the on-screen box. */
   private layout(): void {
     const r = this.game.canvas.getBoundingClientRect();
     const w = r.width * 0.7;
     const h = Math.max(20, r.height * 0.09);
-    this.urlInput.style.left = `${String(r.left + (r.width - w) / 2)}px`;
-    this.urlInput.style.top = `${String(r.top + r.height * 0.5 - h / 2)}px`;
-    this.urlInput.style.width = `${String(w)}px`;
-    this.urlInput.style.height = `${String(h)}px`;
-    this.urlInput.style.fontSize = `${String(Math.max(11, Math.round(r.height * 0.04)))}px`;
+    const left = r.left + (r.width - w) / 2;
+    const fontSize = `${String(Math.max(11, Math.round(r.height * 0.04)))}px`;
+    const place = (el: HTMLInputElement, topFrac: number): void => {
+      el.style.left = `${String(left)}px`;
+      el.style.top = `${String(r.top + r.height * topFrac - h / 2)}px`;
+      el.style.width = `${String(w)}px`;
+      el.style.height = `${String(h)}px`;
+      el.style.fontSize = fontSize;
+    };
+    place(this.urlInput, 0.5);
+    place(this.tokenInput, 0.66);
   }
 
   /** Reflect the current play/spectate choice in the mode line. */
@@ -132,17 +163,21 @@ export class OnlineJoinScene extends Phaser.Scene {
   private connect(): void {
     const url = this.urlInput.value.trim();
     if (!url) return;
+    const token = this.tokenInput.value.trim();
     try {
       window.localStorage.setItem(STORAGE_KEY, url);
+      window.localStorage.setItem(TOKEN_STORAGE_KEY, token);
     } catch {
       /* storage unavailable — connecting still works, just won't be remembered */
     }
-    this.scene.start("online", { url, spectate: this.spectate });
+    this.scene.start("online", { url, spectate: this.spectate, joinToken: token || undefined });
   }
 
   private teardown(): void {
     window.removeEventListener("resize", this.onResize);
     this.urlInput.removeEventListener("keydown", this.onKey);
+    this.tokenInput.removeEventListener("keydown", this.onKey);
     this.urlInput.remove();
+    this.tokenInput.remove();
   }
 }

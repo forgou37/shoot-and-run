@@ -31,6 +31,8 @@ interface OnlineConfig {
   url: string;
   /** Join as a spectator — watch only, no slot, no input (spec 013, T13.2). */
   spectate?: boolean;
+  /** Shared join secret for a gated host (spec 013, T13.5); omit for an open host. */
+  joinToken?: string;
 }
 
 interface PrevPositions {
@@ -219,6 +221,7 @@ export class OnlineArenaScene extends Phaser.Scene {
       tuning: this.tuning,
       role: this.cfg.spectate ? "spectator" : "player",
       reconnectToken,
+      joinToken: this.cfg.joinToken,
       inputDelayTicks: this.net.inputDelayTicks,
       maxRollbackTicks: this.net.maxRollbackTicks
     });
@@ -253,7 +256,7 @@ export class OnlineArenaScene extends Phaser.Scene {
     this.prevReturnKey = kDown;
     const dev = this.edges.read(this.app.manager.devices());
     if (keyEdge || dev.some((e) => e.joinOrConfirm || e.back || e.pause)) {
-      this.scene.start("online-join", { url: this.cfg.url, spectate: this.cfg.spectate });
+      this.scene.start("online-join", { url: this.cfg.url, spectate: this.cfg.spectate, joinToken: this.cfg.joinToken });
     }
   }
 

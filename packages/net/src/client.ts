@@ -35,7 +35,7 @@ import {
 } from "@shoot-and-run/sim";
 import { ClockSync } from "./clock";
 import { decodeMessage, encodeMessage } from "./codec";
-import type { JoinRole, RejectReason } from "./protocol";
+import type { JoinMessage, JoinRole, RejectReason } from "./protocol";
 import { createRollbackController, type RollbackControllerHandle } from "./rollback";
 import type { Transport } from "./transport";
 import { SessionRejectedError, VersionMismatchError, computeContentVersion } from "./version";
@@ -77,6 +77,8 @@ export interface ClientSessionConfig {
    * sends an immediate snapshot, so this session resyncs to the live tick on hello.
    */
   reconnectToken?: string;
+  /** Shared join secret for a gated host (spec 013, T13.5); omit for an open host. */
+  joinToken?: string;
   /** Ticks of input lead — how far ahead of the estimated host tick to predict. */
   inputDelayTicks: number;
   /** Max ticks prediction may run ahead of confirmed (bounds rollback). */
@@ -126,15 +128,13 @@ export class ClientSession {
     config.transport.onMessage((data) => this.onMessage(data));
     // Announce ourselves first (T13.1): role + our content fingerprint, so the
     // host admits by intent and can refuse a drifted build before wasting a slot.
-    // A reconnectToken (T13.3) asks the host to reclaim our prior slot. The browser
-    // transport buffers this until the socket finishes opening.
-    config.transport.send(
-      encodeMessage(
-        config.reconnectToken
-          ? { type: "join", role: config.role ?? "player", version: this.contentVersion, reconnectToken: config.reconnectToken }
-          : { type: "join", role: config.role ?? "player", version: this.contentVersion }
-      )
-    );
+    // A reconnectToken (T13.3) asks the host to reclaim our prior slot; a joinToken
+    // (T13.5) presents the shared secret for a gated host. The browser transport
+    // buffers this until the socket finishes opening.
+    const join: JoinMessage = { type: "join", role: config.role ?? "player", version: this.contentVersion };
+    if (config.reconnectToken) join.reconnectToken = config.reconnectToken;
+    if (config.joinToken) join.joinToken = config.joinToken;
+    config.transport.send(encodeMessage(join));
   }
 
   /** True once the Host's hello has bootstrapped the rollback controller. */

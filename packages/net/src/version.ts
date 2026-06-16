@@ -56,11 +56,13 @@ export class VersionMismatchError extends Error {
  * `versionMismatch` flag so the existing shell path renders the refresh message.
  */
 export class SessionRejectedError extends Error {
-  constructor(readonly reason: "version" | "full") {
+  constructor(readonly reason: "version" | "full" | "token") {
     super(
       reason === "version"
         ? "host rejected the connection: version mismatch — refresh the page"
-        : "host rejected the connection: the game is full"
+        : reason === "token"
+          ? "host rejected the connection: wrong or missing join token"
+          : "host rejected the connection: the game is full"
     );
     this.name = "SessionRejectedError";
   }

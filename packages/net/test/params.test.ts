@@ -13,7 +13,9 @@ describe("net params (T9.6 / M7)", () => {
       maxSpectators: 4,
       reconnectGraceTicks: 600,
       reconnectAttempts: 5,
-      reconnectBackoffTicks: 45
+      reconnectBackoffTicks: 45,
+      maxInputsPerSecond: 240,
+      maxInputLeadTicks: 120
     });
   });
 

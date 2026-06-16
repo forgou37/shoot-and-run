@@ -32,6 +32,11 @@ export interface StartHostConfig {
   maxSpectators?: number;
   /** Ticks a dropped player's slot is held for reconnection (spec 013, T13.3). */
   reconnectGraceTicks?: number;
+  /** Hardening (spec 013, T13.5): input rate-limit + far-future clamp + join gate. */
+  maxInputsPerSecond?: number;
+  maxInputLeadTicks?: number;
+  /** Optional shared join secret; when set, clients must present it (T13.5). */
+  joinToken?: string;
   /** Sent in each hello so clients load the matching local arena (default arena.name). */
   arenaId?: string;
   friendlyFire?: boolean;
@@ -66,6 +71,9 @@ export function startHost(config: StartHostConfig): RunningHost {
     maxSpectators: config.maxSpectators,
     reconnectGraceTicks: config.reconnectGraceTicks,
     generateToken: () => randomUUID(), // unforgeable per-session reconnect secret (T13.3)
+    maxInputsPerSecond: config.maxInputsPerSecond,
+    maxInputLeadTicks: config.maxInputLeadTicks,
+    joinToken: config.joinToken,
     arenaId: config.arenaId ?? config.arena.name,
     expectedClients: config.players
   });

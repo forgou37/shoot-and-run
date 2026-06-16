@@ -7,7 +7,7 @@
  *
  * Layout: `[uvarint PROTOCOL_VERSION][uint8 tag][payload]`
  *   hello        → [uvarint slot][uvarint seed][uvarint playerCount][uvarint version][uvarint len][utf8(arenaId)][uvarint len][utf8(token)]
- *   join         → [uint8 roleCode][uvarint version][uvarint utf8Len][utf8(reconnectToken)]   (len 0 = no token)
+ *   join         → [uint8 roleCode][uvarint version][uvarint len][utf8(reconnectToken)][uvarint len][utf8(joinToken)]   (len 0 = absent)
  *   reject       → [uint8 reasonCode]
  *   input        → [uvarint tick][input byte]
  *   authoritative→ [uvarint tick][uvarint count][count input bytes]
@@ -41,7 +41,7 @@ import {
   type PlayerInput,
   type SimSnapshot
 } from "@shoot-and-run/sim";
-import type { NetMessage } from "./protocol";
+import type { JoinMessage, NetMessage } from "./protocol";
 
 const TAG_INPUT = 0;
 const TAG_AUTHORITATIVE = 1;
@@ -57,7 +57,7 @@ const TAG_REJECT = 9;
 // Small closed enums carried as a single code byte. Order is the wire contract —
 // only append, never reorder. An out-of-range code is a WireFormatError on decode.
 const JOIN_ROLES = ["player", "spectator"] as const;
-const REJECT_REASONS = ["version", "full"] as const;
+const REJECT_REASONS = ["version", "full", "token"] as const;
 
 // --- minimal DOM-free UTF-8 (TextEncoder/Decoder are not in the no-DOM lib) ---
 
@@ -160,6 +160,9 @@ export function encodeMessage(msg: NetMessage): Uint8Array {
       const tok = encodeUtf8(msg.reconnectToken ?? "");
       writeVarint(out, tok.length);
       for (const b of tok) out.push(b);
+      const jt = encodeUtf8(msg.joinToken ?? "");
+      writeVarint(out, jt.length);
+      for (const b of jt) out.push(b);
       break;
     }
     case "reject":
@@ -248,13 +251,19 @@ export function decodeMessage(bytes: Uint8Array): NetMessage {
       const role = JOIN_ROLES[bytes[pos++]!];
       if (role === undefined) throw new WireFormatError("join message has unknown role");
       const version = readVarint(bytes, pos);
-      const len = readVarint(bytes, version.next);
-      pos = len.next;
-      if (bytes.length - pos < len.value) throw new WireFormatError("join message truncated");
-      const token = len.value === 0 ? undefined : decodeUtf8(bytes.subarray(pos, pos + len.value));
-      return token === undefined
-        ? { type: "join", role, version: version.value }
-        : { type: "join", role, version: version.value, reconnectToken: token };
+      const rcLen = readVarint(bytes, version.next);
+      pos = rcLen.next;
+      if (bytes.length - pos < rcLen.value) throw new WireFormatError("join message truncated");
+      const reconnectToken = rcLen.value === 0 ? undefined : decodeUtf8(bytes.subarray(pos, pos + rcLen.value));
+      pos += rcLen.value;
+      const jtLen = readVarint(bytes, pos);
+      pos = jtLen.next;
+      if (bytes.length - pos < jtLen.value) throw new WireFormatError("join message truncated (joinToken)");
+      const joinToken = jtLen.value === 0 ? undefined : decodeUtf8(bytes.subarray(pos, pos + jtLen.value));
+      const msg: JoinMessage = { type: "join", role, version: version.value };
+      if (reconnectToken !== undefined) msg.reconnectToken = reconnectToken;
+      if (joinToken !== undefined) msg.joinToken = joinToken;
+      return msg;
     }
     case TAG_REJECT: {
       if (pos >= bytes.length) throw new WireFormatError("reject message missing reason");

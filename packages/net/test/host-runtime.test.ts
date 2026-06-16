@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import arena001 from "../../../content/arenas/arena-001.json";
 import tuningJson from "../../../content/tuning.json";
-import { parseArena, parseTuning } from "@shoot-and-run/sim";
+import { emptyInput, parseArena, parseTuning } from "@shoot-and-run/sim";
 import { decodeMessage, encodeMessage } from "../src/codec";
 import { createHostRuntime, type HostRuntimeConfig } from "../src/host-runtime";
 import { LoopbackNetwork } from "../src/loopback";
@@ -149,6 +149,73 @@ describe("HostRuntime join handshake (T13.1)", () => {
     net.advance(2);
     expect(bIn).toContainEqual({ type: "reject", reason: "full" });
     expect(bIn.some((m) => m.type === "hello")).toBe(false);
+  });
+});
+
+describe("HostRuntime hardening (T13.5)", () => {
+  it("drops an oversize inbound datagram before decode and counts it", () => {
+    const net = new LoopbackNetwork({ seed: 1 });
+    const runtime = makeRuntime(net);
+    const c = net.connect("c0");
+    c.send(new Uint8Array(300)); // > the 256-byte inbound cap
+    net.advance(1);
+    expect(runtime.metrics().oversized).toBe(1);
+    expect(runtime.connectedCount).toBe(0); // junk never admitted anyone
+  });
+
+  it("rate-limits an input flood from one connection", () => {
+    const net = new LoopbackNetwork({ seed: 1 });
+    const runtime = makeRuntime(net, { maxInputsPerSecond: 5 });
+    const c = net.connect("c0");
+    c.send(encodeMessage({ type: "join", role: "player", version }));
+    net.advance(1); // admit (slot 0)
+    for (let i = 0; i < 12; i++) c.send(encodeMessage({ type: "input", tick: 0, input: emptyInput() }));
+    net.advance(2); // deliver the flood in one batch (one window)
+    expect(runtime.metrics().rateLimited).toBe(7); // 12 sent, 5 accepted, 7 dropped
+    expect(runtime.connectedCount).toBe(1); // connection still served
+  });
+
+  it("rejects an input tagged absurdly far in the future", () => {
+    const net = new LoopbackNetwork({ seed: 1 });
+    const runtime = makeRuntime(net, { maxInputLeadTicks: 10 });
+    const c = net.connect("c0");
+    c.send(encodeMessage({ type: "join", role: "player", version }));
+    net.advance(1);
+    c.send(encodeMessage({ type: "input", tick: 5000, input: emptyInput() })); // way past tick 0 + 10
+    net.advance(2);
+    expect(runtime.metrics().farFuture).toBe(1);
+  });
+
+  it("gates joins on a shared token when configured", () => {
+    const net = new LoopbackNetwork({ seed: 1 });
+    const runtime = makeRuntime(net, { joinToken: "secret" });
+    const bad = net.connect("bad");
+    const badIn = collectInbound(bad);
+    bad.send(encodeMessage({ type: "join", role: "player", version })); // missing token
+    const wrong = net.connect("wrong");
+    const wrongIn = collectInbound(wrong);
+    wrong.send(encodeMessage({ type: "join", role: "player", version, joinToken: "nope" }));
+    const good = net.connect("good");
+    const goodIn = collectInbound(good);
+    good.send(encodeMessage({ type: "join", role: "player", version, joinToken: "secret" }));
+    net.advance(1);
+    net.advance(2);
+    expect(badIn).toContainEqual({ type: "reject", reason: "token" });
+    expect(wrongIn).toContainEqual({ type: "reject", reason: "token" });
+    expect(goodIn.some((m) => m.type === "hello")).toBe(true);
+    expect(runtime.connectedCount).toBe(1); // only the correct-token client got in
+  });
+
+  it("ignores the join token when the host is open (default)", () => {
+    const net = new LoopbackNetwork({ seed: 1 });
+    const runtime = makeRuntime(net); // no joinToken
+    const c = net.connect("c0");
+    const cIn = collectInbound(c);
+    c.send(encodeMessage({ type: "join", role: "player", version })); // no token, fine
+    net.advance(1);
+    net.advance(2);
+    expect(cIn.some((m) => m.type === "hello")).toBe(true);
+    expect(runtime.connectedCount).toBe(1);
   });
 });
 

@@ -58,11 +58,19 @@ export interface JoinMessage {
   version: number;
   /** Reclaim a prior slot after a drop (T13.3); absent on a fresh join. */
   reconnectToken?: string;
+  /**
+   * Optional shared join secret (spec 013, T13.5). When the host is launched with
+   * a `JOIN_TOKEN`, a join must present the matching value or it is refused — a
+   * trivial gate keeping randoms off an internet-facing `wss://`. Absent when the
+   * host runs open (the friends-only default).
+   */
+  joinToken?: string;
 }
 
-/** Why the host refused a `join` (spec 013, T13.1). The client surfaces a
- *  message per reason: `version` → "refresh the page"; `full` → "game is full". */
-export type RejectReason = "version" | "full";
+/** Why the host refused a `join` (spec 013). The client surfaces a message per
+ *  reason: `version` → "refresh the page"; `full` → "game is full"; `token` →
+ *  "wrong/missing join token" (T13.5). */
+export type RejectReason = "version" | "full" | "token";
 
 /**
  * Host -> Client: the join was refused (spec 013, T13.1). A typed, surfaced
