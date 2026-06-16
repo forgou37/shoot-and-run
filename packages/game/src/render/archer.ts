@@ -56,7 +56,7 @@ const PLAYBACK: Record<ArcherTag, { repeat: number; yoyo: boolean }> = {
  * whose named sheet isn't listed falls back to the recolored generic archer.
  * Add a name here once its `assets/archer_<name>.aseprite` is exported.
  */
-export const NAMED_ARCHER_SHEETS: readonly string[] = ["maks"];
+export const NAMED_ARCHER_SHEETS: readonly string[] = ["maks", "igorb", "lyosha", "igorsh"];
 
 export function loadArcherAssets(loader: Phaser.Loader.LoaderPlugin): void {
   loader.atlas(ARCHER_ATLAS_KEY, "assets/archer.png", "assets/archer.json");
