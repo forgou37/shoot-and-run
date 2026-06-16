@@ -26,6 +26,26 @@ async function confirmedTick(page: Page): Promise<number> {
   return page.evaluate(() => window.__testApi?.getNetProbe?.().confirmedTick ?? 0);
 }
 
+/**
+ * Find the highest confirmed tick at or below `start` that EVERY tab has recorded
+ * a hash for, and return each tab's hash there. The dev hash recorder samples once
+ * per local fixed step, but `confirmedTick` advances asynchronously as authoritative
+ * messages arrive — so when several ticks confirm between frames the intermediate
+ * ones get no entry, and a single exact tick isn't guaranteed present on every tab.
+ * Scanning down for a shared, recorded tick keeps the convergence assertion exact
+ * (still byte-for-byte at one genuinely shared confirmed tick) without depending on
+ * that per-tab sampling race; a real divergence still fails (the hashes differ).
+ */
+async function sharedConfirmedHashes(pages: Page[], start: number, maxBack = 150): Promise<number[]> {
+  for (let t = start; t > 0 && t > start - maxBack; t--) {
+    const hashes = await Promise.all(
+      pages.map((p) => p.evaluate((tk: number) => window.__testApi!.getConfirmedHashAt!(tk), t))
+    );
+    if (hashes.every((h) => h !== null)) return hashes as number[];
+  }
+  throw new Error(`no confirmed tick <= ${start} recorded on all ${pages.length} tabs within ${maxBack} ticks`);
+}
+
 /** Drive the Title → Online → join-and-connect flow with the keyboard. */
 async function joinViaMenu(page: Page, url: string): Promise<void> {
   await page.waitForFunction(() => window.__testApi?.getPhase() === "title", null, { timeout: 9000 });
@@ -91,16 +111,13 @@ test("two tabs play a real match over WebSocket and converge byte-for-byte", asy
     timeout: 20_000
   });
 
-  // Convergence: pick a tick all three tabs have confirmed and recorded, then
+  // Convergence: find a tick all three tabs have confirmed AND recorded, then
   // compare their confirmed-state hashes. Byte-identical determinism ⇒ equal
   // hashes — and the spectator's must equal the players' (it follows, exactly).
   const target =
     Math.min(await confirmedTick(pageA), await confirmedTick(pageB), await confirmedTick(pageS)) - 30;
   expect(target).toBeGreaterThan(0);
-  const hashA = await pageA.evaluate((t) => window.__testApi!.getConfirmedHashAt!(t), target);
-  const hashB = await pageB.evaluate((t) => window.__testApi!.getConfirmedHashAt!(t), target);
-  const hashS = await pageS.evaluate((t) => window.__testApi!.getConfirmedHashAt!(t), target);
-  expect(hashA).not.toBeNull();
+  const [hashA, hashB, hashS] = await sharedConfirmedHashes([pageA, pageB, pageS], target);
   expect(hashA).toBe(hashB);
   expect(hashS).toBe(hashA); // the spectator is byte-identical to the players
 
@@ -122,9 +139,7 @@ test("two tabs play a real match over WebSocket and converge byte-for-byte", asy
   });
   // Still byte-identical to A at a shared, post-reconnect tick.
   const target2 = Math.min(await confirmedTick(pageA), await confirmedTick(pageB)) - 20;
-  const hashA2 = await pageA.evaluate((t) => window.__testApi!.getConfirmedHashAt!(t), target2);
-  const hashB2 = await pageB.evaluate((t) => window.__testApi!.getConfirmedHashAt!(t), target2);
-  expect(hashB2).not.toBeNull();
+  const [hashA2, hashB2] = await sharedConfirmedHashes([pageA, pageB], target2);
   expect(hashB2).toBe(hashA2);
 
   expect(errors).toEqual([]);
