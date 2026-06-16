@@ -44,8 +44,15 @@ export interface HostSessionConfig {
   clients: HostClient[];
   /** Broadcast a full snapshot every this many committed ticks (>= 1). */
   snapshotIntervalTicks: number;
-  /** Emit one already-encoded datagram to one client (wire to a transport). */
+  /** Emit one already-encoded datagram to one client — for per-client acks. */
   send: (clientId: string, data: Uint8Array) => void;
+  /**
+   * Emit one already-encoded datagram to EVERY sink — players and (spec 013,
+   * T13.2) spectators. Used for the authoritative + snapshot broadcast; the
+   * caller (HostRuntime) decides who the sinks are, so spectators receive the
+   * stream without the session knowing they exist.
+   */
+  broadcast: (data: Uint8Array) => void;
 }
 
 export interface HostSessionHandle extends HostSession {
@@ -53,6 +60,8 @@ export interface HostSessionHandle extends HostSession {
   snapshot(): SimSnapshot;
   /** Diagnostics: inputs that arrived for an already-committed tick. */
   readonly lateDropped: number;
+  /** Diagnostics (T13.4): late-dropped inputs per slot (a copy). */
+  readonly lateDroppedBySlot: readonly number[];
 }
 
 export function createHostSession(config: HostSessionConfig): HostSessionHandle {
@@ -75,10 +84,10 @@ export function createHostSession(config: HostSessionConfig): HostSessionHandle 
   const lastInput: PlayerInput[] = config.players.map(() => emptyInput());
   let committedTick = 0;
   let lateDropped = 0;
+  const lateDroppedBySlot = config.players.map(() => 0);
 
   function broadcast(message: NetMessage): void {
-    const data = encodeMessage(message); // encode once, send the same bytes to every client
-    for (const c of config.clients) config.send(c.id, data);
+    config.broadcast(encodeMessage(message)); // encode once; the runtime fans out to players + spectators
   }
 
   return {
@@ -88,12 +97,16 @@ export function createHostSession(config: HostSessionConfig): HostSessionHandle 
     get lateDropped(): number {
       return lateDropped;
     },
+    get lateDroppedBySlot(): readonly number[] {
+      return lateDroppedBySlot.slice();
+    },
 
     receiveInput(clientId: string, tick: number, input: PlayerInput): void {
       const slot = slotByClient.get(clientId);
       if (slot === undefined) return; // unknown client
       if (tick < committedTick) {
         lateDropped++; // too late — this tick is already authoritative
+        lateDroppedBySlot[slot] = (lateDroppedBySlot[slot] ?? 0) + 1;
       } else {
         let row = buffer.get(tick);
         if (!row) {
