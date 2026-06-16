@@ -10,6 +10,7 @@ import { KeyboardInput } from "../input/keyboard";
 import { parsePlayersConfig } from "../input/players-config";
 import { parseInputSettings, parseUiSettings } from "../input/settings";
 import { quickstartConfig } from "../match-config";
+import { primeTransition, setTransitionDurationMs } from "../scene-transition";
 import { installBaseTestApi } from "../test-api";
 import { buildPixelFont } from "../theme";
 
@@ -41,14 +42,22 @@ export class BootScene extends Phaser.Scene {
       players.keyboards,
       parseInputSettings(tuningJson).stickDeadzone
     );
+    const ui = parseUiSettings(tuningJson);
     setAppContext(this, {
       manager,
       keyboard,
       slots: players.slots,
-      lobbyCountdownMs: parseUiSettings(tuningJson).lobbyCountdownMs,
+      lobbyCountdownMs: ui.lobbyCountdownMs,
       botConfig
     });
     installBaseTestApi(this.game);
+
+    // Prime the scene-transition overlay opaque + configure its duration, so the
+    // first visible screen (title, or a ?quickstart/?online deep-link target)
+    // fades in from black instead of popping in (spec 015). BootScene is invisible
+    // logic, so it still routes with an instant scene.start; the target fades in.
+    setTransitionDurationMs(ui.transitionMs);
+    primeTransition();
 
     const params = new URLSearchParams(window.location.search);
 

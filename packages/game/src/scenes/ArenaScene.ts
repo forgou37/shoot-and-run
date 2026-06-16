@@ -30,6 +30,7 @@ import { EdgeReader, type DeviceEdges } from "../input/menu-input";
 import type { SlotConfig } from "../input/players-config";
 import type { MatchConfig } from "../match-config";
 import { parseJuice, type JuiceConfig } from "../juice";
+import { fadeIn, transitionTo } from "../scene-transition";
 import { addPixelText } from "../theme";
 import { FixedStepDriver } from "../loop";
 import { ARCHER_TAGS, ArcherRenderer, aimSuffix, animKey, loadArcherAssets } from "../render/archer";
@@ -138,6 +139,7 @@ export class ArenaScene extends Phaser.Scene {
 
   create(): void {
     this.app = getAppContext(this);
+    fadeIn();
     const arena = parseArena(arenaJson);
     this.arenaName = arena.name;
     // Roster comes from the lobby (or the quickstart default): slots, devices,
@@ -313,8 +315,8 @@ export class ArenaScene extends Phaser.Scene {
   private confirmPause(): void {
     const choice = PAUSE_OPTIONS[this.pauseIndex];
     if (choice === "Resume") this.resumePause();
-    else if (choice === "To Lobby") this.scene.start("lobby");
-    else this.scene.start("title");
+    else if (choice === "To Lobby") transitionTo(this, "lobby");
+    else transitionTo(this, "title");
   }
 
   private renderPauseMenu(): void {

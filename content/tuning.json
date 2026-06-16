@@ -33,7 +33,8 @@
     "stickDeadzone": 0.25
   },
   "ui": {
-    "lobbyCountdownMs": 3000
+    "lobbyCountdownMs": 3000,
+    "transitionMs": 220
   },
   "juice": {
     "hitstopMs": 80,

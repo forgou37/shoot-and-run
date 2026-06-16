@@ -1,5 +1,6 @@
 import Phaser from "phaser";
 import { ARENA_HEIGHT, ARENA_WIDTH } from "@shoot-and-run/sim";
+import { fadeIn, transitionTo } from "../scene-transition";
 import { addPixelText } from "../theme";
 
 const STORAGE_KEY = "shootAndRun.onlineHost";
@@ -92,6 +93,7 @@ export class OnlineJoinScene extends Phaser.Scene {
 
   create(): void {
     this.cameras.main.setBackgroundColor("#10121f");
+    fadeIn();
     addPixelText(this, ARENA_WIDTH / 2, 64, "ONLINE", 24, "#f0e6c8").setOrigin(0.5);
     addPixelText(this, ARENA_WIDTH / 2, 108, "host address", 11, "#9aa0b5").setOrigin(0.5);
     this.modeText = addPixelText(this, ARENA_WIDTH / 2, ARENA_HEIGHT - 44, "", 10, "#f0e6c8").setOrigin(0.5);
@@ -113,7 +115,7 @@ export class OnlineJoinScene extends Phaser.Scene {
         this.connect();
       } else if (e.key === "Escape") {
         e.preventDefault();
-        this.scene.start("title");
+        transitionTo(this, "title");
       } else if (e.key === "Tab") {
         e.preventDefault(); // toggle play/spectate instead of moving focus off the field
         this.spectate = !this.spectate;
@@ -170,7 +172,7 @@ export class OnlineJoinScene extends Phaser.Scene {
     } catch {
       /* storage unavailable — connecting still works, just won't be remembered */
     }
-    this.scene.start("online", { url, spectate: this.spectate, joinToken: token || undefined });
+    transitionTo(this, "online", { url, spectate: this.spectate, joinToken: token || undefined });
   }
 
   private teardown(): void {
