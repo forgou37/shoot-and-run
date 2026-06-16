@@ -14,7 +14,8 @@ function withFlag(flag: keyof PlayerInput): PlayerInput {
 }
 
 interface Sent {
-  clientId: string;
+  /** The targeted client for a per-client `send` (ack); null for a `broadcast`. */
+  clientId: string | null;
   message: NetMessage;
 }
 
@@ -30,15 +31,16 @@ function makeHost(snapshotIntervalTicks = 30) {
       { id: "c1", slot: 1 }
     ],
     snapshotIntervalTicks,
-    send: (clientId, data) => sent.push({ clientId, message: decodeMessage(data) })
+    send: (clientId, data) => sent.push({ clientId, message: decodeMessage(data) }),
+    broadcast: (data) => sent.push({ clientId: null, message: decodeMessage(data) })
   });
   return { host, sent };
 }
 
-/** Authoritative-input messages broadcast to c0, in tick order. */
-function authInputsTo(sent: Sent[], clientId = "c0"): PlayerInput[][] {
+/** Broadcast authoritative-input messages, in tick order. */
+function authInputs(sent: Sent[]): PlayerInput[][] {
   return sent
-    .filter((s) => s.clientId === clientId && s.message.type === "authoritative")
+    .filter((s) => s.message.type === "authoritative")
     .map((s) => (s.message as Extract<NetMessage, { type: "authoritative" }>).inputs);
 }
 
@@ -54,7 +56,7 @@ describe("host session (T9.2 / M3)", () => {
 
     // Replaying the broadcast authoritative inputs through a fresh sim must
     // reproduce the host's authoritative state byte-for-byte.
-    const broadcast = authInputsTo(sent);
+    const broadcast = authInputs(sent);
     expect(broadcast).toHaveLength(50);
     const shadow = createSim({ arena, tuning, players: [{ slot: 0 }, { slot: 1 }], seed: 0xbada55 });
     for (const inputs of broadcast) shadow.step(inputs);
@@ -69,7 +71,7 @@ describe("host session (T9.2 / M3)", () => {
     host.receiveInput("c0", 1, withFlag("jump")); // c1 silent for tick 1
     host.step(); // tick 1: [jump, left(repeat-last)]
 
-    const broadcast = authInputsTo(sent);
+    const broadcast = authInputs(sent);
     expect(broadcast[0]).toEqual([withFlag("right"), withFlag("left")]);
     expect(broadcast[1]).toEqual([withFlag("jump"), withFlag("left")]);
   });
@@ -77,7 +79,7 @@ describe("host session (T9.2 / M3)", () => {
   it("broadcasts a snapshot every snapshotIntervalTicks", () => {
     const { host, sent } = makeHost(30);
     for (let t = 0; t < 35; t++) host.step();
-    const snaps = sent.filter((s) => s.clientId === "c0" && s.message.type === "snapshot");
+    const snaps = sent.filter((s) => s.message.type === "snapshot");
     expect(snaps).toHaveLength(2); // committed ticks 0 and 30
   });
 
@@ -97,5 +99,15 @@ describe("host session (T9.2 / M3)", () => {
     for (let t = 0; t < 10; t++) host.step(); // committedTick = 10
     host.receiveInput("c0", 3, withFlag("shoot")); // tick 3 is in the past
     expect(host.lateDropped).toBe(1);
+  });
+
+  it("tracks late-dropped inputs per slot (T13.4)", () => {
+    const { host } = makeHost();
+    for (let t = 0; t < 10; t++) host.step(); // committedTick = 10
+    host.receiveInput("c0", 3, withFlag("shoot")); // slot 0, past
+    host.receiveInput("c1", 5, withFlag("shoot")); // slot 1, past
+    host.receiveInput("c1", 2, withFlag("shoot")); // slot 1, past again
+    expect(host.lateDropped).toBe(3);
+    expect(host.lateDroppedBySlot).toEqual([1, 2]);
   });
 });

@@ -17,12 +17,33 @@ import { expect, test, type Page } from "@playwright/test";
 
 const HOST_WS = "ws://localhost:8787";
 const DEEPLINK_URL = `/?online=${HOST_WS}`;
+const SPECTATE_URL = `/?online=${HOST_WS}&spectate=1&netdebug=1`; // also exercises the T13.4 overlay
 
 async function waitForPhase(page: Page, timeout = 20_000): Promise<void> {
   await page.waitForFunction(() => window.__testApi?.getPhase() === "match", null, { timeout });
 }
 async function confirmedTick(page: Page): Promise<number> {
   return page.evaluate(() => window.__testApi?.getNetProbe?.().confirmedTick ?? 0);
+}
+
+/**
+ * Find the highest confirmed tick at or below `start` that EVERY tab has recorded
+ * a hash for, and return each tab's hash there. The dev hash recorder samples once
+ * per local fixed step, but `confirmedTick` advances asynchronously as authoritative
+ * messages arrive — so when several ticks confirm between frames the intermediate
+ * ones get no entry, and a single exact tick isn't guaranteed present on every tab.
+ * Scanning down for a shared, recorded tick keeps the convergence assertion exact
+ * (still byte-for-byte at one genuinely shared confirmed tick) without depending on
+ * that per-tab sampling race; a real divergence still fails (the hashes differ).
+ */
+async function sharedConfirmedHashes(pages: Page[], start: number, maxBack = 150): Promise<number[]> {
+  for (let t = start; t > 0 && t > start - maxBack; t--) {
+    const hashes = await Promise.all(
+      pages.map((p) => p.evaluate((tk: number) => window.__testApi!.getConfirmedHashAt!(tk), t))
+    );
+    if (hashes.every((h) => h !== null)) return hashes as number[];
+  }
+  throw new Error(`no confirmed tick <= ${start} recorded on all ${pages.length} tabs within ${maxBack} ticks`);
 }
 
 /** Drive the Title → Online → join-and-connect flow with the keyboard. */
@@ -39,13 +60,16 @@ async function joinViaMenu(page: Page, url: string): Promise<void> {
 test("two tabs play a real match over WebSocket and converge byte-for-byte", async ({ browser }) => {
   const ctxA = await browser.newContext();
   const ctxB = await browser.newContext();
+  const ctxS = await browser.newContext(); // a spectator (spec 013, T13.2)
   const pageA = await ctxA.newPage();
   const pageB = await ctxB.newPage();
+  const pageS = await ctxS.newPage();
 
   const errors: string[] = [];
   for (const [pg, label] of [
     [pageA, "A"],
-    [pageB, "B"]
+    [pageB, "B"],
+    [pageS, "S"]
   ] as const) {
     pg.on("pageerror", (e) => errors.push(`${label}: ${String(e)}`));
     pg.on("console", (m) => {
@@ -53,15 +77,17 @@ test("two tabs play a real match over WebSocket and converge byte-for-byte", asy
     });
   }
 
-  // Tab A goes through the Online menu; tab B uses the ?online= deep-link. The
-  // host starts once both have connected (wait-for-all).
-  await Promise.all([pageA.goto("/"), pageB.goto(DEEPLINK_URL)]);
+  // Tab A goes through the Online menu; tab B uses the ?online= deep-link; tab S
+  // joins as a watch-only spectator (?spectate=1) — it takes no slot, so the host
+  // still starts once the two PLAYERS have connected (wait-for-all).
+  await Promise.all([pageA.goto("/"), pageB.goto(DEEPLINK_URL), pageS.goto(SPECTATE_URL)]);
   await Promise.all([
     pageA.waitForFunction(() => Boolean(window.__testApi)),
-    pageB.waitForFunction(() => Boolean(window.__testApi))
+    pageB.waitForFunction(() => Boolean(window.__testApi)),
+    pageS.waitForFunction(() => Boolean(window.__testApi))
   ]);
   await joinViaMenu(pageA, HOST_WS);
-  await Promise.all([waitForPhase(pageA), waitForPhase(pageB)]);
+  await Promise.all([waitForPhase(pageA), waitForPhase(pageB), waitForPhase(pageS)]);
 
   // Drive input from both tabs (each controls its own slot) so inputs flow both
   // ways and the authoritative stream is non-trivial.
@@ -79,16 +105,45 @@ test("two tabs play a real match over WebSocket and converge byte-for-byte", asy
   await pageA.keyboard.up("KeyD");
   await pageB.keyboard.up("KeyA");
 
-  // Convergence: pick a tick both tabs have confirmed and recorded, then compare
-  // their confirmed-state hashes. Byte-identical determinism ⇒ equal hashes.
-  const target = Math.min(await confirmedTick(pageA), await confirmedTick(pageB)) - 30;
+  // The spectator follows the same authoritative stream — it confirms past the
+  // start too (no slot, no input, just the broadcast).
+  await pageS.waitForFunction(() => (window.__testApi?.getNetProbe?.().confirmedTick ?? 0) > 90, null, {
+    timeout: 20_000
+  });
+
+  // Convergence: find a tick all three tabs have confirmed AND recorded, then
+  // compare their confirmed-state hashes. Byte-identical determinism ⇒ equal
+  // hashes — and the spectator's must equal the players' (it follows, exactly).
+  const target =
+    Math.min(await confirmedTick(pageA), await confirmedTick(pageB), await confirmedTick(pageS)) - 30;
   expect(target).toBeGreaterThan(0);
-  const hashA = await pageA.evaluate((t) => window.__testApi!.getConfirmedHashAt!(t), target);
-  const hashB = await pageB.evaluate((t) => window.__testApi!.getConfirmedHashAt!(t), target);
-  expect(hashA).not.toBeNull();
+  const [hashA, hashB, hashS] = await sharedConfirmedHashes([pageA, pageB, pageS], target);
   expect(hashA).toBe(hashB);
+  expect(hashS).toBe(hashA); // the spectator is byte-identical to the players
+
+  // T13.4 metrics: the probe behind the net overlay exposes live diagnostics.
+  const probeA = await pageA.evaluate(() => window.__testApi!.getNetProbe!());
+  expect(probeA.clockSynced).toBe(true);
+  expect(probeA.leadTicks).toBeGreaterThan(0); // the client predicts ahead of confirmed
+  expect(Number.isFinite(probeA.rttTicks)).toBe(true);
+  expect(probeA.rollbacks).toBeGreaterThanOrEqual(0);
+
+  // T13.3 reconnection: force tab B to drop. It auto-reconnects to its slot (token
+  // reclaim → snapshot resync) and keeps converging — without disturbing A.
+  const dropTick = await confirmedTick(pageB);
+  await pageB.evaluate(() => window.__testApi!.forceDisconnect!());
+  // Confirmed advances well past the drop (past the brief reconnect gap), proving
+  // the slot was reclaimed and the session resumed.
+  await pageB.waitForFunction((t) => (window.__testApi?.getNetProbe?.().confirmedTick ?? 0) > t + 120, dropTick, {
+    timeout: 20_000
+  });
+  // Still byte-identical to A at a shared, post-reconnect tick.
+  const target2 = Math.min(await confirmedTick(pageA), await confirmedTick(pageB)) - 20;
+  const [hashA2, hashB2] = await sharedConfirmedHashes([pageA, pageB], target2);
+  expect(hashB2).toBe(hashA2);
 
   expect(errors).toEqual([]);
   await ctxA.close();
   await ctxB.close();
+  await ctxS.close();
 });

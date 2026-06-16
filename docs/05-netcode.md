@@ -220,10 +220,16 @@ return false;
 ## Налаштування (`params.ts` + `content/tuning.json` → блок `net`)
 
 ```ts
-interface NetParams { inputDelayTicks; snapshotIntervalTicks; maxRollbackTicks; jitterBufferTicks }
+interface NetParams {
+  inputDelayTicks; snapshotIntervalTicks; maxRollbackTicks; jitterBufferTicks;   // 009
+  maxSpectators;                                                                 // 013 T13.2
+  reconnectGraceTicks; reconnectAttempts; reconnectBackoffTicks;                 // 013 T13.3
+  maxInputsPerSecond; maxInputLeadTicks;                                         // 013 T13.5 (hardening)
+  adaptiveInputDelay; minInputDelayTicks; maxInputDelayTicks; correctionSmoothingMs; // 013 T13.6 (lag-comp)
+}
 ```
 
-Поточні: `inputDelayTicks: 3`, `snapshotIntervalTicks: 30`, `maxRollbackTicks: 120`, `jitterBufferTicks: 4`. `parseNetParams` валідує (невід'ємні цілі; `snapshotIntervalTicks >= 1`, `maxRollbackTicks >= 1`). `jitterBufferTicks` — **зарезервовано**, ще не споживається (rollback уже толерує переупорядкування). Sim ігнорує блок `net` — golden-артефакти недоторкані.
+Поточні: `inputDelayTicks: 3`, `snapshotIntervalTicks: 30`, `maxRollbackTicks: 120`, `jitterBufferTicks: 4`, `maxSpectators: 4`, `reconnectGraceTicks: 600`, `reconnectAttempts: 5`, `reconnectBackoffTicks: 45`, `maxInputsPerSecond: 240`, `maxInputLeadTicks: 120`, `adaptiveInputDelay: 0`, `minInputDelayTicks: 2`, `maxInputDelayTicks: 8`, `correctionSmoothingMs: 80`. `parseNetParams` валідує (усі невід'ємні цілі; `snapshotIntervalTicks >= 1`, `maxRollbackTicks >= 1`). `jitterBufferTicks` — **зарезервовано**. Sim ігнорує блок `net` — golden-артефакти недоторкані. `adaptiveInputDelay` — прапорець 0/1 (вимкнено за замовчуванням); `correctionSmoothingMs` — лише шелл (косметика).
 
 ## Виділений хост — `packages/server`
 
@@ -231,7 +237,7 @@ Node-процес, що крутить авторитетний `HostRuntime` + 
 
 - **`ws-transport-server.ts`** — адаптер `ws` → `TransportServer`: `WsTransport implements Transport` (`binaryType="nodebuffer"`, `toUint8` нормалізує `RawData`, `send` лише при `OPEN`). `createWsTransportServer({port, host?, tls?})` — монотонний connection-id (одна сесія на процес). З `tls:{cert,key}` слухає `wss://` напряму (`https.Server` + `ws`), інакше — звичайний `ws` (TLS термінує реверс-проксі).
 - **`start.ts`** — `startHost(config)`: створює ws-сервер + `HostRuntime`, **цикл 60 Гц** `setInterval(() => runtime.step(), 1000/TICK_RATE)` (no-op поки не підключилися всі), повертає `{runtime, stop}`.
-- **`main.ts`** — CLI-вхід. Env (launch, не геймфіл-тюнінг): `PORT` (8787), `HOST` (всі інтерфейси), `PLAYERS` (2), `SEED` (1), `ARENA` (`arena-002.json`), `CONTENT_DIR` (репо `/content`), `TLS_CERT`+`TLS_KEY` (опц. → прямий `wss://`). `SIGINT`/`SIGTERM` → чистий shutdown.
+- **`main.ts`** — CLI-вхід. Env (launch, не геймфіл-тюнінг): `PORT` (8787), `HOST` (всі інтерфейси), `PLAYERS` (2), `SEED` (1), `ARENA` (`arena-002.json`), `CONTENT_DIR` (репо `/content`), `TLS_CERT`+`TLS_KEY` (опц. → прямий `wss://`), `JOIN_TOKEN` (опц., 013 T13.5 — спільний секрет: клієнти мають його пред'явити, інакше `reject:token`). `SIGINT`/`SIGTERM` → чистий shutdown.
 
 Локально: `npm run dev:host` (через `tsx`) або `npm run start:host`. Дві вкладки на `?online=ws://localhost:8787` (або через меню **ONLINE**) грають повний матч.
 
@@ -271,7 +277,7 @@ PORT=8787 PLAYERS=2 npm run start:host        # слухає wss:// напрям
 
 **`inputDelayTicks` під інтернет.** Має покривати one-way затримку, інакше інпути спізнюються. Дефолт `3` (≈ 100 мс RTT) годиться для близьких друзів; за вищого пінгу підняти (`net`-блок у `content/tuning.json`, напр. `5–8`) ціною трохи більшого лагу вводу — це дані (hard rule 3), однакові на хості й клієнті в межах сесії.
 
-**Trust-постура (друзі).** Інтернет-хост без авторизації: будь-хто з URL може зайняти слот — прийнятно для пет-проекту (непублічний URL, один матч). Опційний shared-токен — беклог; анти-чіт — поза скоупом.
+**Trust-постура (друзі).** Інтернет-хост без авторизації: будь-хто з URL може зайняти слот — прийнятно для пет-проекту (непублічний URL, один матч). Опційний `JOIN_TOKEN` (013 T13.5) закриває слоти спільним секретом; разом із cap'ом датаграм, rate-limit'ом інпутів і far-future clamp'ом — це захисна постура проти junk/abuse, **не** поведінковий анти-чіт (детермінований хост не відрізнить людину від локального бота — і не мусить).
 
 ## WebSocketTransport (браузер, `packages/game/src/net/`)
 
@@ -282,6 +288,16 @@ PORT=8787 PLAYERS=2 npm run start:host        # слухає wss:// напрям
 - лише бінарні вхідні фрейми; `onerror`/`onclose` → один `fireClose()` (ідемпотентний).
 
 **TCP-застереження:** WebSocket reliable+ordered (TCP); rollback толерує loss/reorder, але TCP head-of-line blocking може хитати під втратами — прийнятний v1-компроміс. Unreliable WebRTC DataChannel — спека 012, замінний за тим самим `Transport` seam.
+
+## Спец 013 — полірування неткоду (виділений-хост)
+
+П'ять фіч поверх 011-стеку; хост/clock/predict/rollback ядро незмінне. Sim недоторканий — golden-артефакти побайтово рівні.
+
+- **Глядачі (T13.2).** Рукостискання `join` тепер несе `role` (`player`/`spectator`). Глядач НЕ займає слот, не блокує старт, не шле інпутів — лише отримує авторитетний broadcast і слідує (`localSlot −1` → RollbackController вгадує кожен слот repeat-last). Cap `maxSpectators`; зайвих — `reject:full`. Шелл: меню **Spectate** (Tab) / deep-link `?spectate=1` + маркер «SPECTATING». Confirmed-стан глядача побайтово рівний хосту.
+- **Реконект (T13.3).** Хост тримає кожен слот як empty/connected/reserved/lost (замість монотонного лічильника). Дроп → слот `reserved` на `reconnectGraceTicks` (інпут repeat-last-філиться); клієнт пред'являє виданий хостом per-slot токен у `join.reconnectToken` → слот повертається + негайний снапшот для resync. Після grace → `lost` (підроблений/пізній реклейм відхиляється). Токен — `crypto.randomUUID` (інжектиться у `net` ззовні, щоб пакет лишався без ambient-рандому). Шелл: авто-реконект із backoff (`reconnectAttempts`/`reconnectBackoffTicks`), вичерпання → меню.
+- **Метрики (T13.4).** `ClientSession.metrics()`: RTT (`ClockSync.rttTicks`), lead, кількість rollback'ів + resync'ів, malformed. Net-оверлей у грі (`?netdebug=1` + F3), `getNetProbe()` розширено. Хост: late-drop **по слотах** + `HostRuntime.metrics()`; `packages/server` логує однорядковий health-summary кожні ~5 с.
+- **Постура жорсткості (T13.5).** Див. Trust-постуру вище: cap датаграм 256 B (до decode), per-connection rate-limit `maxInputsPerSecond` (вікно 60 тіків), far-future clamp `maxInputLeadTicks`, опційний `JOIN_TOKEN`. Усі дропи лічаться в `HostRuntime.metrics()`.
+- **Lag-comp (T13.6).** У детермінованій rollback-моделі server-rewind несумісний зі збіжністю — відкинуто. Натомість два важелі-дані: (1) **adaptive input delay** (`adaptiveInputDelay=1`, межі `min/maxInputDelayTicks`) підлаштовує lead під RTT — **вимкнено за замовчуванням**, бо фіксований `inputDelayTicks` — задокументована поведінка; (2) **correction smoothing** (`correctionSmoothingMs`) шелл-side плавно гасить телепорт позиції від rollback'у замість snap'у — суто косметика, confirmed-стан незмінний (0 = snap).
 
 ## Збіжність — підсумок
 

@@ -69,7 +69,12 @@ export class BootScene extends Phaser.Scene {
       const url = online.startsWith("ws")
         ? online
         : `ws://${window.location.hostname}:8787`;
-      this.scene.start("online", { url });
+      // ?spectate=1 → watch-only (T13.2); ?token= presents a gated host's secret (T13.5).
+      this.scene.start("online", {
+        url,
+        spectate: params.get("spectate") === "1",
+        joinToken: params.get("token") ?? undefined
+      });
       return;
     }
 

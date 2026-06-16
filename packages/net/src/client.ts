@@ -24,6 +24,7 @@
  * the PREDICTED state is what a renderer shows.
  */
 import {
+  emptyInput,
   type ArenaData,
   type PlayerInput,
   type PlayerSlotConfig,
@@ -34,9 +35,40 @@ import {
 } from "@shoot-and-run/sim";
 import { ClockSync } from "./clock";
 import { decodeMessage, encodeMessage } from "./codec";
+import type { JoinMessage, JoinRole, RejectReason } from "./protocol";
 import { createRollbackController, type RollbackControllerHandle } from "./rollback";
 import type { Transport } from "./transport";
-import { VersionMismatchError, computeContentVersion } from "./version";
+import { SessionRejectedError, VersionMismatchError, computeContentVersion } from "./version";
+
+/**
+ * Adaptive input delay (spec 013, T13.6): cover roughly one-way latency plus a
+ * tick of margin, bounded by [min, max]. A pure clamp so the policy is testable
+ * without driving the clock. Off by default — fixed `inputDelayTicks` ships.
+ */
+export function adaptiveInputDelayTicks(rttTicks: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, Math.ceil(rttTicks / 2) + 1));
+}
+
+/**
+ * Read-only net diagnostics for the shell overlay + e2e (spec 013, T13.4). All
+ * client-observable, no PII — just how the prediction/clock are doing.
+ */
+export interface NetMetrics {
+  ready: boolean;
+  clockSynced: boolean;
+  confirmedTick: number;
+  predictedTick: number;
+  /** Predicted lead over confirmed (ticks the client is running ahead). */
+  leadTicks: number;
+  /** Smoothed round-trip time in ticks. */
+  rttTicks: number;
+  /** Rollback corrections so far (a remote input differed from the guess). */
+  rollbacks: number;
+  /** Snapshot-driven resyncs so far (loss heals / reconnect). */
+  resyncs: number;
+  /** Datagrams that failed to decode (version/format mismatch). */
+  malformed: number;
+}
 
 export interface ClientSessionConfig {
   /** The channel to the Host. The client registers its sole message handler. */
@@ -46,8 +78,23 @@ export interface ClientSessionConfig {
   /** Tuning, pinned for the whole session (hot-reload disabled online). */
   tuning: Tuning;
   friendlyFire?: boolean;
+  /** What to join as (T13.1): `player` (default) or `spectator` (wired in T13.2). */
+  role?: JoinRole;
+  /**
+   * Reclaim a prior slot after a drop (spec 013, T13.3): the token the host issued
+   * on the original connection. Present only on a reconnect attempt; the host
+   * sends an immediate snapshot, so this session resyncs to the live tick on hello.
+   */
+  reconnectToken?: string;
+  /** Shared join secret for a gated host (spec 013, T13.5); omit for an open host. */
+  joinToken?: string;
   /** Ticks of input lead — how far ahead of the estimated host tick to predict. */
   inputDelayTicks: number;
+  /** Adapt the input delay to measured RTT, bounded by min/max (spec 013, T13.6).
+   *  Default off — the fixed `inputDelayTicks` ships. */
+  adaptiveInputDelay?: boolean;
+  minInputDelayTicks?: number;
+  maxInputDelayTicks?: number;
   /** Max ticks prediction may run ahead of confirmed (bounds rollback). */
   maxRollbackTicks: number;
   /**
@@ -64,9 +111,14 @@ export class ClientSession {
   /** The client's own monotonic tick counter (its local clock), 1 per `tick()`. */
   private localTick = 0;
   private slot = -1;
+  /** Spectator mode (T13.2): never sends input; predicts every slot to follow. */
+  private readonly spectator: boolean;
   private arenaId = "";
   /** Datagrams that failed to decode (version/format mismatch) — diagnostics. */
   private malformed = 0;
+  /** Net diagnostics (T13.4): rollback corrections + snapshot resyncs so far. */
+  private rollbackCount = 0;
+  private resyncCount = 0;
   /** True once the first authoritative tick has arrived — i.e. the host's loop is
    *  running (it parks at tick 0 until all clients connect). Before this the
    *  client pre-fills the opening buffer; after it, it syncs the clock then leads. */
@@ -75,11 +127,28 @@ export class ClientSession {
   private nextPingId = 0;
   /** Set if the host's content fingerprint differs from ours — session refused. */
   private versionMismatched = false;
+  /** Set once the host has refused our join (any reason) — session is dead. */
+  private rejected = false;
+  /** Our content fingerprint, computed once: sent in the join + checked on hello. */
+  private contentVersion = 0;
+  /** The reconnect token the host issued for our slot (T13.3) — "" until hello. */
+  private hostToken = "";
   /** Latest pre-match lobby status from the host (null until first received). */
   private lobby: { connected: number; expected: number } | null = null;
 
   constructor(private readonly config: ClientSessionConfig) {
+    this.spectator = config.role === "spectator";
+    this.contentVersion = computeContentVersion(config.arena, config.tuning);
     config.transport.onMessage((data) => this.onMessage(data));
+    // Announce ourselves first (T13.1): role + our content fingerprint, so the
+    // host admits by intent and can refuse a drifted build before wasting a slot.
+    // A reconnectToken (T13.3) asks the host to reclaim our prior slot; a joinToken
+    // (T13.5) presents the shared secret for a gated host. The browser transport
+    // buffers this until the socket finishes opening.
+    const join: JoinMessage = { type: "join", role: config.role ?? "player", version: this.contentVersion };
+    if (config.reconnectToken) join.reconnectToken = config.reconnectToken;
+    if (config.joinToken) join.joinToken = config.joinToken;
+    config.transport.send(encodeMessage(join));
   }
 
   /** True once the Host's hello has bootstrapped the rollback controller. */
@@ -95,9 +164,18 @@ export class ClientSession {
   get lobbyStatus(): { connected: number; expected: number } | null {
     return this.lobby;
   }
-  /** Slot the Host assigned this client (−1 until bootstrapped). */
+  /** True if this session is a spectator (no slot, never sends input — T13.2). */
+  get spectating(): boolean {
+    return this.spectator;
+  }
+  /** Slot the Host assigned this client (−1 until bootstrapped, and for spectators). */
   get localSlot(): number {
     return this.slot;
+  }
+  /** The host-issued reconnect token for our slot (T13.3) — "" until hello, or when
+   *  reconnection is disabled. The shell stashes it to reclaim the slot after a drop. */
+  get reconnectToken(): string {
+    return this.hostToken;
   }
   get confirmedTick(): number {
     return this.controller?.confirmedTick ?? 0;
@@ -125,6 +203,21 @@ export class ClientSession {
     return this.controller?.snapshotConfirmed() ?? null;
   }
 
+  /** Read-only net diagnostics for the overlay / e2e (T13.4). */
+  metrics(): NetMetrics {
+    return {
+      ready: this.ready,
+      clockSynced: this.clock.synced,
+      confirmedTick: this.confirmedTick,
+      predictedTick: this.predictedTick,
+      leadTicks: this.predictedTick - this.confirmedTick,
+      rttTicks: this.clock.rttTicks,
+      rollbacks: this.rollbackCount,
+      resyncs: this.resyncCount,
+      malformed: this.malformed
+    };
+  }
+
   /**
    * Advance one fixed step: predict forward to the clock-targeted tick using
    * `localInput` for the local slot, sending each predicted input to the Host.
@@ -136,6 +229,8 @@ export class ClientSession {
     const controller = this.controller;
     if (!controller) return []; // not bootstrapped (or the session was refused)
 
+    if (this.spectator) return this.spectatorTick(controller);
+
     if (this.clock.synced) {
       // Steady state: lead off the synced clock, but only SEND inputs the host
       // won't have committed by the time they ARRIVE — i.e. tick >= the host tick
@@ -144,7 +239,7 @@ export class ClientSession {
       // the 010 bootstrap input loss at real RTT. (Inputs below the floor can't
       // reach the host in time anyway, so skipping them loses nothing.)
       const sendFloor = this.clock.estimateHostTick(this.localTick) + this.clock.estimateOneWay();
-      const target = this.clock.targetTick(this.localTick, this.config.inputDelayTicks);
+      const target = this.clock.targetTick(this.localTick, this.effectiveInputDelay());
       return this.predictTo(controller, target, localInput, sendFloor);
     }
 
@@ -152,7 +247,7 @@ export class ClientSession {
       // Pre-start: the host is parked at tick 0 waiting for all clients. Lead off
       // the confirmed tick to PRE-FILL its opening-input buffer — correct because
       // the host begins at tick 0, so nothing sent here is late (send everything).
-      const target = controller.confirmedTick + this.config.inputDelayTicks;
+      const target = controller.confirmedTick + this.effectiveInputDelay();
       return this.predictTo(controller, target, localInput, -Infinity);
     }
 
@@ -162,6 +257,23 @@ export class ClientSession {
     // ping until the first pong syncs the clock; the next tick then leads correctly.
     this.sendPing();
     return [];
+  }
+
+  /**
+   * Spectator step (T13.2): never sends input. The controller's localSlot is −1,
+   * so prediction guesses EVERY slot by repeat-last — a smooth follow view that
+   * authoritative messages keep honest. Before the host starts there is nothing
+   * to predict; once it runs, ping until the clock syncs, then predict up to the
+   * estimated host tick (no inputDelay — a spectator isn't racing inputs there).
+   */
+  private spectatorTick(controller: RollbackControllerHandle): SimEvent[] {
+    if (!this.hostStarted) return [];
+    if (!this.clock.synced) {
+      this.sendPing();
+      return [];
+    }
+    const target = this.clock.estimateHostTick(this.localTick);
+    return this.predictTo(controller, target, emptyInput(), Infinity); // Infinity floor = send nothing
   }
 
   /**
@@ -191,6 +303,21 @@ export class ClientSession {
     return events;
   }
 
+  /** The input lead used this tick: fixed `inputDelayTicks`, or RTT-adaptive
+   *  (bounded) when enabled (T13.6). Also surfaced for the overlay. */
+  private effectiveInputDelay(): number {
+    if (!this.config.adaptiveInputDelay) return this.config.inputDelayTicks;
+    return adaptiveInputDelayTicks(
+      this.clock.rttTicks,
+      this.config.minInputDelayTicks ?? this.config.inputDelayTicks,
+      this.config.maxInputDelayTicks ?? this.config.inputDelayTicks
+    );
+  }
+  /** The current input-delay lead (fixed or adaptive) — for the net overlay. */
+  get currentInputDelay(): number {
+    return this.effectiveInputDelay();
+  }
+
   /** Emit a clock-sync probe and record its send time, so the matching pong
    *  converges the clock without committing any gameplay input (T11.2). */
   private sendPing(): void {
@@ -214,15 +341,18 @@ export class ClientSession {
     }
     switch (msg.type) {
       case "hello":
-        this.onHello(msg.slot, msg.seed, msg.playerCount, msg.arenaId, msg.version);
+        this.onHello(msg.slot, msg.seed, msg.playerCount, msg.arenaId, msg.version, msg.token);
         break;
       case "authoritative":
         this.hostStarted = true; // the host's authoritative loop is running
-        this.controller?.confirm(msg.tick, msg.inputs);
+        if (this.controller?.confirm(msg.tick, msg.inputs)) this.rollbackCount++; // a correction occurred
         break;
       case "snapshot":
         this.hostStarted = true;
-        this.controller?.resync(msg.snapshot);
+        // Count only a real heal: a periodic snapshot the client has already
+        // confirmed is a no-op, so resyncs stays an honest connection-health
+        // signal (mirrors how rollbackCount tracks confirm()'s correction flag).
+        if (this.controller?.resync(msg.snapshot)) this.resyncCount++;
         break;
       case "ack":
         this.clock.onAck(msg.inputTick, msg.tick, this.localTick);
@@ -233,10 +363,28 @@ export class ClientSession {
       case "lobby":
         this.lobby = { connected: msg.connected, expected: msg.expected };
         break;
+      case "reject":
+        this.onReject(msg.reason);
+        break;
       case "input":
       case "ping":
+      case "join":
         break; // clients never receive these
     }
+  }
+
+  /**
+   * Handle the host refusing our join (T13.1). A `version` reject also flips the
+   * `versionMismatch` flag so the shell renders the same "refresh the page"
+   * message the client-side hello check produces; any reason is surfaced via
+   * `onError` and tears the session down.
+   */
+  private onReject(reason: RejectReason): void {
+    if (this.controller || this.versionMismatched || this.rejected) return;
+    this.rejected = true;
+    if (reason === "version") this.versionMismatched = true;
+    this.config.onError?.(new SessionRejectedError(reason));
+    this.config.transport.close();
   }
 
   /**
@@ -244,20 +392,29 @@ export class ClientSession {
    * from ours — the host is on a drifted build and a shared deterministic sim is
    * impossible (S4) — otherwise bootstrap the rollback controller.
    */
-  private onHello(slot: number, seed: number, playerCount: number, arenaId: string, version: number): void {
-    if (this.controller || this.versionMismatched) return; // already bootstrapped / refused
-    const localVersion = computeContentVersion(this.config.arena, this.config.tuning);
-    if (version !== localVersion) {
+  private onHello(
+    slot: number,
+    seed: number,
+    playerCount: number,
+    arenaId: string,
+    version: number,
+    token: string
+  ): void {
+    if (this.controller || this.versionMismatched || this.rejected) return; // already bootstrapped / refused
+    if (version !== this.contentVersion) {
       this.versionMismatched = true;
-      this.config.onError?.(new VersionMismatchError(localVersion, version));
+      this.config.onError?.(new VersionMismatchError(this.contentVersion, version));
       this.config.transport.close(); // refuse the drifted session
       return;
     }
+    this.hostToken = token; // remember our slot's reconnect secret (T13.3)
     this.bootstrap(slot, seed, playerCount, arenaId);
   }
 
   private bootstrap(slot: number, seed: number, playerCount: number, arenaId: string): void {
-    this.slot = slot;
+    // A spectator owns no slot: localSlot −1 makes the controller guess every slot
+    // by repeat-last (no slot matches), and the hello's placeholder slot is ignored.
+    this.slot = this.spectator ? -1 : slot;
     this.arenaId = arenaId;
     // FFA roster: slot index == player index (matches the Host's player order).
     const players: PlayerSlotConfig[] = Array.from({ length: playerCount }, (_, i) => ({ slot: i }));
@@ -267,7 +424,7 @@ export class ClientSession {
       players,
       seed,
       friendlyFire: this.config.friendlyFire,
-      localSlot: slot,
+      localSlot: this.slot,
       maxRollbackTicks: this.config.maxRollbackTicks
     });
   }

@@ -27,6 +27,60 @@ export interface HelloMessage {
   arenaId: string;
   /** Host's content fingerprint (computeContentVersion) — client must match. */
   version: number;
+  /**
+   * Per-session reconnect secret for this slot (spec 013, T13.3). The host issues
+   * it on admission; the client stashes it and presents it in a later `join`'s
+   * `reconnectToken` to reclaim this exact slot after a drop. Empty when reconnect
+   * is disabled (`reconnectGraceTicks` 0).
+   */
+  token: string;
+}
+
+/** What a connecting client wants to be (spec 013, T13.1). `player` takes a slot
+ *  and drives the sim; `spectator` (consumed in T13.2) only watches — no slot,
+ *  never gates the start, sends no input. */
+export type JoinRole = "player" | "spectator";
+
+/**
+ * Client -> Host: the FIRST message a client sends, right after the socket opens
+ * (spec 013, T13.1). It precedes the host's `hello` so the host can assign by
+ * INTENT — player vs spectator (T13.2), or reclaiming a specific slot via
+ * `reconnectToken` (T13.3) — instead of blind connection order. It also carries
+ * the client's content `version` so the host can refuse a drifted build loudly
+ * (a `reject`) without wasting a slot, complementing the client-side check on
+ * `hello` (S4). A pre-013 client never sends this; the host's join-grace falls
+ * back to a legacy `hello` so such a client can't hang (see host-runtime).
+ */
+export interface JoinMessage {
+  type: "join";
+  role: JoinRole;
+  /** Client's content fingerprint (computeContentVersion) — host must match. */
+  version: number;
+  /** Reclaim a prior slot after a drop (T13.3); absent on a fresh join. */
+  reconnectToken?: string;
+  /**
+   * Optional shared join secret (spec 013, T13.5). When the host is launched with
+   * a `JOIN_TOKEN`, a join must present the matching value or it is refused — a
+   * trivial gate keeping randoms off an internet-facing `wss://`. Absent when the
+   * host runs open (the friends-only default).
+   */
+  joinToken?: string;
+}
+
+/** Why the host refused a `join` (spec 013). The client surfaces a message per
+ *  reason: `version` → "refresh the page"; `full` → "game is full"; `token` →
+ *  "wrong/missing join token" (T13.5). */
+export type RejectReason = "version" | "full" | "token";
+
+/**
+ * Host -> Client: the join was refused (spec 013, T13.1). A typed, surfaced
+ * reason — the actionable alternative to silently closing the socket. The host
+ * does NOT close after sending it; the client closes on receipt (so the reason
+ * is never dropped by a close that races ahead of delivery).
+ */
+export interface RejectMessage {
+  type: "reject";
+  reason: RejectReason;
 }
 
 /** Client -> Host: this client's input for a target tick (the Host applies its
@@ -96,6 +150,8 @@ export interface LobbyMessage {
 
 export type NetMessage =
   | HelloMessage
+  | JoinMessage
+  | RejectMessage
   | InputMessage
   | AuthoritativeInputsMessage
   | SnapshotMessage

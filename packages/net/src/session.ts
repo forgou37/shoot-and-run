@@ -44,8 +44,13 @@ export interface RollbackController {
    * iff that produced a visible correction.
    */
   confirm(tick: number, inputs: TickInputs): boolean;
-  /** Hard-resync to a Host snapshot, discarding divergent prediction. */
-  resync(snapshot: SimSnapshot): void;
+  /**
+   * Hard-resync to a Host snapshot, discarding divergent prediction. Returns true
+   * iff the snapshot was newer than the confirmed tick and actually healed a gap;
+   * a periodic snapshot the client has already confirmed is a no-op and returns
+   * false (so callers can count only real resyncs).
+   */
+  resync(snapshot: SimSnapshot): boolean;
 }
 
 /**

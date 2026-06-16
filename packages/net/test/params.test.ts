@@ -9,7 +9,17 @@ describe("net params (T9.6 / M7)", () => {
       inputDelayTicks: 3,
       snapshotIntervalTicks: 30,
       maxRollbackTicks: 120,
-      jitterBufferTicks: 4
+      jitterBufferTicks: 4,
+      maxSpectators: 4,
+      reconnectGraceTicks: 600,
+      reconnectAttempts: 5,
+      reconnectBackoffTicks: 45,
+      maxInputsPerSecond: 240,
+      maxInputLeadTicks: 120,
+      adaptiveInputDelay: 0,
+      minInputDelayTicks: 2,
+      maxInputDelayTicks: 8,
+      correctionSmoothingMs: 80
     });
   });
 

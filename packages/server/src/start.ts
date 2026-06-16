@@ -10,6 +10,7 @@
  * expected clients, then run from tick 0) and per-client slot assignment all live
  * in `HostRuntime` — `step()` is a no-op until every expected client connects.
  */
+import { randomUUID } from "node:crypto";
 import { createHostRuntime, type HostRuntimeHandle } from "@shoot-and-run/net";
 import { TICK_RATE, type ArenaData, type Tuning } from "@shoot-and-run/sim";
 import { createWsTransportServer } from "./ws-transport-server";
@@ -27,6 +28,15 @@ export interface StartHostConfig {
   tuning: Tuning;
   /** Broadcast a full snapshot every this many committed ticks (>= 1). */
   snapshotIntervalTicks: number;
+  /** Max concurrent spectators (spec 013, T13.2; from the `net` block). */
+  maxSpectators?: number;
+  /** Ticks a dropped player's slot is held for reconnection (spec 013, T13.3). */
+  reconnectGraceTicks?: number;
+  /** Hardening (spec 013, T13.5): input rate-limit + far-future clamp + join gate. */
+  maxInputsPerSecond?: number;
+  maxInputLeadTicks?: number;
+  /** Optional shared join secret; when set, clients must present it (T13.5). */
+  joinToken?: string;
   /** Sent in each hello so clients load the matching local arena (default arena.name). */
   arenaId?: string;
   friendlyFire?: boolean;
@@ -58,16 +68,32 @@ export function startHost(config: StartHostConfig): RunningHost {
     seed: config.seed,
     friendlyFire: config.friendlyFire,
     snapshotIntervalTicks: config.snapshotIntervalTicks,
+    maxSpectators: config.maxSpectators,
+    reconnectGraceTicks: config.reconnectGraceTicks,
+    generateToken: () => randomUUID(), // unforgeable per-session reconnect secret (T13.3)
+    maxInputsPerSecond: config.maxInputsPerSecond,
+    maxInputLeadTicks: config.maxInputLeadTicks,
+    joinToken: config.joinToken,
     arenaId: config.arenaId ?? config.arena.name,
     expectedClients: config.players
   });
 
   let started = false;
+  let loggedTicks = 0;
   const interval = setInterval(() => {
     const stepped = runtime.step(); // no-op until all expected clients connect
-    if (stepped && !started) {
+    if (!stepped) return;
+    if (!started) {
       started = true;
       config.onStarted?.();
+    }
+    // Periodic one-line health summary for the VPS operator (T13.4; ~every 5 s).
+    if (++loggedTicks % (TICK_RATE * 5) === 0) {
+      const m = runtime.metrics();
+      console.log(
+        `[host] tick=${String(m.tick)} players=${String(m.connectedPlayers)} reserved=${String(m.reservedSlots)} ` +
+          `spectators=${String(m.spectators)} lateDropped=${String(m.lateDropped)} malformed=${String(m.malformed)}`
+      );
     }
   }, 1000 / TICK_RATE);
 

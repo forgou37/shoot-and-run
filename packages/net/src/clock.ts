@@ -93,6 +93,12 @@ export class ClockSync {
     return this.initialized;
   }
 
+  /** Smoothed round-trip time in ticks (2× the one-way estimate) — a diagnostic
+   *  for the net overlay / host logs (T13.4), never used for timing decisions. */
+  get rttTicks(): number {
+    return 2 * this.oneWayEst;
+  }
+
   /** Best estimate of the host's current tick. */
   estimateHostTick(localNow: number): number {
     return Math.round(localNow + this.offset);

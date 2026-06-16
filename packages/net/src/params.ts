@@ -18,13 +18,72 @@ export interface NetParams extends PredictionParams {
    * 010). Validated here so the knob's contract is fixed up front.
    */
   jitterBufferTicks: number;
+  /**
+   * Max concurrent spectators the host accepts (spec 013, T13.2). Spectators
+   * receive the authoritative stream but take no slot and never gate the start;
+   * the cap also bounds fan-out / connection load on an open `wss://`. 0 disables
+   * spectating. Host-side only — the sim and the prediction client ignore it.
+   */
+  maxSpectators: number;
+  /**
+   * Ticks a dropped player's slot is held for reconnection (spec 013, T13.3).
+   * Within this window a client presenting its reconnect token reclaims the slot
+   * (its inputs are repeat-last-filled meanwhile); after it, the slot stays filled
+   * for the match and a late reconnect is refused. Host-side. 0 disables reconnect.
+   */
+  reconnectGraceTicks: number;
+  /**
+   * How many times a dropped client auto-retries the connection before giving up
+   * to the menu (spec 013, T13.3). Client/shell-side. 0 disables auto-reconnect.
+   */
+  reconnectAttempts: number;
+  /** Ticks between auto-reconnect attempts (client/shell-side, spec 013, T13.3). */
+  reconnectBackoffTicks: number;
+  /**
+   * Host hardening (spec 013, T13.5): max inputs accepted per connection per
+   * second (60-tick window); a flood past this is dropped + counted. Generous —
+   * it catches abuse, not a client's normal startup/catch-up bursts. 0 disables.
+   */
+  maxInputsPerSecond: number;
+  /**
+   * Host hardening (spec 013, T13.5): reject an input tagged more than this many
+   * ticks ahead of the host's committed tick (a malformed/abusive future tag),
+   * pairing with the existing late-drop of past-tick inputs. 0 disables.
+   */
+  maxInputLeadTicks: number;
+  /**
+   * Lag-comp (spec 013, T13.6): 1 = adapt the client's input delay to measured RTT
+   * (bounded by `minInputDelayTicks`/`maxInputDelayTicks`); 0 = use the fixed
+   * `inputDelayTicks`. Off by default — fixed delay is the shipped behavior so the
+   * convergence proof is undisturbed unless an operator opts in.
+   */
+  adaptiveInputDelay: number;
+  /** Lower/upper bound on the adaptive input delay in ticks (T13.6). */
+  minInputDelayTicks: number;
+  maxInputDelayTicks: number;
+  /**
+   * Lag-comp (T13.6): ms over which the shell visually eases a predicted→corrected
+   * position jump on a rollback, instead of snapping. Purely cosmetic — the
+   * confirmed state is identical with it on or off. 0 = snap. Shell-consumed.
+   */
+  correctionSmoothingMs: number;
 }
 
 const NET_KEYS: readonly (keyof NetParams)[] = [
   "inputDelayTicks",
   "snapshotIntervalTicks",
   "maxRollbackTicks",
-  "jitterBufferTicks"
+  "jitterBufferTicks",
+  "maxSpectators",
+  "reconnectGraceTicks",
+  "reconnectAttempts",
+  "reconnectBackoffTicks",
+  "maxInputsPerSecond",
+  "maxInputLeadTicks",
+  "adaptiveInputDelay",
+  "minInputDelayTicks",
+  "maxInputDelayTicks",
+  "correctionSmoothingMs"
 ];
 
 /** Validate the `net` block of a parsed content/tuning.json object. */

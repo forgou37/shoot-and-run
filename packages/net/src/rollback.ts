@@ -181,8 +181,8 @@ export function createRollbackController(
       return false;
     },
 
-    resync(snapshot: SimSnapshot): void {
-      if (snapshot.state.tick <= confirmedTick) return; // not newer; ignore
+    resync(snapshot: SimSnapshot): boolean {
+      if (snapshot.state.tick <= confirmedTick) return false; // not newer; ignore (a no-op periodic snapshot)
       confirmedSim = createSimFromSnapshot(snapshot, restoreConfig);
       confirmedSnapshot = confirmedSim.snapshot();
       confirmedTick = snapshot.state.tick;
@@ -194,6 +194,7 @@ export function createRollbackController(
       for (const t of [...localInputs.keys()]) if (t < confirmedTick) localInputs.delete(t);
       for (const t of [...authoritative.keys()]) if (t < confirmedTick) authoritative.delete(t);
       predictedLog.clear();
+      return true;
     },
 
     snapshotConfirmed(): SimSnapshot {

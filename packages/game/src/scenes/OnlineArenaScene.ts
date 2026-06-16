@@ -2,12 +2,15 @@ import Phaser from "phaser";
 import {
   ARENA_HEIGHT,
   ARENA_WIDTH,
+  emptyInput,
   parseArena,
   parseTuning,
   wrapMod,
-  type SimState
+  type ArenaData,
+  type SimState,
+  type Tuning
 } from "@shoot-and-run/sim";
-import { ClientSession, parseNetParams } from "@shoot-and-run/net";
+import { ClientSession, parseNetParams, type NetParams } from "@shoot-and-run/net";
 import arenaJson from "../../../../content/arenas/arena-002.json";
 import tuningJson from "../../../../content/tuning.json";
 import { getAppContext, type AppContext } from "../app-context";
@@ -27,6 +30,10 @@ import { WebSocketTransport } from "../net/websocket-transport";
 interface OnlineConfig {
   /** ws://host:port of the dedicated host (spec 010). */
   url: string;
+  /** Join as a spectator — watch only, no slot, no input (spec 013, T13.2). */
+  spectate?: boolean;
+  /** Shared join secret for a gated host (spec 013, T13.5); omit for an open host. */
+  joinToken?: string;
 }
 
 interface PrevPositions {
@@ -52,6 +59,16 @@ export class OnlineArenaScene extends Phaser.Scene {
   private slots!: SlotConfig[];
   private juice!: JuiceConfig;
   private readonly driver = new FixedStepDriver();
+  /** Session content (pinned), kept so a reconnect can rebuild the session. */
+  private arena!: ArenaData;
+  private tuning!: Tuning;
+  private net!: NetParams;
+  /** Reconnect state (spec 013, T13.3): the host-issued token + a bounded retry
+   *  budget that refreshes on each successful connection. */
+  private reconnectToken = "";
+  private reconnectAttempts = 0;
+  private reconnectAttemptsLeft = 0;
+  private reconnectWaitLeft = 0;
 
   private env!: EnvironmentRenderer;
   private archers!: ArcherRenderer;
@@ -64,6 +81,19 @@ export class OnlineArenaScene extends Phaser.Scene {
 
   private prev: PrevPositions | null = null;
   private disconnected = false;
+  /** Net debug overlay (spec 013, T13.4): `?netdebug=1` + F3 to toggle. */
+  private netDebug = false;
+  private netDebugText?: Phaser.GameObjects.BitmapText;
+  private prevDebugKey = false;
+  /** Rollback-correction smoothing (spec 013, T13.6): ease a teleport from a
+   *  prediction correction over `correctionSmoothingMs` instead of snapping. A
+   *  per-player decaying visual offset — render-only, never the confirmed state. */
+  private correctionSmoothingMs = 0;
+  private frameDeltaMs = 16;
+  private lastRollbacks = 0;
+  private lastResyncs = 0;
+  private smoothOffset: { x: number; y: number }[] = [];
+  private lastRenderPos: ({ x: number; y: number } | null)[] = [];
   /** Edge reader for "press to return to the menu" in the error states. */
   private edges!: EdgeReader;
   private prevReturnKey = false;
@@ -82,6 +112,12 @@ export class OnlineArenaScene extends Phaser.Scene {
     this.hudBuilt = false;
     this.scoreTexts = [];
     this.confirmedHashes.clear();
+    this.reconnectToken = "";
+    this.reconnectWaitLeft = 0;
+    this.smoothOffset = [];
+    this.lastRenderPos = [];
+    this.lastRollbacks = 0;
+    this.lastResyncs = 0;
   }
 
   preload(): void {
@@ -96,19 +132,21 @@ export class OnlineArenaScene extends Phaser.Scene {
     fadeIn();
     this.edges = new EdgeReader();
     this.slots = this.app.slots;
-    const arena = parseArena(arenaJson);
-    const tuning = parseTuning(tuningJson);
-    const net = parseNetParams(tuningJson);
+    this.arena = parseArena(arenaJson);
+    this.tuning = parseTuning(tuningJson);
+    this.net = parseNetParams(tuningJson);
     this.juice = parseJuice(tuningJson);
+    this.reconnectAttempts = this.net.reconnectAttempts;
+    this.reconnectAttemptsLeft = this.net.reconnectAttempts;
 
-    this.env = new EnvironmentRenderer(this, arena);
+    this.env = new EnvironmentRenderer(this, this.arena);
     this.archers = new ArcherRenderer(this, this.slots);
     this.arrowSprites = new ArrowRenderer(this);
     this.boosters = new BoosterRenderer(
       this,
       this.juice.boosterBobAmplitudePx,
       this.juice.boosterBobPeriodMs,
-      tuning.boosterFloatOffsetPx
+      this.tuning.boosterFloatOffsetPx
     );
 
     // Local input: the first keyboard profile in this tab (each tab/machine has
@@ -117,17 +155,7 @@ export class OnlineArenaScene extends Phaser.Scene {
       this.app.manager.devices().find((d) => d.kind === "keyboard") ??
       this.app.manager.devices()[0]!;
 
-    this.transport = new WebSocketTransport(this.cfg.url);
-    this.transport.onClose(() => {
-      this.disconnected = true;
-    });
-    this.session = new ClientSession({
-      transport: this.transport,
-      arena,
-      tuning,
-      inputDelayTicks: net.inputDelayTicks,
-      maxRollbackTicks: net.maxRollbackTicks
-    });
+    this.connectSession();
 
     this.statusText = addPixelText(this, ARENA_WIDTH / 2, ARENA_HEIGHT / 2, "Connecting…", 11, "#ffffff", {
       align: "center"
@@ -139,10 +167,21 @@ export class OnlineArenaScene extends Phaser.Scene {
       .setDepth(20)
       .setVisible(false);
 
+    if (this.cfg.spectate) {
+      addPixelText(this, ARENA_WIDTH / 2, ARENA_HEIGHT - 10, "SPECTATING", 9, "#9aa0b5")
+        .setOrigin(0.5)
+        .setDepth(30);
+    }
+
+    this.correctionSmoothingMs = this.net.correctionSmoothingMs;
+    this.netDebug = new URLSearchParams(window.location.search).get("netdebug") === "1";
+    this.netDebugText = addPixelText(this, 2, 2, "", 8, "#7fff7f").setDepth(40).setVisible(this.netDebug);
+
     this.installTestApi();
   }
 
   override update(_time: number, delta: number): void {
+    this.updateNetDebug(); // live regardless of connection state
     // Version mismatch wins over "disconnected" (the refusal closes the socket,
     // which also flags disconnected) — show the actionable message.
     if (this.session.versionMismatch) {
@@ -151,12 +190,79 @@ export class OnlineArenaScene extends Phaser.Scene {
       return;
     }
     if (this.disconnected) {
+      this.updateReconnect();
+      return;
+    }
+    // Connected: remember our slot's reconnect token, and (once ready) refresh the
+    // retry budget so a *later* drop gets a full set of attempts again.
+    if (this.reconnectToken === "" && this.session.reconnectToken !== "") {
+      this.reconnectToken = this.session.reconnectToken;
+    }
+    if (this.session.ready) this.reconnectAttemptsLeft = this.reconnectAttempts;
+    this.frameDeltaMs = delta;
+    const alpha = this.driver.advance(delta, this.doNetTick);
+    this.render(alpha);
+  }
+
+  /** Drive bounded auto-reconnect after an unexpected drop (T13.3): wait out the
+   *  backoff, then rebuild the session presenting our token so the host reclaims
+   *  our slot and resyncs us from its snapshot. On exhaustion — or for a spectator,
+   *  which holds no slot — fall back to the menu. */
+  private updateReconnect(): void {
+    const canReconnect = !this.cfg.spectate && this.reconnectToken !== "" && this.reconnectAttemptsLeft > 0;
+    if (!canReconnect) {
       this.statusText.setText("Disconnected\nspace for menu").setVisible(true);
       this.handleReturnToMenu();
       return;
     }
-    const alpha = this.driver.advance(delta, this.doNetTick);
-    this.render(alpha);
+    this.statusText.setText(`Reconnecting…\n${String(this.reconnectAttemptsLeft)} left`).setVisible(true);
+    if (this.reconnectWaitLeft > 0) {
+      this.reconnectWaitLeft--;
+      return;
+    }
+    this.reconnectAttemptsLeft--;
+    this.reconnectWaitLeft = this.net.reconnectBackoffTicks;
+    this.connectSession(this.reconnectToken);
+  }
+
+  /** Build (or rebuild, on reconnect) the transport + ClientSession. The dev test
+   *  probes read `this.session`/`this.transport` live, so a swap needs no re-install. */
+  private connectSession(reconnectToken?: string): void {
+    this.transport = new WebSocketTransport(this.cfg.url);
+    this.transport.onClose(() => {
+      this.disconnected = true;
+    });
+    this.session = new ClientSession({
+      transport: this.transport,
+      arena: this.arena,
+      tuning: this.tuning,
+      role: this.cfg.spectate ? "spectator" : "player",
+      reconnectToken,
+      joinToken: this.cfg.joinToken,
+      inputDelayTicks: this.net.inputDelayTicks,
+      maxRollbackTicks: this.net.maxRollbackTicks,
+      adaptiveInputDelay: this.net.adaptiveInputDelay === 1, // T13.6, off by default
+      minInputDelayTicks: this.net.minInputDelayTicks,
+      maxInputDelayTicks: this.net.maxInputDelayTicks
+    });
+    this.disconnected = false;
+  }
+
+  /** Toggle (F3) + refresh the net debug overlay from the live session metrics. */
+  private updateNetDebug(): void {
+    const down = this.app.keyboard.isDown("F3");
+    if (down && !this.prevDebugKey) {
+      this.netDebug = !this.netDebug;
+      this.netDebugText?.setVisible(this.netDebug);
+    }
+    this.prevDebugKey = down;
+    if (!this.netDebug || !this.netDebugText) return;
+    const m = this.session.metrics();
+    this.netDebugText.setText(
+      `NET rtt ${m.rttTicks.toFixed(1)}t lead ${String(m.leadTicks)}\n` +
+        `rb ${String(m.rollbacks)} resync ${String(m.resyncs)} bad ${String(m.malformed)}\n` +
+        `cfm ${String(m.confirmedTick)} prd ${String(m.predictedTick)} ${m.ready ? "ready" : "..."}`
+    );
   }
 
   /** In an error state, a confirm/back press returns to the join menu with the
@@ -170,7 +276,7 @@ export class OnlineArenaScene extends Phaser.Scene {
     this.prevReturnKey = kDown;
     const dev = this.edges.read(this.app.manager.devices());
     if (keyEdge || dev.some((e) => e.joinOrConfirm || e.back || e.pause)) {
-      transitionTo(this, "online-join", { url: this.cfg.url });
+      transitionTo(this, "online-join", { url: this.cfg.url, spectate: this.cfg.spectate, joinToken: this.cfg.joinToken });
     }
   }
 
@@ -179,7 +285,9 @@ export class OnlineArenaScene extends Phaser.Scene {
     const before = this.session.predictedState();
     const beforeTick = this.session.predictedTick;
     this.prev = before ? this.snapshotPositions(before) : null;
-    const events = this.session.tick(this.localDevice.sample());
+    // A spectator feeds no input (the session ignores it and sends nothing).
+    const input = this.cfg.spectate ? emptyInput() : this.localDevice.sample();
+    const events = this.session.tick(input);
     // A single tick() can advance prediction by >1 tick (startup lead, or
     // catch-up after a rollback-cap stall). One `prev` can't interpolate a
     // multi-tick jump, so snap to the current state instead of smearing across it.
@@ -225,10 +333,38 @@ export class OnlineArenaScene extends Phaser.Scene {
     this.boosters.beginFrame();
     for (const b of state.boosters) this.boosters.draw(b);
     this.boosters.endFrame();
+
+    // A rollback/resync between frames teleports predicted positions; smooth it
+    // over correctionSmoothingMs so only large jumps ease (normal motion is untouched).
+    const m = this.session.metrics();
+    const corrected = m.rollbacks > this.lastRollbacks || m.resyncs > this.lastResyncs;
+    this.lastRollbacks = m.rollbacks;
+    this.lastResyncs = m.resyncs;
+    const decay = this.correctionSmoothingMs > 0 ? Math.exp(-this.frameDeltaMs / this.correctionSmoothingMs) : 0;
+
     state.players.forEach((p, i) => {
       const prev = this.prev?.players[i] ?? p;
-      const x = lerpWrapped(prev.x, p.x, alpha, ARENA_WIDTH);
-      const y = lerpWrapped(prev.y, p.y, alpha, ARENA_HEIGHT);
+      let x = lerpWrapped(prev.x, p.x, alpha, ARENA_WIDTH);
+      let y = lerpWrapped(prev.y, p.y, alpha, ARENA_HEIGHT);
+      if (this.correctionSmoothingMs > 0) {
+        const off = (this.smoothOffset[i] ??= { x: 0, y: 0 });
+        const last = this.lastRenderPos[i];
+        // On a correction, absorb a large position jump into the decaying offset so
+        // the sprite stays put visually, then eases to the corrected spot.
+        if (corrected && last) {
+          const jx = wrapDelta(x, last.x, ARENA_WIDTH);
+          const jy = wrapDelta(y, last.y, ARENA_HEIGHT);
+          if (Math.abs(jx) > CORRECTION_THRESHOLD_PX) off.x += jx;
+          if (Math.abs(jy) > CORRECTION_THRESHOLD_PX) off.y += jy;
+        }
+        off.x *= decay;
+        off.y *= decay;
+        if (Math.abs(off.x) < 0.1) off.x = 0;
+        if (Math.abs(off.y) < 0.1) off.y = 0;
+        x = wrapMod(x + off.x, ARENA_WIDTH);
+        y = wrapMod(y + off.y, ARENA_HEIGHT);
+        this.lastRenderPos[i] = { x, y };
+      }
       const a = p.invisibleTicksLeft > 0 ? this.juice.invisibilityOpacity : 1;
       this.archers.update(p, i, x, y, a);
     });
@@ -292,18 +428,18 @@ export class OnlineArenaScene extends Phaser.Scene {
     if (!api) return;
     api.getState = () => this.session.predictedState() ?? ({ players: [], arrows: [], chests: [] } as unknown as SimState);
     api.getNetProbe = () => ({
-      ready: this.session.ready,
-      confirmedTick: this.session.confirmedTick,
-      predictedTick: this.session.predictedTick,
+      ...this.session.metrics(),
       confirmedHash: this.confirmedHashes.get(this.session.confirmedTick) ?? 0
     });
     api.getConfirmedHashAt = (tick: number) => this.confirmedHashes.get(tick) ?? null;
+    api.forceDisconnect = () => this.transport.close(); // drives the T13.3 reconnect path
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       const a = window.__testApi;
       if (!a) return;
       delete a.getState;
       delete a.getNetProbe;
       delete a.getConfirmedHashAt;
+      delete a.forceDisconnect;
       this.transport.close();
     });
   }
@@ -320,10 +456,19 @@ function fnv1a(str: string): number {
   return h >>> 0;
 }
 
+/** Minimum position jump (px) treated as a rollback teleport worth smoothing —
+ *  above normal/dash per-frame motion, so steady movement is never eased (T13.6). */
+const CORRECTION_THRESHOLD_PX = 6;
+
 /** Interpolate along the shortest path on a wrapping axis. */
 function lerpWrapped(prev: number, curr: number, alpha: number, range: number): number {
-  let d = curr - prev;
+  return wrapMod(prev + wrapDelta(prev, curr, range) * alpha, range);
+}
+
+/** Shortest signed delta from `from` to `to` on a wrapping axis. */
+function wrapDelta(from: number, to: number, range: number): number {
+  let d = to - from;
   if (d > range / 2) d -= range;
   if (d < -range / 2) d += range;
-  return wrapMod(prev + d * alpha, range);
+  return d;
 }
