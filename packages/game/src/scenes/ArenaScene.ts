@@ -21,7 +21,7 @@ import {
   type Sim,
   type SimEvent
 } from "@shoot-and-run/sim";
-import arenaJson from "../../../../content/arenas/arena-002.json";
+import arenaJson from "../../../../content/arenas/arena-003.json";
 import tuningJson from "../../../../content/tuning.json";
 import { getAppContext, type AppContext } from "../app-context";
 import { BotDevice } from "../input/bot-device";
@@ -36,7 +36,7 @@ import { FixedStepDriver } from "../loop";
 import { ARCHER_TAGS, ArcherRenderer, aimSuffix, animKey, loadArcherAssets } from "../render/archer";
 import { ArrowRenderer, loadArrowAssets } from "../render/arrows";
 import { BoosterRenderer, loadBoosterAssets } from "../render/boosters";
-import { EnvironmentRenderer, loadEnvironmentAssets } from "../render/environment";
+import { EnvironmentRenderer, loadEnvironmentAssets, themeFromArena } from "../render/environment";
 
 const TILE_COLOR = 0x5a5a6e;
 const CHEST_COLOR = 0xd4a017;
@@ -132,7 +132,7 @@ export class ArenaScene extends Phaser.Scene {
 
   preload(): void {
     loadArcherAssets(this.load);
-    loadEnvironmentAssets(this.load);
+    loadEnvironmentAssets(this.load, themeFromArena(arenaJson));
     loadArrowAssets(this.load);
     loadBoosterAssets(this.load);
   }
@@ -170,7 +170,7 @@ export class ArenaScene extends Phaser.Scene {
     if (rectsMode) {
       this.drawTiles(arena);
     } else {
-      this.env = new EnvironmentRenderer(this, arena);
+      this.env = new EnvironmentRenderer(this, arena, themeFromArena(arenaJson));
     }
     this.entityGfx = this.add.graphics();
     if (!rectsMode) {
@@ -366,7 +366,7 @@ export class ArenaScene extends Phaser.Scene {
     api.getSpriteProbe = () => ({
       textures: this.textures
         .getTextureKeys()
-        .filter((k) => /^(archer|jungle|chest|arrow|boosters|shield-bubble)/.test(k))
+        .filter((k) => /^(archer|jungle|castle|chest|arrow|boosters|shield-bubble)/.test(k))
         .sort(),
       missingAnims: this.slots.flatMap((s) =>
         ARCHER_TAGS.filter((t) => !this.anims.exists(animKey(s.slot, t))).map((t) =>
