@@ -39,6 +39,9 @@ export interface PlayerState {
   /** Power-up timers (ticks). 0 = inactive. Reset on round reset. */
   invisibleTicksLeft: number;
   flightTicksLeft: number;
+  /** Shield charge (spec 014): absorbs the first lethal hit, then clears.
+   *  A persistent charge — no timer. Cleared on death/round reset. */
+  shielded: boolean;
 }
 
 /** "exploding" and "spent" are transient within a tick: a contacted bomb is
@@ -77,7 +80,7 @@ export interface RoundState {
   number: number;
 }
 
-export type ChestContents = Exclude<ArrowKind, "normal"> | "invisibility" | "flight";
+export type ChestContents = Exclude<ArrowKind, "normal"> | "invisibility" | "flight" | "shield";
 
 export interface ChestState {
   id: number;
@@ -85,6 +88,21 @@ export interface ChestState {
   y: number;
   /** Decided deterministically (sim PRNG) at spawn time. */
   contents: ChestContents;
+}
+
+/**
+ * A floating booster popped by an opened chest (spec 014): it hovers at a fixed
+ * point `boosterFloatOffsetPx` above the chest's spot until an alive player
+ * touches it, granting the contents then. The visual up/down bob is cosmetic
+ * (shell-only) and never affects the fixed pickup position.
+ */
+export interface BoosterState {
+  id: number;
+  x: number;
+  y: number;
+  contents: ChestContents;
+  /** Tick the booster was spawned on; drives the shell's cosmetic bob phase. */
+  spawnTick: number;
 }
 
 export interface MatchState {
@@ -107,6 +125,8 @@ export interface SimState {
   players: PlayerState[];
   arrows: ArrowState[];
   chests: ChestState[];
+  /** Floating boosters popped by opened chests, awaiting pickup (spec 014). */
+  boosters: BoosterState[];
   /** Next tick a chest spawn is attempted (arena must have chestSpots). */
   nextChestTick: number;
 }

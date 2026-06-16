@@ -1,19 +1,19 @@
 { "frames": {
-   "arrow 0.aseprite": {
-    "frame": { "x": 0, "y": 0, "w": 16, "h": 16 },
+   "shield-bubble 0.aseprite": {
+    "frame": { "x": 0, "y": 0, "w": 20, "h": 20 },
     "rotated": false,
     "trimmed": false,
-    "spriteSourceSize": { "x": 0, "y": 0, "w": 16, "h": 16 },
-    "sourceSize": { "w": 16, "h": 16 },
+    "spriteSourceSize": { "x": 0, "y": 0, "w": 20, "h": 20 },
+    "sourceSize": { "w": 20, "h": 20 },
     "duration": 100
    }
  },
  "meta": {
   "app": "https://www.aseprite.org/",
   "version": "1.3.17.1-x64",
-  "image": "arrow.png",
+  "image": "shield-bubble.png",
   "format": "RGBA8888",
-  "size": { "w": 16, "h": 16 },
+  "size": { "w": 20, "h": 20 },
   "scale": "1",
   "frameTags": [
   ],

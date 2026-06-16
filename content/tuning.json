@@ -28,6 +28,7 @@
   "chestIntervalMs": 8000,
   "maxChestsAlive": 2,
   "specialArrowsPerChest": 3,
+  "boosterFloatOffsetPx": 20,
   "input": {
     "stickDeadzone": 0.25
   },
@@ -41,7 +42,9 @@
     "killBurstParticles": 24,
     "stickPuffParticles": 6,
     "bombBurstParticles": 48,
-    "invisibilityOpacity": 0.2
+    "invisibilityOpacity": 0.2,
+    "boosterBobAmplitudePx": 2,
+    "boosterBobPeriodMs": 1400
   },
   "net": {
     "inputDelayTicks": 3,

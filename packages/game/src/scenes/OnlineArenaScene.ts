@@ -19,6 +19,7 @@ import { FixedStepDriver } from "../loop";
 import { addPixelText } from "../theme";
 import { ArcherRenderer, loadArcherAssets } from "../render/archer";
 import { ArrowRenderer, loadArrowAssets } from "../render/arrows";
+import { BoosterRenderer, loadBoosterAssets } from "../render/boosters";
 import { EnvironmentRenderer, loadEnvironmentAssets } from "../render/environment";
 import { WebSocketTransport } from "../net/websocket-transport";
 
@@ -54,6 +55,7 @@ export class OnlineArenaScene extends Phaser.Scene {
   private env!: EnvironmentRenderer;
   private archers!: ArcherRenderer;
   private arrowSprites!: ArrowRenderer;
+  private boosters!: BoosterRenderer;
   private statusText!: Phaser.GameObjects.BitmapText;
   private overlayText!: Phaser.GameObjects.BitmapText;
   private scoreTexts: Phaser.GameObjects.BitmapText[] = [];
@@ -85,6 +87,7 @@ export class OnlineArenaScene extends Phaser.Scene {
     loadArcherAssets(this.load);
     loadEnvironmentAssets(this.load);
     loadArrowAssets(this.load);
+    loadBoosterAssets(this.load);
   }
 
   create(): void {
@@ -99,6 +102,12 @@ export class OnlineArenaScene extends Phaser.Scene {
     this.env = new EnvironmentRenderer(this, arena);
     this.archers = new ArcherRenderer(this, this.slots);
     this.arrowSprites = new ArrowRenderer(this);
+    this.boosters = new BoosterRenderer(
+      this,
+      this.juice.boosterBobAmplitudePx,
+      this.juice.boosterBobPeriodMs,
+      tuning.boosterFloatOffsetPx
+    );
 
     // Local input: the first keyboard profile in this tab (each tab/machine has
     // its own). Online play binds one device per browser, not a lobby roster.
@@ -173,7 +182,10 @@ export class OnlineArenaScene extends Phaser.Scene {
     // catch-up after a rollback-cap stall). One `prev` can't interpolate a
     // multi-tick jump, so snap to the current state instead of smearing across it.
     if (this.session.predictedTick - beforeTick > 1) this.prev = null;
-    if (events.length > 0) this.archers.onEvents(events);
+    if (events.length > 0) {
+      this.archers.onEvents(events);
+      this.boosters.onEvents(events);
+    }
     this.recordConfirmedHash();
   };
 
@@ -208,6 +220,9 @@ export class OnlineArenaScene extends Phaser.Scene {
     });
 
     this.env.updateChests(state.chests);
+    this.boosters.beginFrame();
+    for (const b of state.boosters) this.boosters.draw(b);
+    this.boosters.endFrame();
     state.players.forEach((p, i) => {
       const prev = this.prev?.players[i] ?? p;
       const x = lerpWrapped(prev.x, p.x, alpha, ARENA_WIDTH);

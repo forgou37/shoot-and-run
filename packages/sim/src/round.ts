@@ -47,6 +47,7 @@ export function updateRound(
     state.players.forEach((p, index) => resetPlayer(p, index, arena, t));
     state.arrows = [];
     state.chests = [];
+    state.boosters = [];
     state.nextChestTick = state.tick + t.chestIntervalTicks;
     state.round.phase = "running";
     state.round.winner = null;
@@ -137,4 +138,5 @@ function resetPlayer(p: PlayerState, index: number, arena: ArenaData, t: Derived
   p.jumpCutAvailable = false;
   p.invisibleTicksLeft = 0;
   p.flightTicksLeft = 0;
+  p.shielded = false;
 }

@@ -77,8 +77,19 @@ test("input: real key events move both players simultaneously", async ({ page })
 test("sprites: archer atlas and per-slot animations loaded (spec 006)", async ({ page }) => {
   await boot(page);
   const probe = await page.evaluate(() => window.__testApi!.getSpriteProbe());
-  expect(probe.textures).toContain("archer");
-  expect(probe.textures).toContain("archer-1"); // P2's recolored copy
+  expect(probe.textures).toContain("archer"); // generic atlas — always loaded, recolor-fallback base
+  // spec 014: default-roster slots use per-character named sheets (covered by the
+  // four-atlas test below), so the per-slot recolor copy ("archer-1") is no longer
+  // created; what matters here is every per-slot animation built with no gaps.
+  expect(probe.missingAnims).toEqual([]);
+});
+
+test("sprites: four per-character archer atlases loaded (spec 014)", async ({ page }) => {
+  await boot(page);
+  const probe = await page.evaluate(() => window.__testApi!.getSpriteProbe());
+  for (const key of ["archer_maks", "archer_igorb", "archer_lyosha", "archer_igorsh"]) {
+    expect(probe.textures).toContain(key);
+  }
   expect(probe.missingAnims).toEqual([]);
 });
 
@@ -88,6 +99,35 @@ test("sprites: jungle environment and arrow atlases loaded (spec 007)", async ({
   for (const key of ["jungle-tiles", "jungle-bg", "chest", "arrow"]) {
     expect(probe.textures).toContain(key);
   }
+});
+
+test("sprites: booster and shield-bubble atlases loaded (spec 014)", async ({ page }) => {
+  await boot(page);
+  const probe = await page.evaluate(() => window.__testApi!.getSpriteProbe());
+  for (const key of ["boosters", "shield-bubble"]) {
+    expect(probe.textures).toContain(key);
+  }
+});
+
+test("render: floating boosters + shield bubble draw without errors (spec 014)", async ({ page }) => {
+  const errors = await boot(page);
+  // Inject a floating booster and a shielded player, then step so the renderers
+  // exercise the new draw paths (a chest spawn is too slow for an e2e).
+  await page.evaluate(() => {
+    const api = window.__testApi!;
+    api.setManual(true);
+    const state = api.getState() as unknown as {
+      boosters: { id: number; x: number; y: number; contents: string; spawnTick: number }[];
+      players: { shielded: boolean }[];
+      tick: number;
+    };
+    state.boosters.push({ id: 9001, x: 160, y: 120, contents: "shield", spawnTick: state.tick });
+    state.boosters.push({ id: 9002, x: 80, y: 90, contents: "bomb", spawnTick: state.tick });
+    if (state.players[0]) state.players[0].shielded = true;
+    api.stepTicks(1);
+  });
+  await page.waitForTimeout(100);
+  expect(errors).toEqual([]);
 });
 
 test("stability: ~10s under rAF ticks the sim at ~60 Hz with no errors", async ({ page }) => {

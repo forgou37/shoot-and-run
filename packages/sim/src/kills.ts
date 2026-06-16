@@ -21,6 +21,21 @@ function spared(friendlyFire: boolean, teamA: number | null, teamB: number | nul
 }
 
 /**
+ * Shield gate (spec 014). If the victim holds a shield charge, spend it instead
+ * of killing: clear the flag, emit `shield_blocked`, and return true so the
+ * caller skips the kill (the hit itself — arrow stick, stomp bounce, laser
+ * pierce — still resolves). Returns false when there is no shield to spend, and
+ * the caller kills normally. The first lethal hit from any cause is absorbed;
+ * the next one (no shield) kills.
+ */
+export function consumeShield(victim: PlayerState, events: SimEvent[], tick: number): boolean {
+  if (!victim.shielded) return false;
+  victim.shielded = false;
+  events.push({ tick, type: "shield_blocked", slot: victim.slot });
+  return true;
+}
+
+/**
  * Flying-arrow-vs-player overlap, wrap-aware. One hit kills. The shooter is
  * immune to their own arrow for MUZZLE_IMMUNITY_TICKS after firing (the arrow
  * spawns at the player's center); after that, your own arrow can kill you.
@@ -46,20 +61,25 @@ export function checkArrowKills(
         if (spared(friendlyFire, ownerTeam, p.team)) continue; // teammate: pass through
         if (a.kind === "bomb") {
           // Bombs detonate on body contact; the radius kill (including this
-          // player) is resolved in resolveExplosions this same tick.
+          // player) is resolved in resolveExplosions this same tick (where the
+          // shield, if any, is consumed).
           a.phase = "exploding";
           break;
         }
-        p.alive = false;
-        events.push({
-          tick,
-          type: "player_killed",
-          victim: p.slot,
-          killer: a.ownerSlot,
-          cause: "arrow",
-          x: p.x,
-          y: p.y
-        });
+        // A shield absorbs this hit: the victim survives, but the arrow still
+        // sticks (becomes a pickup) / a laser still pierces, exactly as a kill.
+        if (!consumeShield(p, events, tick)) {
+          p.alive = false;
+          events.push({
+            tick,
+            type: "player_killed",
+            victim: p.slot,
+            killer: a.ownerSlot,
+            cause: "arrow",
+            x: p.x,
+            y: p.y
+          });
+        }
         if (a.kind === "laser") {
           continue; // lasers pierce: keep flying, keep scanning
         }
@@ -94,6 +114,7 @@ export function resolveExplosions(
       const dx = wrapDelta(p.x - a.x, ARENA_WIDTH);
       const dy = wrapDelta(p.y - a.y, ARENA_HEIGHT);
       if (dx * dx + dy * dy <= t.bombRadiusPx * t.bombRadiusPx) {
+        if (consumeShield(p, events, tick)) continue; // shield eats the blast
         p.alive = false;
         events.push({
           tick,
@@ -137,7 +158,9 @@ export function checkStomps(
 
       // A teammate stomp (friendly fire off) bounces without killing — heads
       // become platforms. The kill + event are skipped; the bounce still fires.
-      if (!spared(friendlyFire, attacker.team, victim.team)) {
+      // A shield likewise absorbs the stomp (no kill) but the attacker still
+      // bounces off the shielded head.
+      if (!spared(friendlyFire, attacker.team, victim.team) && !consumeShield(victim, events, tick)) {
         victim.alive = false;
         events.push({
           tick,

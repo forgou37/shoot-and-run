@@ -47,6 +47,8 @@ export interface Tuning {
   chestIntervalMs: number;
   maxChestsAlive: number;
   specialArrowsPerChest: number;
+  /** Height a popped booster floats above its chest's spot before pickup (px). */
+  boosterFloatOffsetPx: number;
 }
 
 const TUNING_KEYS: readonly (keyof Tuning)[] = [
@@ -78,7 +80,8 @@ const TUNING_KEYS: readonly (keyof Tuning)[] = [
   "flapVelocity",
   "chestIntervalMs",
   "maxChestsAlive",
-  "specialArrowsPerChest"
+  "specialArrowsPerChest",
+  "boosterFloatOffsetPx"
 ];
 
 /** Validate untyped data (parsed content/tuning.json) as a Tuning object. */
