@@ -18,8 +18,8 @@ Everything that is not in the current spec lives here. New ideas land here first
 | 009 | Netcode session layer (`packages/net`): clock sync, input delay, jitter buffer, prediction/rollback over loopback | 008 |
 | 010 | Real WebSocket transport + local online play: browser + Node `ws` adapters on the `Transport` seam, a local dedicated Node host, an online Phaser scene — two browser tabs on `localhost` (no Cloudflare/signaling/room codes) — **done** (T10.0–T10.6, specs/008-netcode.md § Phase 010; owner re-scope 2026-06-15) | 009 |
 | 011 | Self-hosted dedicated server (`packages/server` Node process on owner's VPS/local, reached over `wss://`) + clock/version hardening for real RTT + Title→Online join menu (single game, no room codes) — **first internet match, no Cloudflare** — **done** (T11.1–T11.4, specs/008-netcode.md § Phase 011) | 010 ✓ |
-| 012 | Player-hosted / listen-server: WebRTC DataChannel P2P, NAT traversal + TURN, host-leaving policy | 011 |
-| 013 | Netplay polish: lag-comp tuning, spectators, reconnection, metrics, anti-cheat posture, host migration | 012 |
+| 012 | Player-hosted / listen-server: WebRTC DataChannel P2P, NAT traversal + TURN, host-leaving policy + **host migration** (moved from 013 — only meaningful with a player-host) | 011 |
+| 013 | Netplay polish (dedicated-server): spectators, reconnection, metrics, anti-cheat posture, lag-comp tuning — **planning** (specs/013-netplay-polish.md; reordered ahead of 012 — these five ride the 011 dedicated host, host migration split out to 012) | 011 ✓ |
 
 ---
 
