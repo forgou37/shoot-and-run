@@ -19,15 +19,21 @@ export function parseInputSettings(tuningData: unknown): InputSettings {
 export interface UiSettings {
   /** Countdown after the lobby is all-ready before the match begins (ms). */
   lobbyCountdownMs: number;
+  /** Scene fade-through-black duration, each direction (ms; spec 015). */
+  transitionMs: number;
 }
 
 export function parseUiSettings(tuningData: unknown): UiSettings {
   const ui = block(tuningData, "ui");
-  const v = ui["lobbyCountdownMs"];
-  if (typeof v !== "number" || !Number.isFinite(v) || v < 0) {
+  const lobbyCountdownMs = ui["lobbyCountdownMs"];
+  if (typeof lobbyCountdownMs !== "number" || !Number.isFinite(lobbyCountdownMs) || lobbyCountdownMs < 0) {
     throw new Error("tuning: ui.lobbyCountdownMs must be a non-negative number");
   }
-  return { lobbyCountdownMs: v };
+  const transitionMs = ui["transitionMs"];
+  if (typeof transitionMs !== "number" || !Number.isFinite(transitionMs) || transitionMs < 0) {
+    throw new Error("tuning: ui.transitionMs must be a non-negative number");
+  }
+  return { lobbyCountdownMs, transitionMs };
 }
 
 function block(tuningData: unknown, name: string): Record<string, unknown> {

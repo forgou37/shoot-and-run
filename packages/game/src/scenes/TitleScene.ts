@@ -2,6 +2,7 @@ import Phaser from "phaser";
 import { ARENA_HEIGHT, ARENA_WIDTH } from "@shoot-and-run/sim";
 import { getAppContext, type AppContext } from "../app-context";
 import { EdgeReader } from "../input/menu-input";
+import { fadeIn, transitionTo } from "../scene-transition";
 import { addPixelText } from "../theme";
 
 interface MenuItem {
@@ -40,6 +41,7 @@ export class TitleScene extends Phaser.Scene {
     this.selected = 0;
     this.prevUp = this.prevDown = this.prevConfirm = false;
     this.cameras.main.setBackgroundColor("#10121f");
+    fadeIn();
 
     addPixelText(this, ARENA_WIDTH / 2, 64, "SHOOT & RUN", 28, "#f0e6c8").setOrigin(0.5);
     this.items = ITEMS.map((it, i) =>
@@ -68,7 +70,7 @@ export class TitleScene extends Phaser.Scene {
       this.selected = (this.selected + (down ? 1 : -1) + ITEMS.length) % ITEMS.length;
       this.renderSelection();
     }
-    if (confirm) this.scene.start(ITEMS[this.selected]!.scene);
+    if (confirm) transitionTo(this, ITEMS[this.selected]!.scene);
   }
 
   private renderSelection(): void {
