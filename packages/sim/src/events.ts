@@ -1,5 +1,9 @@
 export type KillCause = "arrow" | "stomp" | "bomb";
 
+/** Which jump branch produced a `player_jumped` event (spec 016 stats):
+ *  a ground/coyote jump, a 45° wall jump, or a mid-air flight flap. */
+export type JumpKind = "ground" | "wall" | "flap";
+
 /**
  * Every externally meaningful occurrence in the sim is a SimEvent.
  * The shell renders/reacts off these; the eval pipeline computes
@@ -11,6 +15,8 @@ import type { ArrowKind, ChestContents } from "./state";
 export type SimEvent =
   | { tick: number; type: "round_started" }
   | { tick: number; type: "arrow_fired"; playerSlot: number; arrowId: number; kind: ArrowKind }
+  | { tick: number; type: "player_jumped"; slot: number; kind: JumpKind }
+  | { tick: number; type: "player_dashed"; slot: number }
   | { tick: number; type: "arrow_stuck"; arrowId: number; x: number; y: number }
   | { tick: number; type: "arrow_exploded"; arrowId: number; x: number; y: number }
   | { tick: number; type: "arrow_picked_up"; arrowId: number; playerSlot: number }

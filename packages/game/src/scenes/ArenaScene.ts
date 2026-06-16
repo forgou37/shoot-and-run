@@ -30,7 +30,9 @@ import { EdgeReader, type DeviceEdges } from "../input/menu-input";
 import type { SlotConfig } from "../input/players-config";
 import type { MatchConfig } from "../match-config";
 import { parseJuice, type JuiceConfig } from "../juice";
+import type { PlayerMeta } from "../match-stats";
 import { fadeIn, transitionTo } from "../scene-transition";
+import type { ResultsConfig } from "./ResultsScene";
 import { addPixelText } from "../theme";
 import { FixedStepDriver } from "../loop";
 import { ARCHER_TAGS, ArcherRenderer, aimSuffix, animKey, loadArcherAssets } from "../render/archer";
@@ -97,6 +99,12 @@ export class ArenaScene extends Phaser.Scene {
   private manualMode = false;
   private arenaName = "";
   private readonly eventLog: SimEvent[] = [];
+  /** Full match event log (uncapped) for the post-match stats screen (spec 016).
+   *  Distinct from eventLog, which is capped for the dev test probe. */
+  private readonly matchEvents: SimEvent[] = [];
+  /** Set when a match_ended event fires — freezes the sim and routes to results. */
+  private matchOver = false;
+  private resultsStarted = false;
   private killEmitters = new Map<number, Phaser.GameObjects.Particles.ParticleEmitter>();
   private stickEmitter!: Phaser.GameObjects.Particles.ParticleEmitter;
   private bombEmitter!: Phaser.GameObjects.Particles.ParticleEmitter;
@@ -127,6 +135,9 @@ export class ArenaScene extends Phaser.Scene {
     this.lastAlpha = 0;
     this.manualMode = false;
     this.eventLog.length = 0;
+    this.matchEvents.length = 0;
+    this.matchOver = false;
+    this.resultsStarted = false;
     this.killEmitters.clear();
   }
 
@@ -243,6 +254,13 @@ export class ArenaScene extends Phaser.Scene {
       this.render(1);
       return;
     }
+    // Match over: the sim is frozen (doTick no-ops), so it never auto-loops into
+    // a fresh match — instead fade to the post-match awards screen (spec 016).
+    if (this.matchOver) {
+      this.render(this.lastAlpha);
+      this.goToResults();
+      return;
+    }
     // Pause (Esc / pad Start) is purely shell-side: the accumulator stops
     // advancing, so the sim is untouched and determinism is unaffected.
     const edges = this.edges.read(this.devices);
@@ -329,6 +347,7 @@ export class ArenaScene extends Phaser.Scene {
   /** One sim tick: sample devices, step, apply FX, record events. The only
    *  place the sim is advanced — both the accumulator and __testApi use it. */
   private readonly doTick = (): void => {
+    if (this.matchOver) return; // frozen at match end — don't let the sim re-loop
     const inputs = this.devices.map((d) => d.sample());
     this.lastInputs = inputs;
     this.prev = this.snapshot();
@@ -337,6 +356,8 @@ export class ArenaScene extends Phaser.Scene {
     this.archers?.onEvents(events);
     this.boosters?.onEvents(events);
     if (events.length > 0) {
+      this.matchEvents.push(...events);
+      if (events.some((e) => e.type === "match_ended")) this.matchOver = true;
       this.eventLog.push(...events);
       if (this.eventLog.length > 1000) {
         this.eventLog.splice(0, this.eventLog.length - 1000);
@@ -346,6 +367,28 @@ export class ArenaScene extends Phaser.Scene {
       }
     }
   };
+
+  /** Build the awards payload from the full match log and fade to the results
+   *  screen. Guarded so a multi-frame fade can't enqueue it twice. */
+  private goToResults(): void {
+    if (this.resultsStarted) return;
+    this.resultsStarted = true;
+    this.anims.resumeAll();
+    const { match, round } = this.sim.state;
+    const players: PlayerMeta[] = this.matchConfig.roster.map((r) => ({
+      slot: r.slot.slot,
+      name: r.slot.name,
+      color: r.slot.color,
+      team: r.team
+    }));
+    const config: ResultsConfig = {
+      events: [...this.matchEvents],
+      players,
+      winnerLabel: this.endLabel(match.winner, round.winner),
+      returnTo: "lobby"
+    };
+    transitionTo(this, "results", config);
+  }
 
   private installTestApi(): void {
     if (!import.meta.env.DEV) return;
@@ -362,6 +405,9 @@ export class ArenaScene extends Phaser.Scene {
     api.stepTicks = (n: number) => {
       for (let i = 0; i < n; i++) this.doTick();
       this.render(1);
+      // The real-time path routes to results from update(); manual stepping
+      // bypasses update(), so trigger it here when the match ends (spec 016 e2e).
+      if (this.matchOver) this.goToResults();
     };
     api.getSpriteProbe = () => ({
       textures: this.textures

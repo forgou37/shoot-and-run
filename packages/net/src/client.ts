@@ -77,6 +77,8 @@ export class ClientSession {
   private versionMismatched = false;
   /** Latest pre-match lobby status from the host (null until first received). */
   private lobby: { connected: number; expected: number } | null = null;
+  /** The host's authoritative match event log, once it broadcasts match-stats. */
+  private matchStatsEvents: SimEvent[] | null = null;
 
   constructor(private readonly config: ClientSessionConfig) {
     config.transport.onMessage((data) => this.onMessage(data));
@@ -123,6 +125,15 @@ export class ClientSession {
   /** Confirmed (ground-truth) snapshot — equals the host's at confirmedTick. */
   snapshotConfirmed(): SimSnapshot | null {
     return this.controller?.snapshotConfirmed() ?? null;
+  }
+  /**
+   * The finished match's authoritative event log, once the host has broadcast it
+   * (spec 016). The host owns the canonical sim with no rollback/resync gaps and
+   * encodes ONE datagram for all clients, so every tab gets identical bytes ⇒
+   * identical post-match awards. Null until the `match-stats` message arrives.
+   */
+  matchStats(): SimEvent[] | null {
+    return this.matchStatsEvents;
   }
 
   /**
@@ -232,6 +243,11 @@ export class ClientSession {
         break;
       case "lobby":
         this.lobby = { connected: msg.connected, expected: msg.expected };
+        break;
+      case "match-stats":
+        // First broadcast wins (the host sends it once at match end; a duplicate
+        // from a future match would arrive only after this scene has left).
+        this.matchStatsEvents ??= msg.events;
         break;
       case "input":
       case "ping":

@@ -105,6 +105,27 @@ describe("NetMessage codec (T9.1 / M2)", () => {
     expect(JSON.stringify(decoded)).toBe(JSON.stringify(msg));
   });
 
+  it("round-trips a match-stats message (spec 016) byte-for-byte", () => {
+    const msg: NetMessage = {
+      type: "match-stats",
+      events: [
+        { tick: 0, type: "round_started" },
+        { tick: 10, type: "player_jumped", slot: 0, kind: "wall" },
+        { tick: 12, type: "player_dashed", slot: 1 },
+        { tick: 30, type: "player_killed", victim: 1, killer: 0, cause: "arrow", x: 27, y: 62.5 },
+        { tick: 31, type: "match_ended", winner: 0, scores: [3, 1] }
+      ]
+    };
+    const decoded = decodeMessage(encodeMessage(msg));
+    expect(decoded.type).toBe("match-stats");
+    expect(JSON.stringify(decoded)).toBe(JSON.stringify(msg));
+  });
+
+  it("rejects a non-array match-stats payload with WireFormatError", () => {
+    const bad = { type: "match-stats", events: { not: "an array" } } as unknown as NetMessage;
+    expect(() => decodeMessage(encodeMessage(bad))).toThrow(WireFormatError);
+  });
+
   it("rejects a mismatched protocol version with a typed, catchable error", () => {
     const bytes = encodeMessage({ type: "ack", tick: 1, inputTick: 1 });
     bytes[0] = bytes[0]! + 1; // bump the version varint (single byte for v1)

@@ -7,7 +7,7 @@ import type { SimEvent, SimState } from "@shoot-and-run/sim";
  * methods are wired by ArenaScene while it is active and removed on shutdown.
  * Absent from production builds. Playwright treats this as its contract.
  */
-export type ShellPhase = "title" | "lobby" | "match";
+export type ShellPhase = "title" | "lobby" | "match" | "results";
 
 export interface TestApi {
   /** Active high-level phase, for cross-scene e2e. */
@@ -43,6 +43,7 @@ export function installBaseTestApi(game: Phaser.Game): void {
   window.__testApi = {
     getPhase: () => {
       const sm = game.scene;
+      if (sm.isActive("results")) return "results";
       if (sm.isActive("arena") || sm.isActive("online")) return "match";
       if (sm.isActive("lobby")) return "lobby";
       return "title";

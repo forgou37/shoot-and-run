@@ -49,7 +49,7 @@ interface Result {
   hostMoved: boolean;
   lateDropped: number;
   malformed: number;
-  clients: { confirmedTick: number; confirmed: string }[];
+  clients: { confirmedTick: number; confirmed: string; matchStats: string | null }[];
 }
 
 function runSession(o: Opts): Result {
@@ -107,10 +107,15 @@ function runSession(o: Opts): Result {
     hostMoved,
     lateDropped: runtime.lateDropped,
     malformed: runtime.malformed,
-    clients: sessions.map((s) => ({
-      confirmedTick: s.confirmedTick,
-      confirmed: JSON.stringify(s.snapshotConfirmed())
-    }))
+    clients: sessions.map((s) => {
+      const ms = s.matchStats();
+      return {
+        confirmedTick: s.confirmedTick,
+        confirmed: JSON.stringify(s.snapshotConfirmed()),
+        // The host's authoritative match log, broadcast once at match_ended (016).
+        matchStats: ms ? JSON.stringify(ms) : null
+      };
+    })
   };
 }
 
@@ -149,6 +154,18 @@ describe("HostRuntime + ClientSession convergence (T10.2 / W4)", () => {
       // 011 ping/lobby traffic shifts the deterministic drop schedule).
       expect(c.confirmedTick).toBeGreaterThanOrEqual(r.hostTick - 3 * BASE.snapshotInterval);
     }
+  });
+
+  it("broadcasts identical match-stats to every client at match end (spec 016)", () => {
+    // Long enough for one player to reach roundsToWin (3) under the scripted
+    // inputs, so the host emits match_ended and broadcasts the authoritative log.
+    const r = runSession({ ...BASE, ticks: 1600 });
+    const [a, b] = r.clients;
+    expect(a!.matchStats).not.toBeNull();
+    expect(a!.matchStats).toBe(b!.matchStats); // one datagram, identical bytes
+    const events = JSON.parse(a!.matchStats!) as { type: string }[];
+    expect(events.some((e) => e.type === "match_ended")).toBe(true);
+    expect(events.some((e) => e.type === "player_jumped")).toBe(true);
   });
 
   it("is fully reproducible for a fixed seed", () => {

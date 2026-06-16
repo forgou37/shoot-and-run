@@ -108,6 +108,8 @@ export function buildPixelFont(scene: Phaser.Scene): void {
 export interface PixelTextOpts {
   align?: "left" | "center" | "right";
   lineSpacing?: number;
+  /** Wrap to this width in display pixels (word-wrap). Omitted = no wrap. */
+  maxWidth?: number;
 }
 
 /**
@@ -131,6 +133,15 @@ export function addPixelText(
   bt.setLetterSpacing(LETTER_SPACING);
   if (color) bt.setTint(hexToInt(color));
   if (opts.lineSpacing != null) bt.setLineSpacing(opts.lineSpacing);
+  // maxWidth wraps in the text's own (pre-scale) units, so divide the desired
+  // display width by the integer scale. Phaser's word-wrap measures by the glyph
+  // advance (CELL_W) but rendering adds LETTER_SPACING per glyph, so scale the
+  // wrap width by CELL_W/(CELL_W+LETTER_SPACING) for the rendered line to honor
+  // the requested display width.
+  if (opts.maxWidth != null) {
+    const wrapUnits = (opts.maxWidth / scale) * (CELL_W / (CELL_W + LETTER_SPACING));
+    bt.setMaxWidth(Math.floor(wrapUnits));
+  }
   if (opts.align === "center") bt.setCenterAlign();
   else if (opts.align === "right") bt.setRightAlign();
   return bt;

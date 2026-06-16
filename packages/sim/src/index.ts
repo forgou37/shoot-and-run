@@ -130,7 +130,7 @@ function buildSim(
       if (state.round.phase === "running") {
         state.players.forEach((p, i) => {
           if (!p.alive) return;
-          updatePlayer(p, inputs[i]!, arena, tuning);
+          updatePlayer(p, inputs[i]!, arena, tuning, events, state.tick);
         });
         checkStomps(state.players, tuning, events, state.tick, friendlyFire);
         handleShooting(state.players, inputs, state.arrows, allocId, tuning, events, state.tick);

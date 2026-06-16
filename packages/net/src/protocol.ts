@@ -5,7 +5,7 @@
  * in the sim's wire module for inputs (serializeInputFrame) and is added for the
  * other kinds in spec 009 — this file only names the envelopes.
  */
-import type { PlayerInput, SimSnapshot } from "@shoot-and-run/sim";
+import type { PlayerInput, SimEvent, SimSnapshot } from "@shoot-and-run/sim";
 
 /**
  * Host -> Client: the connection handshake (spec 010). Sent once, right after a
@@ -94,6 +94,19 @@ export interface LobbyMessage {
   expected: number;
 }
 
+/**
+ * Host -> Client: the finished match's full authoritative event log (spec 016).
+ * Broadcast ONCE, encoded as a single datagram for every client, when the host's
+ * canonical sim emits `match_ended`. The host sim has no rollback/resync gaps, so
+ * this is the complete, gap-free log — and because all clients receive identical
+ * bytes, every tab computes identical post-match awards. Sent unreliably like the
+ * snapshot (no retransmit): a client that drops it simply won't show the screen.
+ */
+export interface MatchStatsMessage {
+  type: "match-stats";
+  events: SimEvent[];
+}
+
 export type NetMessage =
   | HelloMessage
   | InputMessage
@@ -102,4 +115,5 @@ export type NetMessage =
   | AckMessage
   | PingMessage
   | PongMessage
-  | LobbyMessage;
+  | LobbyMessage
+  | MatchStatsMessage;

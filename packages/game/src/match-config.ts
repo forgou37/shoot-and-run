@@ -22,6 +22,8 @@ export interface MatchConfig {
  * Default FFA roster for the spec 000 boot path and ?quickstart=1. With no bot
  * devices this is the original two-keyboard match; with bots (?bots=N) it is one
  * keyboard plus the bot devices, filling slots in order up to the roster cap.
+ * When the bots already fill every slot (?bots=4) there are zero humans — an
+ * all-bot match (used by the results e2e, which needs a match that resolves).
  */
 export function quickstartConfig(
   devices: readonly InputDevice[],
@@ -29,7 +31,7 @@ export function quickstartConfig(
   seed: number,
   botDevices: readonly InputDevice[] = []
 ): MatchConfig {
-  const humanCount = botDevices.length > 0 ? 1 : 2;
+  const humanCount = botDevices.length >= slots.length ? 0 : botDevices.length > 0 ? 1 : 2;
   const keyboards = devices.filter((d) => d.kind === "keyboard").slice(0, humanCount);
   const roster: RosterEntry[] = [...keyboards, ...botDevices]
     .slice(0, slots.length)

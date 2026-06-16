@@ -73,10 +73,12 @@ export class BootScene extends Phaser.Scene {
       return;
     }
 
-    // ?bots=N (1–3) boots a quick human-vs-bots match for dev/e2e, optionally
-    // ?difficulty=easy|normal|hard; it implies quickstart. ?quickstart=1 alone
-    // is still the original two-keyboard match.
-    const botCount = Math.max(0, Math.min(3, Number.parseInt(params.get("bots") ?? "", 10) || 0));
+    // ?bots=N (1–4) boots a quick bots match for dev/e2e, optionally
+    // ?difficulty=easy|normal|hard; it implies quickstart. 1–3 bots play one
+    // keyboard human + N bots; N=4 fills every slot with a bot (0 humans — an
+    // all-bot match that always resolves, used by the results e2e). ?quickstart=1
+    // alone is still the original two-keyboard match.
+    const botCount = Math.max(0, Math.min(4, Number.parseInt(params.get("bots") ?? "", 10) || 0));
     const quickstart = params.get("quickstart") === "1" || botCount > 0;
     if (quickstart) {
       const requested = params.get("difficulty") ?? "normal";
