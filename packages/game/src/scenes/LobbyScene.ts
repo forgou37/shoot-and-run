@@ -8,6 +8,7 @@ import { EdgeReader } from "../input/menu-input";
 import type { MatchConfig, RosterEntry } from "../match-config";
 import { CardOverlay } from "../render/card-overlay";
 import { cardImageUrl } from "../render/cards";
+import { fadeIn, transitionTo } from "../scene-transition";
 import { addPixelText } from "../theme";
 
 type Mode = "ffa" | "teams";
@@ -86,6 +87,9 @@ export class LobbyScene extends Phaser.Scene {
   private mode!: Mode;
   private friendlyFire!: boolean;
   private countdownMsLeft!: number | null;
+  /** Set once the match-start transition begins, so the fade delay doesn't let
+   *  update() re-fire startMatch every frame (spec 015). */
+  private started = false;
   // Persistent card display objects, rebuilt only in create(); render() mutates them.
   private frameGfx!: Phaser.GameObjects.Graphics;
   // Hi-res card art lives in a DOM layer over the canvas, not on the display list.
@@ -111,7 +115,9 @@ export class LobbyScene extends Phaser.Scene {
     this.mode = "ffa";
     this.friendlyFire = false;
     this.countdownMsLeft = null;
+    this.started = false;
     this.cameras.main.setBackgroundColor("#10121f");
+    fadeIn();
 
     this.headerIdle = addPixelText(this, ARENA_WIDTH / 2, 4, "CHOOSE YOUR FIGHTER", 11, COLOR_TEXT)
       .setOrigin(0.5, 0);
@@ -158,6 +164,7 @@ export class LobbyScene extends Phaser.Scene {
   }
 
   override update(_time: number, delta: number): void {
+    if (this.started) return; // match-start fade in progress — freeze the lobby
     const devices = this.app.manager.devices();
     this.pruneDisconnected(devices);
 
@@ -348,7 +355,8 @@ export class LobbyScene extends Phaser.Scene {
       friendlyFire: this.mode === "teams" ? this.friendlyFire : true,
       seed: seedNow()
     };
-    this.scene.start("arena", config);
+    this.started = true;
+    transitionTo(this, "arena", config);
   }
 
   private render(): void {

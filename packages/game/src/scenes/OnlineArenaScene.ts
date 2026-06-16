@@ -16,6 +16,7 @@ import { EdgeReader } from "../input/menu-input";
 import type { SlotConfig } from "../input/players-config";
 import { parseJuice, type JuiceConfig } from "../juice";
 import { FixedStepDriver } from "../loop";
+import { fadeIn, transitionTo } from "../scene-transition";
 import { addPixelText } from "../theme";
 import { ArcherRenderer, loadArcherAssets } from "../render/archer";
 import { ArrowRenderer, loadArrowAssets } from "../render/arrows";
@@ -92,6 +93,7 @@ export class OnlineArenaScene extends Phaser.Scene {
 
   create(): void {
     this.app = getAppContext(this);
+    fadeIn();
     this.edges = new EdgeReader();
     this.slots = this.app.slots;
     const arena = parseArena(arenaJson);
@@ -168,7 +170,7 @@ export class OnlineArenaScene extends Phaser.Scene {
     this.prevReturnKey = kDown;
     const dev = this.edges.read(this.app.manager.devices());
     if (keyEdge || dev.some((e) => e.joinOrConfirm || e.back || e.pause)) {
-      this.scene.start("online-join", { url: this.cfg.url });
+      transitionTo(this, "online-join", { url: this.cfg.url });
     }
   }
 
