@@ -60,6 +60,8 @@ export interface HostSessionHandle extends HostSession {
   snapshot(): SimSnapshot;
   /** Diagnostics: inputs that arrived for an already-committed tick. */
   readonly lateDropped: number;
+  /** Diagnostics (T13.4): late-dropped inputs per slot (a copy). */
+  readonly lateDroppedBySlot: readonly number[];
 }
 
 export function createHostSession(config: HostSessionConfig): HostSessionHandle {
@@ -82,6 +84,7 @@ export function createHostSession(config: HostSessionConfig): HostSessionHandle 
   const lastInput: PlayerInput[] = config.players.map(() => emptyInput());
   let committedTick = 0;
   let lateDropped = 0;
+  const lateDroppedBySlot = config.players.map(() => 0);
 
   function broadcast(message: NetMessage): void {
     config.broadcast(encodeMessage(message)); // encode once; the runtime fans out to players + spectators
@@ -94,12 +97,16 @@ export function createHostSession(config: HostSessionConfig): HostSessionHandle 
     get lateDropped(): number {
       return lateDropped;
     },
+    get lateDroppedBySlot(): readonly number[] {
+      return lateDroppedBySlot.slice();
+    },
 
     receiveInput(clientId: string, tick: number, input: PlayerInput): void {
       const slot = slotByClient.get(clientId);
       if (slot === undefined) return; // unknown client
       if (tick < committedTick) {
         lateDropped++; // too late — this tick is already authoritative
+        lateDroppedBySlot[slot] = (lateDroppedBySlot[slot] ?? 0) + 1;
       } else {
         let row = buffer.get(tick);
         if (!row) {

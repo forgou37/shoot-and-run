@@ -23,9 +23,21 @@ export interface TestApi {
   /** Sprite smoke probe (spec 006): loaded archer texture keys plus any
    *  missing per-slot animation keys (empty when healthy). */
   getSpriteProbe?(): { textures: string[]; missingAnims: string[] };
-  /** Online net probe (spec 010): the client session's progress + the confirmed
-   *  state hash at the current confirmed tick (for cross-tab convergence). */
-  getNetProbe?(): { ready: boolean; confirmedTick: number; predictedTick: number; confirmedHash: number };
+  /** Online net probe (spec 010 + metrics spec 013 T13.4): the client session's
+   *  progress + diagnostics + the confirmed state hash at the current confirmed
+   *  tick (for cross-tab convergence). */
+  getNetProbe?(): {
+    ready: boolean;
+    clockSynced: boolean;
+    confirmedTick: number;
+    predictedTick: number;
+    leadTicks: number;
+    rttTicks: number;
+    rollbacks: number;
+    resyncs: number;
+    malformed: number;
+    confirmedHash: number;
+  };
   /** Online (spec 010): the recorded confirmed-state hash at a specific tick,
    *  or null if not yet confirmed / evicted — lets two tabs compare a shared tick. */
   getConfirmedHashAt?(tick: number): number | null;

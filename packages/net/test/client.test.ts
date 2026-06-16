@@ -244,6 +244,22 @@ describe("ClientSession (T10.1 / W3)", () => {
     expect(s.ready).toBe(false);
   });
 
+  it("counts rollbacks and resyncs in its metrics (T13.4)", () => {
+    const t = new SpyTransport();
+    const s = makeSession(t);
+    t.deliver({ type: "hello", slot: 0, seed: 1, playerCount: 2, version: VERSION, arenaId: "crossfire", token: "" });
+    s.tick(rightInput()); // predicts ticks 0..inputDelay, guessing remote = neutral
+    expect(s.metrics().rollbacks).toBe(0);
+    // The remote slot actually pressed right at tick 0 → the guess was wrong → correction.
+    t.deliver({ type: "authoritative", tick: 0, inputs: [rightInput(), rightInput()] });
+    expect(s.metrics().rollbacks).toBe(1);
+    // A host snapshot bumps the resync counter.
+    const host = createSim({ arena, tuning, players: [{ slot: 0 }, { slot: 1 }], seed: 1 });
+    for (let i = 0; i < 20; i++) host.step([emptyInput(), emptyInput()]);
+    t.deliver({ type: "snapshot", snapshot: host.snapshot() });
+    expect(s.metrics().resyncs).toBe(1);
+  });
+
   it("sends its reconnect token in the join and exposes the host-issued one (T13.3)", () => {
     const t = new SpyTransport();
     const s = new ClientSession({

@@ -84,6 +84,21 @@ export interface HostRuntimeConfig {
   generateToken?: () => string;
 }
 
+/** Host-side health snapshot (spec 013, T13.4) — for the server's periodic log. */
+export interface HostMetrics {
+  tick: number;
+  ready: boolean;
+  /** Connected players + reserved (awaiting reconnect) + spectators. */
+  connectedPlayers: number;
+  reservedSlots: number;
+  spectators: number;
+  /** Inputs dropped for an already-committed tick — aggregate + per slot. */
+  lateDropped: number;
+  lateDroppedBySlot: readonly number[];
+  /** Datagrams from clients that failed to decode. */
+  malformed: number;
+}
+
 export interface HostRuntimeHandle {
   /** The tick the canonical sim has reached. */
   readonly tick: number;
@@ -102,6 +117,8 @@ export interface HostRuntimeHandle {
   step(): boolean;
   /** Deep snapshot of the canonical state (tests / diagnostics). */
   snapshot(): SimSnapshot;
+  /** A health snapshot for the server's periodic log (T13.4). */
+  metrics(): HostMetrics;
 }
 
 /** Default join-grace: ~3 s at 60 Hz (see HostRuntimeConfig.joinGraceTicks). */
@@ -438,6 +455,18 @@ export function createHostRuntime(config: HostRuntimeConfig): HostRuntimeHandle 
     },
     snapshot(): SimSnapshot {
       return host.snapshot();
+    },
+    metrics(): HostMetrics {
+      return {
+        tick: host.tick,
+        ready: started,
+        connectedPlayers: connectedPlayers(),
+        reservedSlots: slots.reduce((n, s) => n + (s.state === "reserved" ? 1 : 0), 0),
+        spectators: spectators.size,
+        lateDropped: host.lateDropped,
+        lateDroppedBySlot: host.lateDroppedBySlot,
+        malformed
+      };
     }
   };
 }

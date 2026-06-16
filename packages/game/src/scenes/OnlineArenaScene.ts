@@ -78,6 +78,10 @@ export class OnlineArenaScene extends Phaser.Scene {
 
   private prev: PrevPositions | null = null;
   private disconnected = false;
+  /** Net debug overlay (spec 013, T13.4): `?netdebug=1` + F3 to toggle. */
+  private netDebug = false;
+  private netDebugText?: Phaser.GameObjects.BitmapText;
+  private prevDebugKey = false;
   /** Edge reader for "press to return to the menu" in the error states. */
   private edges!: EdgeReader;
   private prevReturnKey = false;
@@ -152,10 +156,14 @@ export class OnlineArenaScene extends Phaser.Scene {
         .setDepth(30);
     }
 
+    this.netDebug = new URLSearchParams(window.location.search).get("netdebug") === "1";
+    this.netDebugText = addPixelText(this, 2, 2, "", 8, "#7fff7f").setDepth(40).setVisible(this.netDebug);
+
     this.installTestApi();
   }
 
   override update(_time: number, delta: number): void {
+    this.updateNetDebug(); // live regardless of connection state
     // Version mismatch wins over "disconnected" (the refusal closes the socket,
     // which also flags disconnected) — show the actionable message.
     if (this.session.versionMismatch) {
@@ -215,6 +223,23 @@ export class OnlineArenaScene extends Phaser.Scene {
       maxRollbackTicks: this.net.maxRollbackTicks
     });
     this.disconnected = false;
+  }
+
+  /** Toggle (F3) + refresh the net debug overlay from the live session metrics. */
+  private updateNetDebug(): void {
+    const down = this.app.keyboard.isDown("F3");
+    if (down && !this.prevDebugKey) {
+      this.netDebug = !this.netDebug;
+      this.netDebugText?.setVisible(this.netDebug);
+    }
+    this.prevDebugKey = down;
+    if (!this.netDebug || !this.netDebugText) return;
+    const m = this.session.metrics();
+    this.netDebugText.setText(
+      `NET rtt ${m.rttTicks.toFixed(1)}t lead ${String(m.leadTicks)}\n` +
+        `rb ${String(m.rollbacks)} resync ${String(m.resyncs)} bad ${String(m.malformed)}\n` +
+        `cfm ${String(m.confirmedTick)} prd ${String(m.predictedTick)} ${m.ready ? "ready" : "..."}`
+    );
   }
 
   /** In an error state, a confirm/back press returns to the join menu with the
@@ -352,9 +377,7 @@ export class OnlineArenaScene extends Phaser.Scene {
     if (!api) return;
     api.getState = () => this.session.predictedState() ?? ({ players: [], arrows: [], chests: [] } as unknown as SimState);
     api.getNetProbe = () => ({
-      ready: this.session.ready,
-      confirmedTick: this.session.confirmedTick,
-      predictedTick: this.session.predictedTick,
+      ...this.session.metrics(),
       confirmedHash: this.confirmedHashes.get(this.session.confirmedTick) ?? 0
     });
     api.getConfirmedHashAt = (tick: number) => this.confirmedHashes.get(tick) ?? null;

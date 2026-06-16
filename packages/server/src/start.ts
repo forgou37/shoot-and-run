@@ -71,11 +71,21 @@ export function startHost(config: StartHostConfig): RunningHost {
   });
 
   let started = false;
+  let loggedTicks = 0;
   const interval = setInterval(() => {
     const stepped = runtime.step(); // no-op until all expected clients connect
-    if (stepped && !started) {
+    if (!stepped) return;
+    if (!started) {
       started = true;
       config.onStarted?.();
+    }
+    // Periodic one-line health summary for the VPS operator (T13.4; ~every 5 s).
+    if (++loggedTicks % (TICK_RATE * 5) === 0) {
+      const m = runtime.metrics();
+      console.log(
+        `[host] tick=${String(m.tick)} players=${String(m.connectedPlayers)} reserved=${String(m.reservedSlots)} ` +
+          `spectators=${String(m.spectators)} lateDropped=${String(m.lateDropped)} malformed=${String(m.malformed)}`
+      );
     }
   }, 1000 / TICK_RATE);
 

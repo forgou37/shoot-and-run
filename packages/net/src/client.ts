@@ -40,6 +40,27 @@ import { createRollbackController, type RollbackControllerHandle } from "./rollb
 import type { Transport } from "./transport";
 import { SessionRejectedError, VersionMismatchError, computeContentVersion } from "./version";
 
+/**
+ * Read-only net diagnostics for the shell overlay + e2e (spec 013, T13.4). All
+ * client-observable, no PII — just how the prediction/clock are doing.
+ */
+export interface NetMetrics {
+  ready: boolean;
+  clockSynced: boolean;
+  confirmedTick: number;
+  predictedTick: number;
+  /** Predicted lead over confirmed (ticks the client is running ahead). */
+  leadTicks: number;
+  /** Smoothed round-trip time in ticks. */
+  rttTicks: number;
+  /** Rollback corrections so far (a remote input differed from the guess). */
+  rollbacks: number;
+  /** Snapshot-driven resyncs so far (loss heals / reconnect). */
+  resyncs: number;
+  /** Datagrams that failed to decode (version/format mismatch). */
+  malformed: number;
+}
+
 export interface ClientSessionConfig {
   /** The channel to the Host. The client registers its sole message handler. */
   transport: Transport;
@@ -79,6 +100,9 @@ export class ClientSession {
   private arenaId = "";
   /** Datagrams that failed to decode (version/format mismatch) — diagnostics. */
   private malformed = 0;
+  /** Net diagnostics (T13.4): rollback corrections + snapshot resyncs so far. */
+  private rollbackCount = 0;
+  private resyncCount = 0;
   /** True once the first authoritative tick has arrived — i.e. the host's loop is
    *  running (it parks at tick 0 until all clients connect). Before this the
    *  client pre-fills the opening buffer; after it, it syncs the clock then leads. */
@@ -163,6 +187,21 @@ export class ClientSession {
   /** Confirmed (ground-truth) snapshot — equals the host's at confirmedTick. */
   snapshotConfirmed(): SimSnapshot | null {
     return this.controller?.snapshotConfirmed() ?? null;
+  }
+
+  /** Read-only net diagnostics for the overlay / e2e (T13.4). */
+  metrics(): NetMetrics {
+    return {
+      ready: this.ready,
+      clockSynced: this.clock.synced,
+      confirmedTick: this.confirmedTick,
+      predictedTick: this.predictedTick,
+      leadTicks: this.predictedTick - this.confirmedTick,
+      rttTicks: this.clock.rttTicks,
+      rollbacks: this.rollbackCount,
+      resyncs: this.resyncCount,
+      malformed: this.malformed
+    };
   }
 
   /**
@@ -277,10 +316,11 @@ export class ClientSession {
         break;
       case "authoritative":
         this.hostStarted = true; // the host's authoritative loop is running
-        this.controller?.confirm(msg.tick, msg.inputs);
+        if (this.controller?.confirm(msg.tick, msg.inputs)) this.rollbackCount++; // a correction occurred
         break;
       case "snapshot":
         this.hostStarted = true;
+        this.resyncCount++;
         this.controller?.resync(msg.snapshot);
         break;
       case "ack":

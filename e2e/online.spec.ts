@@ -17,7 +17,7 @@ import { expect, test, type Page } from "@playwright/test";
 
 const HOST_WS = "ws://localhost:8787";
 const DEEPLINK_URL = `/?online=${HOST_WS}`;
-const SPECTATE_URL = `/?online=${HOST_WS}&spectate=1`;
+const SPECTATE_URL = `/?online=${HOST_WS}&spectate=1&netdebug=1`; // also exercises the T13.4 overlay
 
 async function waitForPhase(page: Page, timeout = 20_000): Promise<void> {
   await page.waitForFunction(() => window.__testApi?.getPhase() === "match", null, { timeout });
@@ -103,6 +103,13 @@ test("two tabs play a real match over WebSocket and converge byte-for-byte", asy
   expect(hashA).not.toBeNull();
   expect(hashA).toBe(hashB);
   expect(hashS).toBe(hashA); // the spectator is byte-identical to the players
+
+  // T13.4 metrics: the probe behind the net overlay exposes live diagnostics.
+  const probeA = await pageA.evaluate(() => window.__testApi!.getNetProbe!());
+  expect(probeA.clockSynced).toBe(true);
+  expect(probeA.leadTicks).toBeGreaterThan(0); // the client predicts ahead of confirmed
+  expect(Number.isFinite(probeA.rttTicks)).toBe(true);
+  expect(probeA.rollbacks).toBeGreaterThanOrEqual(0);
 
   // T13.3 reconnection: force tab B to drop. It auto-reconnects to its slot (token
   // reclaim → snapshot resync) and keeps converging — without disturbing A.

@@ -26,8 +26,19 @@ interface ShellTestApi {
   setManual(on: boolean): void;
   stepTicks(n: number): void;
   getSpriteProbe(): { textures: string[]; missingAnims: string[] };
-  /** Online net probe (spec 010 T10.6). Present only in the online scene. */
-  getNetProbe?(): { ready: boolean; confirmedTick: number; predictedTick: number; confirmedHash: number };
+  /** Online net probe (spec 010 T10.6 + metrics spec 013 T13.4). Online scene only. */
+  getNetProbe?(): {
+    ready: boolean;
+    clockSynced: boolean;
+    confirmedTick: number;
+    predictedTick: number;
+    leadTicks: number;
+    rttTicks: number;
+    rollbacks: number;
+    resyncs: number;
+    malformed: number;
+    confirmedHash: number;
+  };
   getConfirmedHashAt?(tick: number): number | null;
   /** Force-close the socket to exercise auto-reconnect (spec 013 T13.3). */
   forceDisconnect?(): void;

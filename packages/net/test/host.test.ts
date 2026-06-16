@@ -100,4 +100,14 @@ describe("host session (T9.2 / M3)", () => {
     host.receiveInput("c0", 3, withFlag("shoot")); // tick 3 is in the past
     expect(host.lateDropped).toBe(1);
   });
+
+  it("tracks late-dropped inputs per slot (T13.4)", () => {
+    const { host } = makeHost();
+    for (let t = 0; t < 10; t++) host.step(); // committedTick = 10
+    host.receiveInput("c0", 3, withFlag("shoot")); // slot 0, past
+    host.receiveInput("c1", 5, withFlag("shoot")); // slot 1, past
+    host.receiveInput("c1", 2, withFlag("shoot")); // slot 1, past again
+    expect(host.lateDropped).toBe(3);
+    expect(host.lateDroppedBySlot).toEqual([1, 2]);
+  });
 });
