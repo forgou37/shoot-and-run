@@ -51,6 +51,22 @@ export interface NetParams extends PredictionParams {
    * pairing with the existing late-drop of past-tick inputs. 0 disables.
    */
   maxInputLeadTicks: number;
+  /**
+   * Lag-comp (spec 013, T13.6): 1 = adapt the client's input delay to measured RTT
+   * (bounded by `minInputDelayTicks`/`maxInputDelayTicks`); 0 = use the fixed
+   * `inputDelayTicks`. Off by default — fixed delay is the shipped behavior so the
+   * convergence proof is undisturbed unless an operator opts in.
+   */
+  adaptiveInputDelay: number;
+  /** Lower/upper bound on the adaptive input delay in ticks (T13.6). */
+  minInputDelayTicks: number;
+  maxInputDelayTicks: number;
+  /**
+   * Lag-comp (T13.6): ms over which the shell visually eases a predicted→corrected
+   * position jump on a rollback, instead of snapping. Purely cosmetic — the
+   * confirmed state is identical with it on or off. 0 = snap. Shell-consumed.
+   */
+  correctionSmoothingMs: number;
 }
 
 const NET_KEYS: readonly (keyof NetParams)[] = [
@@ -63,7 +79,11 @@ const NET_KEYS: readonly (keyof NetParams)[] = [
   "reconnectAttempts",
   "reconnectBackoffTicks",
   "maxInputsPerSecond",
-  "maxInputLeadTicks"
+  "maxInputLeadTicks",
+  "adaptiveInputDelay",
+  "minInputDelayTicks",
+  "maxInputDelayTicks",
+  "correctionSmoothingMs"
 ];
 
 /** Validate the `net` block of a parsed content/tuning.json object. */

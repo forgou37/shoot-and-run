@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import arena001 from "../../../content/arenas/arena-001.json";
 import tuningJson from "../../../content/tuning.json";
 import { createSim, emptyInput, parseArena, parseTuning, type PlayerInput } from "@shoot-and-run/sim";
-import { ClientSession } from "../src/client";
+import { ClientSession, adaptiveInputDelayTicks } from "../src/client";
 import { decodeMessage, encodeMessage } from "../src/codec";
 import type { NetMessage } from "../src/protocol";
 import type { Transport } from "../src/transport";
@@ -70,6 +70,14 @@ function makeSession(transport: SpyTransport): ClientSession {
 function rightInput(): PlayerInput {
   return { ...emptyInput(), right: true };
 }
+
+describe("adaptiveInputDelayTicks (T13.6)", () => {
+  it("covers ~one-way + a tick of margin, clamped to [min, max]", () => {
+    expect(adaptiveInputDelayTicks(0, 2, 8)).toBe(2); // rtt 0 → 1, clamped up to min
+    expect(adaptiveInputDelayTicks(6, 2, 8)).toBe(4); // ceil(6/2)+1 = 4
+    expect(adaptiveInputDelayTicks(40, 2, 8)).toBe(8); // ceil(40/2)+1 = 21, clamped to max
+  });
+});
 
 describe("ClientSession (T10.1 / W3)", () => {
   it("sends a join on construct and predicts nothing until the Host's hello arrives (T13.1)", () => {
@@ -242,6 +250,22 @@ describe("ClientSession (T10.1 / W3)", () => {
     // A subsequent hello is ignored — the session stays refused.
     t.deliver({ type: "hello", slot: 0, seed: 1, playerCount: 2, version: VERSION, arenaId: "crossfire", token: "" });
     expect(s.ready).toBe(false);
+  });
+
+  it("uses the fixed input delay unless adaptive is enabled (T13.6)", () => {
+    const fixed = makeSession(new SpyTransport()); // adaptive off
+    expect(fixed.currentInputDelay).toBe(INPUT_DELAY);
+    const adaptive = new ClientSession({
+      transport: new SpyTransport(),
+      arena,
+      tuning,
+      inputDelayTicks: INPUT_DELAY,
+      maxRollbackTicks: MAX_ROLLBACK,
+      adaptiveInputDelay: true,
+      minInputDelayTicks: 2,
+      maxInputDelayTicks: 8
+    });
+    expect(adaptive.currentInputDelay).toBe(2); // no RTT yet (unsynced) → clamped to min
   });
 
   it("counts rollbacks and resyncs in its metrics (T13.4)", () => {

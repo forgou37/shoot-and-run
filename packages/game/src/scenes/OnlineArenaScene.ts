@@ -84,6 +84,15 @@ export class OnlineArenaScene extends Phaser.Scene {
   private netDebug = false;
   private netDebugText?: Phaser.GameObjects.BitmapText;
   private prevDebugKey = false;
+  /** Rollback-correction smoothing (spec 013, T13.6): ease a teleport from a
+   *  prediction correction over `correctionSmoothingMs` instead of snapping. A
+   *  per-player decaying visual offset — render-only, never the confirmed state. */
+  private correctionSmoothingMs = 0;
+  private frameDeltaMs = 16;
+  private lastRollbacks = 0;
+  private lastResyncs = 0;
+  private smoothOffset: { x: number; y: number }[] = [];
+  private lastRenderPos: ({ x: number; y: number } | null)[] = [];
   /** Edge reader for "press to return to the menu" in the error states. */
   private edges!: EdgeReader;
   private prevReturnKey = false;
@@ -104,6 +113,10 @@ export class OnlineArenaScene extends Phaser.Scene {
     this.confirmedHashes.clear();
     this.reconnectToken = "";
     this.reconnectWaitLeft = 0;
+    this.smoothOffset = [];
+    this.lastRenderPos = [];
+    this.lastRollbacks = 0;
+    this.lastResyncs = 0;
   }
 
   preload(): void {
@@ -158,6 +171,7 @@ export class OnlineArenaScene extends Phaser.Scene {
         .setDepth(30);
     }
 
+    this.correctionSmoothingMs = this.net.correctionSmoothingMs;
     this.netDebug = new URLSearchParams(window.location.search).get("netdebug") === "1";
     this.netDebugText = addPixelText(this, 2, 2, "", 8, "#7fff7f").setDepth(40).setVisible(this.netDebug);
 
@@ -183,6 +197,7 @@ export class OnlineArenaScene extends Phaser.Scene {
       this.reconnectToken = this.session.reconnectToken;
     }
     if (this.session.ready) this.reconnectAttemptsLeft = this.reconnectAttempts;
+    this.frameDeltaMs = delta;
     const alpha = this.driver.advance(delta, this.doNetTick);
     this.render(alpha);
   }
@@ -223,7 +238,10 @@ export class OnlineArenaScene extends Phaser.Scene {
       reconnectToken,
       joinToken: this.cfg.joinToken,
       inputDelayTicks: this.net.inputDelayTicks,
-      maxRollbackTicks: this.net.maxRollbackTicks
+      maxRollbackTicks: this.net.maxRollbackTicks,
+      adaptiveInputDelay: this.net.adaptiveInputDelay === 1, // T13.6, off by default
+      minInputDelayTicks: this.net.minInputDelayTicks,
+      maxInputDelayTicks: this.net.maxInputDelayTicks
     });
     this.disconnected = false;
   }
@@ -313,10 +331,38 @@ export class OnlineArenaScene extends Phaser.Scene {
     this.boosters.beginFrame();
     for (const b of state.boosters) this.boosters.draw(b);
     this.boosters.endFrame();
+
+    // A rollback/resync between frames teleports predicted positions; smooth it
+    // over correctionSmoothingMs so only large jumps ease (normal motion is untouched).
+    const m = this.session.metrics();
+    const corrected = m.rollbacks > this.lastRollbacks || m.resyncs > this.lastResyncs;
+    this.lastRollbacks = m.rollbacks;
+    this.lastResyncs = m.resyncs;
+    const decay = this.correctionSmoothingMs > 0 ? Math.exp(-this.frameDeltaMs / this.correctionSmoothingMs) : 0;
+
     state.players.forEach((p, i) => {
       const prev = this.prev?.players[i] ?? p;
-      const x = lerpWrapped(prev.x, p.x, alpha, ARENA_WIDTH);
-      const y = lerpWrapped(prev.y, p.y, alpha, ARENA_HEIGHT);
+      let x = lerpWrapped(prev.x, p.x, alpha, ARENA_WIDTH);
+      let y = lerpWrapped(prev.y, p.y, alpha, ARENA_HEIGHT);
+      if (this.correctionSmoothingMs > 0) {
+        const off = (this.smoothOffset[i] ??= { x: 0, y: 0 });
+        const last = this.lastRenderPos[i];
+        // On a correction, absorb a large position jump into the decaying offset so
+        // the sprite stays put visually, then eases to the corrected spot.
+        if (corrected && last) {
+          const jx = wrapDelta(x, last.x, ARENA_WIDTH);
+          const jy = wrapDelta(y, last.y, ARENA_HEIGHT);
+          if (Math.abs(jx) > CORRECTION_THRESHOLD_PX) off.x += jx;
+          if (Math.abs(jy) > CORRECTION_THRESHOLD_PX) off.y += jy;
+        }
+        off.x *= decay;
+        off.y *= decay;
+        if (Math.abs(off.x) < 0.1) off.x = 0;
+        if (Math.abs(off.y) < 0.1) off.y = 0;
+        x = wrapMod(x + off.x, ARENA_WIDTH);
+        y = wrapMod(y + off.y, ARENA_HEIGHT);
+        this.lastRenderPos[i] = { x, y };
+      }
       const a = p.invisibleTicksLeft > 0 ? this.juice.invisibilityOpacity : 1;
       this.archers.update(p, i, x, y, a);
     });
@@ -408,10 +454,19 @@ function fnv1a(str: string): number {
   return h >>> 0;
 }
 
+/** Minimum position jump (px) treated as a rollback teleport worth smoothing —
+ *  above normal/dash per-frame motion, so steady movement is never eased (T13.6). */
+const CORRECTION_THRESHOLD_PX = 6;
+
 /** Interpolate along the shortest path on a wrapping axis. */
 function lerpWrapped(prev: number, curr: number, alpha: number, range: number): number {
-  let d = curr - prev;
+  return wrapMod(prev + wrapDelta(prev, curr, range) * alpha, range);
+}
+
+/** Shortest signed delta from `from` to `to` on a wrapping axis. */
+function wrapDelta(from: number, to: number, range: number): number {
+  let d = to - from;
   if (d > range / 2) d -= range;
   if (d < -range / 2) d += range;
-  return wrapMod(prev + d * alpha, range);
+  return d;
 }

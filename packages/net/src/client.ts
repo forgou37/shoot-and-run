@@ -41,6 +41,15 @@ import type { Transport } from "./transport";
 import { SessionRejectedError, VersionMismatchError, computeContentVersion } from "./version";
 
 /**
+ * Adaptive input delay (spec 013, T13.6): cover roughly one-way latency plus a
+ * tick of margin, bounded by [min, max]. A pure clamp so the policy is testable
+ * without driving the clock. Off by default — fixed `inputDelayTicks` ships.
+ */
+export function adaptiveInputDelayTicks(rttTicks: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, Math.ceil(rttTicks / 2) + 1));
+}
+
+/**
  * Read-only net diagnostics for the shell overlay + e2e (spec 013, T13.4). All
  * client-observable, no PII — just how the prediction/clock are doing.
  */
@@ -81,6 +90,11 @@ export interface ClientSessionConfig {
   joinToken?: string;
   /** Ticks of input lead — how far ahead of the estimated host tick to predict. */
   inputDelayTicks: number;
+  /** Adapt the input delay to measured RTT, bounded by min/max (spec 013, T13.6).
+   *  Default off — the fixed `inputDelayTicks` ships. */
+  adaptiveInputDelay?: boolean;
+  minInputDelayTicks?: number;
+  maxInputDelayTicks?: number;
   /** Max ticks prediction may run ahead of confirmed (bounds rollback). */
   maxRollbackTicks: number;
   /**
@@ -225,7 +239,7 @@ export class ClientSession {
       // the 010 bootstrap input loss at real RTT. (Inputs below the floor can't
       // reach the host in time anyway, so skipping them loses nothing.)
       const sendFloor = this.clock.estimateHostTick(this.localTick) + this.clock.estimateOneWay();
-      const target = this.clock.targetTick(this.localTick, this.config.inputDelayTicks);
+      const target = this.clock.targetTick(this.localTick, this.effectiveInputDelay());
       return this.predictTo(controller, target, localInput, sendFloor);
     }
 
@@ -233,7 +247,7 @@ export class ClientSession {
       // Pre-start: the host is parked at tick 0 waiting for all clients. Lead off
       // the confirmed tick to PRE-FILL its opening-input buffer — correct because
       // the host begins at tick 0, so nothing sent here is late (send everything).
-      const target = controller.confirmedTick + this.config.inputDelayTicks;
+      const target = controller.confirmedTick + this.effectiveInputDelay();
       return this.predictTo(controller, target, localInput, -Infinity);
     }
 
@@ -287,6 +301,21 @@ export class ClientSession {
       for (const e of stepEvents) events.push(e);
     }
     return events;
+  }
+
+  /** The input lead used this tick: fixed `inputDelayTicks`, or RTT-adaptive
+   *  (bounded) when enabled (T13.6). Also surfaced for the overlay. */
+  private effectiveInputDelay(): number {
+    if (!this.config.adaptiveInputDelay) return this.config.inputDelayTicks;
+    return adaptiveInputDelayTicks(
+      this.clock.rttTicks,
+      this.config.minInputDelayTicks ?? this.config.inputDelayTicks,
+      this.config.maxInputDelayTicks ?? this.config.inputDelayTicks
+    );
+  }
+  /** The current input-delay lead (fixed or adaptive) — for the net overlay. */
+  get currentInputDelay(): number {
+    return this.effectiveInputDelay();
   }
 
   /** Emit a clock-sync probe and record its send time, so the matching pong
