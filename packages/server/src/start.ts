@@ -10,6 +10,7 @@
  * expected clients, then run from tick 0) and per-client slot assignment all live
  * in `HostRuntime` — `step()` is a no-op until every expected client connects.
  */
+import { randomUUID } from "node:crypto";
 import { createHostRuntime, type HostRuntimeHandle } from "@shoot-and-run/net";
 import { TICK_RATE, type ArenaData, type Tuning } from "@shoot-and-run/sim";
 import { createWsTransportServer } from "./ws-transport-server";
@@ -29,6 +30,8 @@ export interface StartHostConfig {
   snapshotIntervalTicks: number;
   /** Max concurrent spectators (spec 013, T13.2; from the `net` block). */
   maxSpectators?: number;
+  /** Ticks a dropped player's slot is held for reconnection (spec 013, T13.3). */
+  reconnectGraceTicks?: number;
   /** Sent in each hello so clients load the matching local arena (default arena.name). */
   arenaId?: string;
   friendlyFire?: boolean;
@@ -61,6 +64,8 @@ export function startHost(config: StartHostConfig): RunningHost {
     friendlyFire: config.friendlyFire,
     snapshotIntervalTicks: config.snapshotIntervalTicks,
     maxSpectators: config.maxSpectators,
+    reconnectGraceTicks: config.reconnectGraceTicks,
+    generateToken: () => randomUUID(), // unforgeable per-session reconnect secret (T13.3)
     arenaId: config.arenaId ?? config.arena.name,
     expectedClients: config.players
   });

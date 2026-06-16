@@ -63,6 +63,7 @@ const { stop } = startHost({
   tuning,
   snapshotIntervalTicks: net.snapshotIntervalTicks,
   maxSpectators: net.maxSpectators,
+  reconnectGraceTicks: net.reconnectGraceTicks,
   tls,
   onStarted: () => console.log(`[host] all ${String(PLAYERS)} clients connected — match started`)
 });

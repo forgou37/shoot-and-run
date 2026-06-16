@@ -104,6 +104,22 @@ test("two tabs play a real match over WebSocket and converge byte-for-byte", asy
   expect(hashA).toBe(hashB);
   expect(hashS).toBe(hashA); // the spectator is byte-identical to the players
 
+  // T13.3 reconnection: force tab B to drop. It auto-reconnects to its slot (token
+  // reclaim → snapshot resync) and keeps converging — without disturbing A.
+  const dropTick = await confirmedTick(pageB);
+  await pageB.evaluate(() => window.__testApi!.forceDisconnect!());
+  // Confirmed advances well past the drop (past the brief reconnect gap), proving
+  // the slot was reclaimed and the session resumed.
+  await pageB.waitForFunction((t) => (window.__testApi?.getNetProbe?.().confirmedTick ?? 0) > t + 120, dropTick, {
+    timeout: 20_000
+  });
+  // Still byte-identical to A at a shared, post-reconnect tick.
+  const target2 = Math.min(await confirmedTick(pageA), await confirmedTick(pageB)) - 20;
+  const hashA2 = await pageA.evaluate((t) => window.__testApi!.getConfirmedHashAt!(t), target2);
+  const hashB2 = await pageB.evaluate((t) => window.__testApi!.getConfirmedHashAt!(t), target2);
+  expect(hashB2).not.toBeNull();
+  expect(hashB2).toBe(hashA2);
+
   expect(errors).toEqual([]);
   await ctxA.close();
   await ctxB.close();

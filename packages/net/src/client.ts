@@ -50,6 +50,12 @@ export interface ClientSessionConfig {
   friendlyFire?: boolean;
   /** What to join as (T13.1): `player` (default) or `spectator` (wired in T13.2). */
   role?: JoinRole;
+  /**
+   * Reclaim a prior slot after a drop (spec 013, T13.3): the token the host issued
+   * on the original connection. Present only on a reconnect attempt; the host
+   * sends an immediate snapshot, so this session resyncs to the live tick on hello.
+   */
+  reconnectToken?: string;
   /** Ticks of input lead — how far ahead of the estimated host tick to predict. */
   inputDelayTicks: number;
   /** Max ticks prediction may run ahead of confirmed (bounds rollback). */
@@ -85,6 +91,8 @@ export class ClientSession {
   private rejected = false;
   /** Our content fingerprint, computed once: sent in the join + checked on hello. */
   private contentVersion = 0;
+  /** The reconnect token the host issued for our slot (T13.3) — "" until hello. */
+  private hostToken = "";
   /** Latest pre-match lobby status from the host (null until first received). */
   private lobby: { connected: number; expected: number } | null = null;
 
@@ -94,9 +102,14 @@ export class ClientSession {
     config.transport.onMessage((data) => this.onMessage(data));
     // Announce ourselves first (T13.1): role + our content fingerprint, so the
     // host admits by intent and can refuse a drifted build before wasting a slot.
-    // The browser transport buffers this until the socket finishes opening.
+    // A reconnectToken (T13.3) asks the host to reclaim our prior slot. The browser
+    // transport buffers this until the socket finishes opening.
     config.transport.send(
-      encodeMessage({ type: "join", role: config.role ?? "player", version: this.contentVersion })
+      encodeMessage(
+        config.reconnectToken
+          ? { type: "join", role: config.role ?? "player", version: this.contentVersion, reconnectToken: config.reconnectToken }
+          : { type: "join", role: config.role ?? "player", version: this.contentVersion }
+      )
     );
   }
 
@@ -120,6 +133,11 @@ export class ClientSession {
   /** Slot the Host assigned this client (−1 until bootstrapped, and for spectators). */
   get localSlot(): number {
     return this.slot;
+  }
+  /** The host-issued reconnect token for our slot (T13.3) — "" until hello, or when
+   *  reconnection is disabled. The shell stashes it to reclaim the slot after a drop. */
+  get reconnectToken(): string {
+    return this.hostToken;
   }
   get confirmedTick(): number {
     return this.controller?.confirmedTick ?? 0;
@@ -255,7 +273,7 @@ export class ClientSession {
     }
     switch (msg.type) {
       case "hello":
-        this.onHello(msg.slot, msg.seed, msg.playerCount, msg.arenaId, msg.version);
+        this.onHello(msg.slot, msg.seed, msg.playerCount, msg.arenaId, msg.version, msg.token);
         break;
       case "authoritative":
         this.hostStarted = true; // the host's authoritative loop is running
@@ -303,7 +321,14 @@ export class ClientSession {
    * from ours — the host is on a drifted build and a shared deterministic sim is
    * impossible (S4) — otherwise bootstrap the rollback controller.
    */
-  private onHello(slot: number, seed: number, playerCount: number, arenaId: string, version: number): void {
+  private onHello(
+    slot: number,
+    seed: number,
+    playerCount: number,
+    arenaId: string,
+    version: number,
+    token: string
+  ): void {
     if (this.controller || this.versionMismatched || this.rejected) return; // already bootstrapped / refused
     if (version !== this.contentVersion) {
       this.versionMismatched = true;
@@ -311,6 +336,7 @@ export class ClientSession {
       this.config.transport.close(); // refuse the drifted session
       return;
     }
+    this.hostToken = token; // remember our slot's reconnect secret (T13.3)
     this.bootstrap(slot, seed, playerCount, arenaId);
   }
 

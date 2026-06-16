@@ -27,6 +27,13 @@ export interface HelloMessage {
   arenaId: string;
   /** Host's content fingerprint (computeContentVersion) — client must match. */
   version: number;
+  /**
+   * Per-session reconnect secret for this slot (spec 013, T13.3). The host issues
+   * it on admission; the client stashes it and presents it in a later `join`'s
+   * `reconnectToken` to reclaim this exact slot after a drop. Empty when reconnect
+   * is disabled (`reconnectGraceTicks` 0).
+   */
+  token: string;
 }
 
 /** What a connecting client wants to be (spec 013, T13.1). `player` takes a slot

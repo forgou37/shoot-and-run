@@ -151,3 +151,73 @@ describe("HostRuntime join handshake (T13.1)", () => {
     expect(bIn.some((m) => m.type === "hello")).toBe(false);
   });
 });
+
+describe("HostRuntime reconnection (T13.3)", () => {
+  /** Admit two players over the loopback and return A's transport + its hello token. */
+  function startTwoPlayers(net: LoopbackNetwork, grace: number) {
+    const runtime = makeRuntime(net, { reconnectGraceTicks: grace });
+    const a = net.connect("a");
+    const aIn = collectInbound(a);
+    const b = net.connect("b");
+    a.send(encodeMessage({ type: "join", role: "player", version }));
+    b.send(encodeMessage({ type: "join", role: "player", version }));
+    net.advance(1); // both joins → host: admitted, started
+    net.advance(2); // hellos → clients
+    const hello = aIn.find((m) => m.type === "hello") as Extract<NetMessage, { type: "hello" }> | undefined;
+    return { runtime, a, b, tokenA: hello?.token ?? "" };
+  }
+
+  it("issues a non-empty reconnect token in hello when reconnect is enabled", () => {
+    const net = new LoopbackNetwork({ seed: 1 });
+    const { runtime, tokenA } = startTwoPlayers(net, 100);
+    expect(runtime.ready).toBe(true);
+    expect(tokenA).not.toBe("");
+  });
+
+  it("reclaims a reserved slot via its token within the grace, sending a snapshot", () => {
+    const net = new LoopbackNetwork({ seed: 1 });
+    const { runtime, a, tokenA } = startTwoPlayers(net, 100);
+    for (let i = 0; i < 5; i++) runtime.step(); // play a few ticks so the snapshot is live
+    a.close(); // host sees the close synchronously → slot reserved (started + grace>0)
+    expect(runtime.connectedCount).toBe(1);
+
+    const a2 = net.connect("a2");
+    const a2In = collectInbound(a2);
+    a2.send(encodeMessage({ type: "join", role: "player", version, reconnectToken: tokenA }));
+    net.advance(3); // reconnect join → host: reclaim, emits hello + snapshot
+    net.advance(4); // hello + snapshot → a2
+    expect(a2In.some((m) => m.type === "hello")).toBe(true);
+    expect(a2In.some((m) => m.type === "snapshot")).toBe(true); // immediate resync
+    expect(runtime.connectedCount).toBe(2); // slot reclaimed
+  });
+
+  it("refuses a reconnect after the grace expires (slot lost)", () => {
+    const net = new LoopbackNetwork({ seed: 1 });
+    const { runtime, a, tokenA } = startTwoPlayers(net, 5);
+    a.close(); // slot reserved
+    for (let i = 0; i < 8; i++) runtime.step(); // age past the grace → lost
+
+    const a2 = net.connect("a2");
+    const a2In = collectInbound(a2);
+    a2.send(encodeMessage({ type: "join", role: "player", version, reconnectToken: tokenA }));
+    net.advance(3);
+    net.advance(4);
+    expect(a2In).toContainEqual({ type: "reject", reason: "full" });
+    expect(a2In.some((m) => m.type === "hello")).toBe(false);
+  });
+
+  it("refuses a forged token and leaves the reserved slot intact", () => {
+    const net = new LoopbackNetwork({ seed: 1 });
+    const { runtime, a } = startTwoPlayers(net, 100);
+    a.close(); // slot reserved
+    expect(runtime.connectedCount).toBe(1);
+
+    const x = net.connect("x");
+    const xIn = collectInbound(x);
+    x.send(encodeMessage({ type: "join", role: "player", version, reconnectToken: "not-a-real-token" }));
+    net.advance(3);
+    net.advance(4);
+    expect(xIn).toContainEqual({ type: "reject", reason: "full" });
+    expect(runtime.connectedCount).toBe(1); // reserved slot not stolen
+  });
+});

@@ -6,9 +6,11 @@ import {
   parseArena,
   parseTuning,
   wrapMod,
-  type SimState
+  type ArenaData,
+  type SimState,
+  type Tuning
 } from "@shoot-and-run/sim";
-import { ClientSession, parseNetParams } from "@shoot-and-run/net";
+import { ClientSession, parseNetParams, type NetParams } from "@shoot-and-run/net";
 import arenaJson from "../../../../content/arenas/arena-002.json";
 import tuningJson from "../../../../content/tuning.json";
 import { getAppContext, type AppContext } from "../app-context";
@@ -54,6 +56,16 @@ export class OnlineArenaScene extends Phaser.Scene {
   private slots!: SlotConfig[];
   private juice!: JuiceConfig;
   private readonly driver = new FixedStepDriver();
+  /** Session content (pinned), kept so a reconnect can rebuild the session. */
+  private arena!: ArenaData;
+  private tuning!: Tuning;
+  private net!: NetParams;
+  /** Reconnect state (spec 013, T13.3): the host-issued token + a bounded retry
+   *  budget that refreshes on each successful connection. */
+  private reconnectToken = "";
+  private reconnectAttempts = 0;
+  private reconnectAttemptsLeft = 0;
+  private reconnectWaitLeft = 0;
 
   private env!: EnvironmentRenderer;
   private archers!: ArcherRenderer;
@@ -84,6 +96,8 @@ export class OnlineArenaScene extends Phaser.Scene {
     this.hudBuilt = false;
     this.scoreTexts = [];
     this.confirmedHashes.clear();
+    this.reconnectToken = "";
+    this.reconnectWaitLeft = 0;
   }
 
   preload(): void {
@@ -97,19 +111,21 @@ export class OnlineArenaScene extends Phaser.Scene {
     this.app = getAppContext(this);
     this.edges = new EdgeReader();
     this.slots = this.app.slots;
-    const arena = parseArena(arenaJson);
-    const tuning = parseTuning(tuningJson);
-    const net = parseNetParams(tuningJson);
+    this.arena = parseArena(arenaJson);
+    this.tuning = parseTuning(tuningJson);
+    this.net = parseNetParams(tuningJson);
     this.juice = parseJuice(tuningJson);
+    this.reconnectAttempts = this.net.reconnectAttempts;
+    this.reconnectAttemptsLeft = this.net.reconnectAttempts;
 
-    this.env = new EnvironmentRenderer(this, arena);
+    this.env = new EnvironmentRenderer(this, this.arena);
     this.archers = new ArcherRenderer(this, this.slots);
     this.arrowSprites = new ArrowRenderer(this);
     this.boosters = new BoosterRenderer(
       this,
       this.juice.boosterBobAmplitudePx,
       this.juice.boosterBobPeriodMs,
-      tuning.boosterFloatOffsetPx
+      this.tuning.boosterFloatOffsetPx
     );
 
     // Local input: the first keyboard profile in this tab (each tab/machine has
@@ -118,18 +134,7 @@ export class OnlineArenaScene extends Phaser.Scene {
       this.app.manager.devices().find((d) => d.kind === "keyboard") ??
       this.app.manager.devices()[0]!;
 
-    this.transport = new WebSocketTransport(this.cfg.url);
-    this.transport.onClose(() => {
-      this.disconnected = true;
-    });
-    this.session = new ClientSession({
-      transport: this.transport,
-      arena,
-      tuning,
-      role: this.cfg.spectate ? "spectator" : "player",
-      inputDelayTicks: net.inputDelayTicks,
-      maxRollbackTicks: net.maxRollbackTicks
-    });
+    this.connectSession();
 
     this.statusText = addPixelText(this, ARENA_WIDTH / 2, ARENA_HEIGHT / 2, "Connecting…", 11, "#ffffff", {
       align: "center"
@@ -159,12 +164,57 @@ export class OnlineArenaScene extends Phaser.Scene {
       return;
     }
     if (this.disconnected) {
+      this.updateReconnect();
+      return;
+    }
+    // Connected: remember our slot's reconnect token, and (once ready) refresh the
+    // retry budget so a *later* drop gets a full set of attempts again.
+    if (this.reconnectToken === "" && this.session.reconnectToken !== "") {
+      this.reconnectToken = this.session.reconnectToken;
+    }
+    if (this.session.ready) this.reconnectAttemptsLeft = this.reconnectAttempts;
+    const alpha = this.driver.advance(delta, this.doNetTick);
+    this.render(alpha);
+  }
+
+  /** Drive bounded auto-reconnect after an unexpected drop (T13.3): wait out the
+   *  backoff, then rebuild the session presenting our token so the host reclaims
+   *  our slot and resyncs us from its snapshot. On exhaustion — or for a spectator,
+   *  which holds no slot — fall back to the menu. */
+  private updateReconnect(): void {
+    const canReconnect = !this.cfg.spectate && this.reconnectToken !== "" && this.reconnectAttemptsLeft > 0;
+    if (!canReconnect) {
       this.statusText.setText("Disconnected\nspace for menu").setVisible(true);
       this.handleReturnToMenu();
       return;
     }
-    const alpha = this.driver.advance(delta, this.doNetTick);
-    this.render(alpha);
+    this.statusText.setText(`Reconnecting…\n${String(this.reconnectAttemptsLeft)} left`).setVisible(true);
+    if (this.reconnectWaitLeft > 0) {
+      this.reconnectWaitLeft--;
+      return;
+    }
+    this.reconnectAttemptsLeft--;
+    this.reconnectWaitLeft = this.net.reconnectBackoffTicks;
+    this.connectSession(this.reconnectToken);
+  }
+
+  /** Build (or rebuild, on reconnect) the transport + ClientSession. The dev test
+   *  probes read `this.session`/`this.transport` live, so a swap needs no re-install. */
+  private connectSession(reconnectToken?: string): void {
+    this.transport = new WebSocketTransport(this.cfg.url);
+    this.transport.onClose(() => {
+      this.disconnected = true;
+    });
+    this.session = new ClientSession({
+      transport: this.transport,
+      arena: this.arena,
+      tuning: this.tuning,
+      role: this.cfg.spectate ? "spectator" : "player",
+      reconnectToken,
+      inputDelayTicks: this.net.inputDelayTicks,
+      maxRollbackTicks: this.net.maxRollbackTicks
+    });
+    this.disconnected = false;
   }
 
   /** In an error state, a confirm/back press returns to the join menu with the
@@ -308,12 +358,14 @@ export class OnlineArenaScene extends Phaser.Scene {
       confirmedHash: this.confirmedHashes.get(this.session.confirmedTick) ?? 0
     });
     api.getConfirmedHashAt = (tick: number) => this.confirmedHashes.get(tick) ?? null;
+    api.forceDisconnect = () => this.transport.close(); // drives the T13.3 reconnect path
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       const a = window.__testApi;
       if (!a) return;
       delete a.getState;
       delete a.getNetProbe;
       delete a.getConfirmedHashAt;
+      delete a.forceDisconnect;
       this.transport.close();
     });
   }

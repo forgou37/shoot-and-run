@@ -25,6 +25,20 @@ export interface NetParams extends PredictionParams {
    * spectating. Host-side only — the sim and the prediction client ignore it.
    */
   maxSpectators: number;
+  /**
+   * Ticks a dropped player's slot is held for reconnection (spec 013, T13.3).
+   * Within this window a client presenting its reconnect token reclaims the slot
+   * (its inputs are repeat-last-filled meanwhile); after it, the slot stays filled
+   * for the match and a late reconnect is refused. Host-side. 0 disables reconnect.
+   */
+  reconnectGraceTicks: number;
+  /**
+   * How many times a dropped client auto-retries the connection before giving up
+   * to the menu (spec 013, T13.3). Client/shell-side. 0 disables auto-reconnect.
+   */
+  reconnectAttempts: number;
+  /** Ticks between auto-reconnect attempts (client/shell-side, spec 013, T13.3). */
+  reconnectBackoffTicks: number;
 }
 
 const NET_KEYS: readonly (keyof NetParams)[] = [
@@ -32,7 +46,10 @@ const NET_KEYS: readonly (keyof NetParams)[] = [
   "snapshotIntervalTicks",
   "maxRollbackTicks",
   "jitterBufferTicks",
-  "maxSpectators"
+  "maxSpectators",
+  "reconnectGraceTicks",
+  "reconnectAttempts",
+  "reconnectBackoffTicks"
 ];
 
 /** Validate the `net` block of a parsed content/tuning.json object. */

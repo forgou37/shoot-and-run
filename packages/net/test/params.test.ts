@@ -10,7 +10,10 @@ describe("net params (T9.6 / M7)", () => {
       snapshotIntervalTicks: 30,
       maxRollbackTicks: 120,
       jitterBufferTicks: 4,
-      maxSpectators: 4
+      maxSpectators: 4,
+      reconnectGraceTicks: 600,
+      reconnectAttempts: 5,
+      reconnectBackoffTicks: 45
     });
   });
 

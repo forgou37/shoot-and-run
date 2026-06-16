@@ -6,7 +6,7 @@
  * buffers raise `WireFormatError`.
  *
  * Layout: `[uvarint PROTOCOL_VERSION][uint8 tag][payload]`
- *   hello        → [uvarint slot][uvarint seed][uvarint playerCount][uvarint version][uvarint utf8Len][utf8(arenaId)]
+ *   hello        → [uvarint slot][uvarint seed][uvarint playerCount][uvarint version][uvarint len][utf8(arenaId)][uvarint len][utf8(token)]
  *   join         → [uint8 roleCode][uvarint version][uvarint utf8Len][utf8(reconnectToken)]   (len 0 = no token)
  *   reject       → [uint8 reasonCode]
  *   input        → [uvarint tick][input byte]
@@ -148,6 +148,9 @@ export function encodeMessage(msg: NetMessage): Uint8Array {
       const id = encodeUtf8(msg.arenaId);
       writeVarint(out, id.length);
       for (const b of id) out.push(b);
+      const tok = encodeUtf8(msg.token);
+      writeVarint(out, tok.length);
+      for (const b of tok) out.push(b);
       break;
     }
     case "join": {
@@ -225,13 +228,19 @@ export function decodeMessage(bytes: Uint8Array): NetMessage {
       pos = len.next;
       if (bytes.length - pos < len.value) throw new WireFormatError("hello message truncated");
       const arenaId = decodeUtf8(bytes.subarray(pos, pos + len.value));
+      pos += len.value;
+      const tokLen = readVarint(bytes, pos);
+      pos = tokLen.next;
+      if (bytes.length - pos < tokLen.value) throw new WireFormatError("hello message truncated (token)");
+      const token = decodeUtf8(bytes.subarray(pos, pos + tokLen.value));
       return {
         type: "hello",
         slot: slot.value,
         seed: seed.value,
         playerCount: playerCount.value,
         version: version.value,
-        arenaId
+        arenaId,
+        token
       };
     }
     case TAG_JOIN: {

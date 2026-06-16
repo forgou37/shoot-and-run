@@ -29,6 +29,8 @@ interface ShellTestApi {
   /** Online net probe (spec 010 T10.6). Present only in the online scene. */
   getNetProbe?(): { ready: boolean; confirmedTick: number; predictedTick: number; confirmedHash: number };
   getConfirmedHashAt?(tick: number): number | null;
+  /** Force-close the socket to exercise auto-reconnect (spec 013 T13.3). */
+  forceDisconnect?(): void;
 }
 
 /** Minimal standard-mapping gamepad injected by the T3.5 gamepad e2e. */

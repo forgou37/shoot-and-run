@@ -86,7 +86,7 @@ describe("ClientSession (T10.1 / W3)", () => {
   it("bootstraps on hello and predicts forward, sending inputs tagged from tick 0", () => {
     const t = new SpyTransport();
     const s = makeSession(t);
-    t.deliver({ type: "hello", slot: 1, seed: 0xfeed, playerCount: 2, version: VERSION, arenaId: "crossfire" });
+    t.deliver({ type: "hello", slot: 1, seed: 0xfeed, playerCount: 2, version: VERSION, arenaId: "crossfire", token: "" });
 
     expect(s.ready).toBe(true);
     expect(s.localSlot).toBe(1);
@@ -103,7 +103,7 @@ describe("ClientSession (T10.1 / W3)", () => {
   it("applies the local input to the predicted sim", () => {
     const t = new SpyTransport();
     const s = makeSession(t);
-    t.deliver({ type: "hello", slot: 1, seed: 1, playerCount: 2, version: VERSION, arenaId: "crossfire" });
+    t.deliver({ type: "hello", slot: 1, seed: 1, playerCount: 2, version: VERSION, arenaId: "crossfire", token: "" });
     s.tick(rightInput()); // several predicted steps of rightward air accel
     expect(s.predictedState()!.players[1]!.vx).toBeGreaterThan(0);
   });
@@ -111,7 +111,7 @@ describe("ClientSession (T10.1 / W3)", () => {
   it("confirms contiguous authoritative ticks, advancing confirmedTick", () => {
     const t = new SpyTransport();
     const s = makeSession(t);
-    t.deliver({ type: "hello", slot: 0, seed: 7, playerCount: 2, version: VERSION, arenaId: "crossfire" });
+    t.deliver({ type: "hello", slot: 0, seed: 7, playerCount: 2, version: VERSION, arenaId: "crossfire", token: "" });
     s.tick(emptyInput());
     for (let tk = 0; tk < 5; tk++) {
       t.deliver({ type: "authoritative", tick: tk, inputs: [emptyInput(), emptyInput()] });
@@ -125,7 +125,7 @@ describe("ClientSession (T10.1 / W3)", () => {
     const host = createSim({ arena, tuning, players: [{ slot: 0 }, { slot: 1 }], seed: 0xabc });
     const t = new SpyTransport();
     const s = makeSession(t);
-    t.deliver({ type: "hello", slot: 0, seed: 0xabc, playerCount: 2, version: VERSION, arenaId: "crossfire" });
+    t.deliver({ type: "hello", slot: 0, seed: 0xabc, playerCount: 2, version: VERSION, arenaId: "crossfire", token: "" });
 
     for (let tk = 0; tk < 40; tk++) {
       s.tick(rightInput()); // client predicts (irrelevant to confirmed)
@@ -140,7 +140,7 @@ describe("ClientSession (T10.1 / W3)", () => {
   it("syncs the clock from an ack that echoes a sent input's tick", () => {
     const t = new SpyTransport();
     const s = makeSession(t);
-    t.deliver({ type: "hello", slot: 0, seed: 1, playerCount: 2, version: VERSION, arenaId: "crossfire" });
+    t.deliver({ type: "hello", slot: 0, seed: 1, playerCount: 2, version: VERSION, arenaId: "crossfire", token: "" });
     expect(s.clockSynced).toBe(false);
     s.tick(emptyInput()); // sends input for tick 0 (among others)
     t.deliver({ type: "ack", tick: 0, inputTick: 0 });
@@ -150,7 +150,7 @@ describe("ClientSession (T10.1 / W3)", () => {
   it("counts a malformed datagram and keeps the session alive", () => {
     const t = new SpyTransport();
     const s = makeSession(t);
-    t.deliver({ type: "hello", slot: 0, seed: 1, playerCount: 2, version: VERSION, arenaId: "crossfire" });
+    t.deliver({ type: "hello", slot: 0, seed: 1, playerCount: 2, version: VERSION, arenaId: "crossfire", token: "" });
     t.deliverRaw(Uint8Array.of(250, 250, 250)); // bad version varint
     expect(s.malformedCount).toBe(1);
     expect(s.ready).toBe(true);
@@ -161,7 +161,7 @@ describe("ClientSession (T10.1 / W3)", () => {
     for (let tk = 0; tk < 30; tk++) host.step([emptyInput(), emptyInput()]);
     const t = new SpyTransport();
     const s = makeSession(t);
-    t.deliver({ type: "hello", slot: 0, seed: 5, playerCount: 2, version: VERSION, arenaId: "crossfire" });
+    t.deliver({ type: "hello", slot: 0, seed: 5, playerCount: 2, version: VERSION, arenaId: "crossfire", token: "" });
     t.deliver({ type: "snapshot", snapshot: host.snapshot() });
     expect(s.confirmedTick).toBe(30);
   });
@@ -170,7 +170,7 @@ describe("ClientSession (T10.1 / W3)", () => {
     const t = new SpyTransport();
     const s = makeSession(t);
     expect(s.lobbyStatus).toBeNull();
-    t.deliver({ type: "hello", slot: 0, seed: 1, playerCount: 2, version: VERSION, arenaId: "crossfire" });
+    t.deliver({ type: "hello", slot: 0, seed: 1, playerCount: 2, version: VERSION, arenaId: "crossfire", token: "" });
     t.deliver({ type: "lobby", connected: 1, expected: 2 });
     expect(s.lobbyStatus).toEqual({ connected: 1, expected: 2 });
     t.deliver({ type: "lobby", connected: 2, expected: 2 });
@@ -190,20 +190,20 @@ describe("ClientSession (T10.1 / W3)", () => {
     });
     // Host on a drifted build → different (still unsigned) fingerprint.
     const wrong = (VERSION ^ 0xabc) >>> 0;
-    t.deliver({ type: "hello", slot: 0, seed: 1, playerCount: 2, version: wrong, arenaId: "crossfire" });
+    t.deliver({ type: "hello", slot: 0, seed: 1, playerCount: 2, version: wrong, arenaId: "crossfire", token: "" });
     expect(s.ready).toBe(false);
     expect(s.versionMismatch).toBe(true);
     expect(errors[0]).toBeInstanceOf(VersionMismatchError);
     expect(t.closed).toBe(true);
     // A subsequent (matching) hello is ignored — the session stays refused.
-    t.deliver({ type: "hello", slot: 0, seed: 1, playerCount: 2, version: VERSION, arenaId: "crossfire" });
+    t.deliver({ type: "hello", slot: 0, seed: 1, playerCount: 2, version: VERSION, arenaId: "crossfire", token: "" });
     expect(s.ready).toBe(false);
   });
 
   it("holds (sending no gameplay input) until a pong syncs the clock, then leads (S3)", () => {
     const t = new SpyTransport();
     const s = makeSession(t);
-    t.deliver({ type: "hello", slot: 0, seed: 1, playerCount: 2, version: VERSION, arenaId: "crossfire" });
+    t.deliver({ type: "hello", slot: 0, seed: 1, playerCount: 2, version: VERSION, arenaId: "crossfire", token: "" });
     // Host starts (an authoritative tick arrives). The client must NOT lead off
     // its now-lagging confirmed tick — it pings and holds until the clock syncs.
     t.deliver({ type: "authoritative", tick: 0, inputs: [emptyInput(), emptyInput()] });
@@ -240,8 +240,28 @@ describe("ClientSession (T10.1 / W3)", () => {
     expect(errors[0]).toBeInstanceOf(SessionRejectedError);
     expect(t.closed).toBe(true);
     // A subsequent hello is ignored — the session stays refused.
-    t.deliver({ type: "hello", slot: 0, seed: 1, playerCount: 2, version: VERSION, arenaId: "crossfire" });
+    t.deliver({ type: "hello", slot: 0, seed: 1, playerCount: 2, version: VERSION, arenaId: "crossfire", token: "" });
     expect(s.ready).toBe(false);
+  });
+
+  it("sends its reconnect token in the join and exposes the host-issued one (T13.3)", () => {
+    const t = new SpyTransport();
+    const s = new ClientSession({
+      transport: t,
+      arena,
+      tuning,
+      reconnectToken: "my-old-token",
+      inputDelayTicks: INPUT_DELAY,
+      maxRollbackTicks: MAX_ROLLBACK
+    });
+    // The construct join carries the reconnect token (asking the host to reclaim).
+    expect(t.sentMessages()).toEqual([
+      { type: "join", role: "player", version: VERSION, reconnectToken: "my-old-token" }
+    ]);
+    expect(s.reconnectToken).toBe(""); // nothing issued to us yet
+    // The host's hello issues this session's slot token — the shell stashes it.
+    t.deliver({ type: "hello", slot: 0, seed: 1, playerCount: 2, version: VERSION, arenaId: "crossfire", token: "fresh-token" });
+    expect(s.reconnectToken).toBe("fresh-token");
   });
 
   it("surfaces a host reject:full and tears down, without flagging a version mismatch", () => {

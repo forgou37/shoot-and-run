@@ -29,6 +29,9 @@ export interface TestApi {
   /** Online (spec 010): the recorded confirmed-state hash at a specific tick,
    *  or null if not yet confirmed / evicted — lets two tabs compare a shared tick. */
   getConfirmedHashAt?(tick: number): number | null;
+  /** Online (spec 013 T13.3): force-close the current socket to exercise the
+   *  scene's auto-reconnect path. Present only in the online scene. */
+  forceDisconnect?(): void;
 }
 
 declare global {

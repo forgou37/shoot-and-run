@@ -18,7 +18,15 @@
  *
  * v1 start policy: **wait for all expected players, then run from tick 0.** While
  * waiting, `step()` is a no-op (but still ages pending joins); once every expected
- * player has been admitted it steps the canonical sim and broadcasts.
+ * player has connected the loop latches `started` and steps the canonical sim.
+ *
+ * Reconnection (T13.3): each player slot is tracked as empty/connected/reserved/
+ * lost rather than a one-way counter. When a connected slot drops mid-match it
+ * becomes `reserved` for `reconnectGraceTicks` (its input is repeat-last-filled
+ * meanwhile); a client presenting the slot's host-issued token in a later `join`
+ * reclaims it and is sent an immediate snapshot to resync. Past the grace the slot
+ * goes `lost` (stays filled for the match; late/forged reclaims refused). The
+ * reconnect-grace is counted off `step()`, like the join-grace — no wall clock.
  *
  * Pure and transport-agnostic: it is driven by an explicit `step()` (one sim tick)
  * — the wall clock (a Node interval / the browser accumulator) lives in the
@@ -62,6 +70,18 @@ export interface HostRuntimeConfig {
    * Extra spectators are refused with `reject:full`. Default 4; 0 disables.
    */
   maxSpectators?: number;
+  /**
+   * Ticks a dropped player's slot is held for reconnection (spec 013, T13.3; from
+   * the `net` block). Default 0 = reconnection disabled (a drop frees the slot /
+   * the slot just stays filled, no token issued).
+   */
+  reconnectGraceTicks?: number;
+  /**
+   * Mint a per-slot reconnect token. Injected so `packages/net` stays free of
+   * ambient randomness (the server passes a `crypto.randomUUID`-based generator;
+   * tests use the deterministic default). Only called when reconnect is enabled.
+   */
+  generateToken?: () => string;
 }
 
 export interface HostRuntimeHandle {
@@ -98,6 +118,22 @@ interface PendingConnection {
   role?: "player" | "spectator";
   /** Set once admitted as a player — the HostSession client id its inputs route to. */
   clientId?: string;
+  /** Player slot index this connection occupies (set on player admit). */
+  slotIndex?: number;
+}
+
+/** A player slot's occupancy over the match's life (spec 013, T13.3). */
+interface PlayerSlot {
+  /** `c${index}` — the fixed HostSession client id inputs route to. */
+  clientId: string;
+  index: number;
+  /** Reconnect secret, minted on first admit; "" when reconnect is disabled. */
+  token: string;
+  /** The live transport while connected; null while reserved/lost/empty. */
+  transport: Transport | null;
+  state: "empty" | "connected" | "reserved" | "lost";
+  /** Ticks since the slot was reserved (reconnect-grace countdown). */
+  disconnectAge: number;
 }
 
 export function createHostRuntime(config: HostRuntimeConfig): HostRuntimeHandle {
@@ -105,6 +141,9 @@ export function createHostRuntime(config: HostRuntimeConfig): HostRuntimeHandle 
   const playerCount = config.players.length;
   const joinGraceTicks = config.joinGraceTicks ?? DEFAULT_JOIN_GRACE_TICKS;
   const maxSpectators = config.maxSpectators ?? DEFAULT_MAX_SPECTATORS;
+  const reconnectGraceTicks = config.reconnectGraceTicks ?? 0;
+  let tokenCounter = 0;
+  const mintToken = config.generateToken ?? ((): string => `tk${String(tokenCounter++)}`);
 
   // Contract enforced loudly at init: clients are assigned slots in connection
   // order and the canonical sim addresses players by ARRAY INDEX, while the
@@ -129,8 +168,18 @@ export function createHostRuntime(config: HostRuntimeConfig): HostRuntimeHandle 
   const spectators = new Set<Transport>();
   /** Connections awaiting their `join` (or grace fallback). */
   const pending: PendingConnection[] = [];
-  /** Players admitted so far (== the next slot to assign; only grows in v1). */
-  let admittedPlayers = 0;
+  /** Per-slot occupancy (T13.3) — replaces the old monotonic admitted counter. */
+  const slots: PlayerSlot[] = config.players.map((_, i) => ({
+    clientId: `c${String(i)}`,
+    index: i,
+    token: "",
+    transport: null,
+    state: "empty" as const,
+    disconnectAge: 0
+  }));
+  /** Latches true once `expected` slots have first connected — the loop then runs
+   *  even while a slot is reserved/lost (its input is repeat-last-filled). */
+  let started = false;
   let malformed = 0;
   // Content fingerprint stamped into every hello so a client on a drifted build
   // (different pinned arena/tuning) is rejected loudly instead of desyncing (S4).
@@ -159,36 +208,77 @@ export function createHostRuntime(config: HostRuntimeConfig): HostRuntimeHandle 
     if (i >= 0) pending.splice(i, 1);
   }
 
-  /** Admit a connection as a player: assign the next slot, send hello, announce
-   *  the lobby; returns whether it was admitted. Refuses with `reject:full` (no
-   *  close — the client closes) when every slot is taken. Shared by the join path
-   *  and the grace fallback. */
-  function admitPlayer(conn: PendingConnection): boolean {
+  function sendHello(transport: Transport, slot: PlayerSlot): void {
+    transport.send(
+      encodeMessage({
+        type: "hello",
+        slot: slot.index,
+        seed: config.seed,
+        playerCount,
+        version,
+        arenaId: config.arenaId,
+        token: slot.token
+      })
+    );
+  }
+
+  function connectedPlayers(): number {
+    return slots.reduce((n, s) => n + (s.state === "connected" ? 1 : 0), 0);
+  }
+  /** Latch the start once every expected slot has connected (first time only). */
+  function maybeStart(): void {
+    if (!started && connectedPlayers() >= expected) started = true;
+  }
+
+  /** Admit a fresh player into the first empty slot (no reconnect token). Refuses
+   *  with `reject:full` (no close — the client closes) when none is free. Shared by
+   *  the join path, the legacy fallback, and the join-grace. */
+  function admitPlayerFresh(conn: PendingConnection): boolean {
     if (conn.state !== "pending") return false;
     dropPending(conn);
-    if (admittedPlayers >= expected) {
+    const slot = slots.find((s) => s.state === "empty");
+    if (!slot) {
       conn.state = "rejected";
       conn.transport.send(encodeMessage({ type: "reject", reason: "full" }));
       return false;
     }
-    const k = admittedPlayers++;
-    const clientId = `c${k}`;
+    slot.state = "connected";
+    slot.transport = conn.transport;
+    slot.token = reconnectGraceTicks > 0 ? mintToken() : "";
+    slot.disconnectAge = 0;
     conn.state = "admitted";
     conn.role = "player";
-    conn.clientId = clientId;
-    transports.set(clientId, conn.transport);
-    conn.transport.send(
-      encodeMessage({
-        type: "hello",
-        slot: config.players[k]!.slot,
-        seed: config.seed,
-        playerCount,
-        version,
-        arenaId: config.arenaId
-      })
-    );
+    conn.clientId = slot.clientId;
+    conn.slotIndex = slot.index;
+    transports.set(slot.clientId, conn.transport);
+    sendHello(conn.transport, slot);
     // Tell every waiting client the roster filled up ("connected / expected") so
     // the join lobby can show progress until the match starts (T11.3).
+    maybeStart();
+    broadcastLobby();
+    return true;
+  }
+
+  /** Reclaim a reserved slot via its host-issued token (T13.3): re-point the slot
+   *  at the new transport, re-send hello (same slot + token), and immediately push
+   *  a snapshot so the client resyncs to the live tick. Returns false if no
+   *  reserved slot matches (expired / forged / already connected) — the caller
+   *  refuses. */
+  function reclaimSlot(conn: PendingConnection, token: string): boolean {
+    if (token === "") return false;
+    const slot = slots.find((s) => s.state === "reserved" && s.token === token);
+    if (!slot) return false;
+    dropPending(conn);
+    slot.state = "connected";
+    slot.transport = conn.transport;
+    slot.disconnectAge = 0;
+    conn.state = "admitted";
+    conn.role = "player";
+    conn.clientId = slot.clientId;
+    conn.slotIndex = slot.index;
+    transports.set(slot.clientId, conn.transport);
+    sendHello(conn.transport, slot);
+    conn.transport.send(encodeMessage({ type: "snapshot", snapshot: host.snapshot() })); // resync to live
     broadcastLobby();
     return true;
   }
@@ -209,7 +299,15 @@ export function createHostRuntime(config: HostRuntimeConfig): HostRuntimeHandle 
     conn.role = "spectator";
     spectators.add(conn.transport);
     conn.transport.send(
-      encodeMessage({ type: "hello", slot: 0, seed: config.seed, playerCount, version, arenaId: config.arenaId })
+      encodeMessage({
+        type: "hello",
+        slot: 0,
+        seed: config.seed,
+        playerCount,
+        version,
+        arenaId: config.arenaId,
+        token: ""
+      })
     );
     broadcastLobby();
   }
@@ -249,14 +347,26 @@ export function createHostRuntime(config: HostRuntimeConfig): HostRuntimeHandle 
             transport.send(encodeMessage({ type: "reject", reason: "version" }));
             return;
           }
-          // Admit by intent: spectator (T13.2) takes no slot; player takes the next.
-          // reconnectToken is decoded but not yet acted on (reconnect → T13.3).
-          if (msg.role === "spectator") admitSpectator(conn);
-          else admitPlayer(conn);
+          // Admit by intent: spectator (T13.2) takes no slot; a player either
+          // reclaims its reserved slot via its token (T13.3) or takes a fresh one.
+          if (msg.role === "spectator") {
+            admitSpectator(conn);
+          } else if (msg.reconnectToken) {
+            // A reconnect attempt: reclaim or refuse — never silently fall back to a
+            // fresh slot (the client meant its old one; a forged/expired token is
+            // refused, per spec).
+            if (!reclaimSlot(conn, msg.reconnectToken)) {
+              conn.state = "rejected";
+              dropPending(conn);
+              transport.send(encodeMessage({ type: "reject", reason: "full" }));
+            }
+          } else {
+            admitPlayerFresh(conn);
+          }
         } else {
           // A pre-013 client that sends input/ping before any join: admit it the
           // legacy way (player), then process this first message normally.
-          if (admitPlayer(conn)) routeAdmitted(conn, msg);
+          if (admitPlayerFresh(conn)) routeAdmitted(conn, msg);
         }
         return;
       }
@@ -265,8 +375,22 @@ export function createHostRuntime(config: HostRuntimeConfig): HostRuntimeHandle 
     });
 
     transport.onClose(() => {
-      if (conn.clientId) transports.delete(conn.clientId);
       spectators.delete(conn.transport);
+      const slot = conn.slotIndex !== undefined ? slots[conn.slotIndex] : undefined;
+      // Only act if this conn is still the slot's live transport — a reconnect may
+      // have re-pointed the slot at a newer socket before this old close fires.
+      if (slot && slot.transport === conn.transport) {
+        slot.transport = null;
+        transports.delete(slot.clientId);
+        if (!started || reconnectGraceTicks === 0) {
+          slot.state = "empty"; // pre-start (re-joinable) or reconnect disabled
+          slot.token = "";
+        } else {
+          slot.state = "reserved"; // hold for a token reclaim within the grace
+          slot.disconnectAge = 0;
+        }
+        broadcastLobby();
+      }
       conn.state = "rejected";
       dropPending(conn);
     });
@@ -283,10 +407,10 @@ export function createHostRuntime(config: HostRuntimeConfig): HostRuntimeHandle 
       return host.tick;
     },
     get ready(): boolean {
-      return admittedPlayers >= expected;
+      return started;
     },
     get connectedCount(): number {
-      return transports.size;
+      return connectedPlayers();
     },
     get lateDropped(): number {
       return host.lateDropped;
@@ -301,9 +425,14 @@ export function createHostRuntime(config: HostRuntimeConfig): HostRuntimeHandle 
       // start gate isn't satisfied — that's the only window a join can be pending.
       for (let i = pending.length - 1; i >= 0; i--) {
         const conn = pending[i]!;
-        if (conn.state === "pending" && ++conn.ageTicks >= joinGraceTicks) admitPlayer(conn);
+        if (conn.state === "pending" && ++conn.ageTicks >= joinGraceTicks) admitPlayerFresh(conn);
       }
-      if (admittedPlayers < expected) return false;
+      // Age reserved slots; past the reconnect-grace they become `lost` — no longer
+      // reclaimable, but kept filled (repeat-last) for the rest of the match (T13.3).
+      for (const slot of slots) {
+        if (slot.state === "reserved" && ++slot.disconnectAge >= reconnectGraceTicks) slot.state = "lost";
+      }
+      if (!started) return false;
       host.step();
       return true;
     },
