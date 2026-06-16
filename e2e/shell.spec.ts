@@ -42,7 +42,7 @@ test("content: arena and tuning flowed through Vite into the sim", async ({ page
       scores: state.match.scores
     };
   });
-  expect(info.arena).toBe("canopy"); // spec 007: the shell boots into arena-002
+  expect(info.arena).toBe("ramparts"); // spec 016: the shell boots into the castle arena-003
   expect(info.playerCount).toBe(2);
   expect(info.startingArrows).toBe(3); // from content/tuning.json
   expect(info.scores).toHaveLength(2);
@@ -93,10 +93,12 @@ test("sprites: four per-character archer atlases loaded (spec 014)", async ({ pa
   expect(probe.missingAnims).toEqual([]);
 });
 
-test("sprites: jungle environment and arrow atlases loaded (spec 007)", async ({ page }) => {
+test("sprites: castle environment and arrow atlases loaded (spec 016)", async ({ page }) => {
   await boot(page);
   const probe = await page.evaluate(() => window.__testApi!.getSpriteProbe());
-  for (const key of ["jungle-tiles", "jungle-bg", "chest", "arrow"]) {
+  // The shell boots the castle arena-003 (spec 016), so its themed tileset +
+  // background load instead of jungle; chest + arrow are theme-neutral.
+  for (const key of ["castle-tiles", "castle-bg", "chest", "arrow"]) {
     expect(probe.textures).toContain(key);
   }
 });
