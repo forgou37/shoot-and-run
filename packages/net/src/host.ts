@@ -22,6 +22,7 @@ import {
   type PlayerInput,
   type PlayerSlotConfig,
   type Sim,
+  type SimEvent,
   type SimSnapshot,
   type Tuning
 } from "@shoot-and-run/sim";
@@ -75,6 +76,9 @@ export function createHostSession(config: HostSessionConfig): HostSessionHandle 
   const lastInput: PlayerInput[] = config.players.map(() => emptyInput());
   let committedTick = 0;
   let lateDropped = 0;
+  /** Canonical event log for the current match — broadcast once at match_ended
+   *  so every client renders identical post-match awards (spec 016). */
+  let matchEvents: SimEvent[] = [];
 
   function broadcast(message: NetMessage): void {
     const data = encodeMessage(message); // encode once, send the same bytes to every client
@@ -116,10 +120,18 @@ export function createHostSession(config: HostSessionConfig): HostSessionHandle 
         inputs.push(used);
         lastInput[slot] = used;
       }
-      sim.step(inputs);
+      const events = sim.step(inputs);
       broadcast({ type: "authoritative", tick: t, inputs });
       if (t % config.snapshotIntervalTicks === 0) {
         broadcast({ type: "snapshot", snapshot: sim.snapshot() });
+      }
+      // Accumulate the canonical (gap-free) event log; on match end broadcast it
+      // for the post-match awards screen, then reset for the next match (the host
+      // sim loops into a fresh match after the restart delay).
+      for (const e of events) matchEvents.push(e);
+      if (events.some((e) => e.type === "match_ended")) {
+        broadcast({ type: "match-stats", events: matchEvents });
+        matchEvents = [];
       }
       buffer.delete(t);
       committedTick = t + 1;

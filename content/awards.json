@@ -1,0 +1,18 @@
+{
+  "awards": [
+    { "id": "super-jumper", "title": "Super Jumper", "stat": "jumps" },
+    { "id": "wall-monkey", "title": "Wall Monkey", "stat": "wallJumps" },
+    { "id": "dash-demon", "title": "Dash Demon", "stat": "dashes" },
+    { "id": "arrow-spender", "title": "Arrow Spender", "stat": "arrowsFired" },
+    { "id": "deadeye", "title": "Deadeye", "stat": "arrowKills" },
+    { "id": "curb-stomper", "title": "Curb-Stomper", "stat": "stompKills" },
+    { "id": "bombardier", "title": "Bombardier", "stat": "bombKills" },
+    { "id": "booster-man", "title": "Booster-Man", "stat": "boostersCollected" },
+    { "id": "treasure-hunter", "title": "Treasure Hunter", "stat": "chestsOpened" },
+    { "id": "scavenger", "title": "Scavenger", "stat": "arrowsPickedUp" },
+    { "id": "bulletproof", "title": "Bulletproof", "stat": "shieldsBlocked" },
+    { "id": "survivor", "title": "Survivor", "stat": "roundsSurvived" },
+    { "id": "punching-bag", "title": "Punching Bag", "stat": "deaths" },
+    { "id": "first-blood", "title": "First Blood", "stat": "firstBlood" }
+  ]
+}

@@ -2,8 +2,8 @@
  *  (packages/game/src/test-api.ts). Kept as a minimal structural duplicate
  *  so the e2e suite treats the hook as an API, not an internal import. */
 interface ShellTestApi {
-  /** Active high-level phase (spec 003 T3.5). Always present. */
-  getPhase(): "title" | "lobby" | "match";
+  /** Active high-level phase (spec 003 T3.5; "results" added spec 016). Always present. */
+  getPhase(): "title" | "lobby" | "match" | "results";
   getState(): {
     tick: number;
     round: { phase: string; winner: number | string | null };

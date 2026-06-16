@@ -4,6 +4,30 @@
     "type": "round_started"
   },
   {
+    "tick": 25,
+    "type": "player_jumped",
+    "slot": 1,
+    "kind": "ground"
+  },
+  {
+    "tick": 75,
+    "type": "player_jumped",
+    "slot": 1,
+    "kind": "ground"
+  },
+  {
+    "tick": 100,
+    "type": "player_jumped",
+    "slot": 0,
+    "kind": "ground"
+  },
+  {
+    "tick": 125,
+    "type": "player_jumped",
+    "slot": 1,
+    "kind": "ground"
+  },
+  {
     "tick": 160,
     "type": "arrow_fired",
     "playerSlot": 0,

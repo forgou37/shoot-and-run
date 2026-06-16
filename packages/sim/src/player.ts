@@ -1,5 +1,6 @@
 import type { ArenaData } from "./arena";
 import { DT, PLAYER_HEIGHT, PLAYER_WIDTH } from "./constants";
+import type { SimEvent } from "./events";
 import type { PlayerInput } from "./input";
 import { isAgainstWall, isSupported, moveAxisX, moveAxisY } from "./physics";
 import type { PlayerState } from "./state";
@@ -20,7 +21,9 @@ export function updatePlayer(
   p: PlayerState,
   input: PlayerInput,
   arena: ArenaData,
-  t: DerivedTuning
+  t: DerivedTuning,
+  events: SimEvent[],
+  tick: number
 ): void {
   const jumpPressed = input.jump && !p.prevJumpHeld;
   const jumpReleased = !input.jump && p.prevJumpHeld;
@@ -41,6 +44,7 @@ export function updatePlayer(
   if (dashPressed && p.dashTicksLeft === 0 && p.dashCooldownTicksLeft === 0) {
     p.dashTicksLeft = t.dashTicks;
     p.dashDir = (dir !== 0 ? dir : p.facing) as 1 | -1;
+    events.push({ tick, type: "player_dashed", slot: p.slot });
   }
   const dashing = p.dashTicksLeft > 0;
 
@@ -97,6 +101,12 @@ export function updatePlayer(
       p.jumpBufferTicksLeft = 0;
       p.jumpCutAvailable = groundJump || wallJump;
       jumpedThisTick = true;
+      events.push({
+        tick,
+        type: "player_jumped",
+        slot: p.slot,
+        kind: wallJump ? "wall" : groundJump ? "ground" : "flap"
+      });
       // A jump cancels an in-progress dash (and arms its cooldown).
       if (p.dashTicksLeft > 0) {
         p.dashTicksLeft = 0;

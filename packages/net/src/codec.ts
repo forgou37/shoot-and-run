@@ -14,6 +14,7 @@
  *   ping         → [uvarint id]
  *   pong         → [uvarint id][uvarint hostTick]
  *   lobby        → [uvarint connected][uvarint expected]
+ *   match-stats  → [uvarint utf8Len][utf8(JSON.stringify(events))]
  *
  * Reuses the sim's exported byte primitives — `encodeInputByte`, the
  * `writeVarint`/`readVarint` LEB128 helpers, and the version + error types — so
@@ -37,6 +38,7 @@ import {
   readVarint,
   writeVarint,
   type PlayerInput,
+  type SimEvent,
   type SimSnapshot
 } from "@shoot-and-run/sim";
 import type { NetMessage } from "./protocol";
@@ -49,6 +51,7 @@ const TAG_HELLO = 4;
 const TAG_PING = 5;
 const TAG_PONG = 6;
 const TAG_LOBBY = 7;
+const TAG_MATCH_STATS = 8;
 
 // --- minimal DOM-free UTF-8 (TextEncoder/Decoder are not in the no-DOM lib) ---
 
@@ -178,6 +181,13 @@ export function encodeMessage(msg: NetMessage): Uint8Array {
       writeVarint(out, msg.connected);
       writeVarint(out, msg.expected);
       break;
+    case "match-stats": {
+      out.push(TAG_MATCH_STATS);
+      const json = encodeUtf8(JSON.stringify(msg.events));
+      writeVarint(out, json.length);
+      for (const b of json) out.push(b);
+      break;
+    }
   }
   return Uint8Array.from(out);
 }
@@ -261,6 +271,20 @@ export function decodeMessage(bytes: Uint8Array): NetMessage {
       }
       assertSnapshotShape(snapshot);
       return { type: "snapshot", snapshot };
+    }
+    case TAG_MATCH_STATS: {
+      const len = readVarint(bytes, pos);
+      pos = len.next;
+      if (bytes.length - pos < len.value) throw new WireFormatError("match-stats message truncated");
+      const json = decodeUtf8(bytes.subarray(pos, pos + len.value));
+      let events: unknown;
+      try {
+        events = JSON.parse(json);
+      } catch {
+        throw new WireFormatError("match-stats message has invalid JSON");
+      }
+      if (!Array.isArray(events)) throw new WireFormatError("match-stats events is not an array");
+      return { type: "match-stats", events: events as SimEvent[] };
     }
     default:
       throw new WireFormatError(`unknown message tag ${tag}`);

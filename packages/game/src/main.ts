@@ -5,6 +5,7 @@ import { BootScene } from "./scenes/BootScene";
 import { LobbyScene } from "./scenes/LobbyScene";
 import { OnlineArenaScene } from "./scenes/OnlineArenaScene";
 import { OnlineJoinScene } from "./scenes/OnlineJoinScene";
+import { ResultsScene } from "./scenes/ResultsScene";
 import { TitleScene } from "./scenes/TitleScene";
 import { loadFont } from "./theme";
 
@@ -26,7 +27,15 @@ void loadFont().finally(() => {
     },
     // BootScene (first → auto-started) builds shared input and routes to title,
     // or straight into the match (?quickstart=1) / the online match (?online=…).
-    scene: [BootScene, TitleScene, LobbyScene, ArenaScene, OnlineJoinScene, OnlineArenaScene]
+    scene: [
+      BootScene,
+      TitleScene,
+      LobbyScene,
+      ArenaScene,
+      OnlineJoinScene,
+      OnlineArenaScene,
+      ResultsScene
+    ]
   });
 
   // Pixel-perfect scaling. The canvas backing stays 320×240; we size its CSS box

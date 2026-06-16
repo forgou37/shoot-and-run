@@ -5,6 +5,7 @@ import {
   parseArena,
   parseTuning,
   wrapMod,
+  type SimEvent,
   type SimState
 } from "@shoot-and-run/sim";
 import { ClientSession, parseNetParams } from "@shoot-and-run/net";
@@ -16,8 +17,10 @@ import { EdgeReader } from "../input/menu-input";
 import type { SlotConfig } from "../input/players-config";
 import { parseJuice, type JuiceConfig } from "../juice";
 import { FixedStepDriver } from "../loop";
+import type { PlayerMeta } from "../match-stats";
 import { fadeIn, transitionTo } from "../scene-transition";
 import { addPixelText } from "../theme";
+import type { ResultsConfig } from "./ResultsScene";
 import { ArcherRenderer, loadArcherAssets } from "../render/archer";
 import { ArrowRenderer, loadArrowAssets } from "../render/arrows";
 import { BoosterRenderer, loadBoosterAssets } from "../render/boosters";
@@ -64,6 +67,14 @@ export class OnlineArenaScene extends Phaser.Scene {
 
   private prev: PrevPositions | null = null;
   private disconnected = false;
+  /** The host's authoritative match event log for the awards screen (spec 016),
+   *  received via the broadcast match-stats message. Identical bytes on every tab
+   *  ⇒ identical awards. */
+  private matchEvents: SimEvent[] = [];
+  private matchOver = false;
+  private resultsStarted = false;
+  /** Winning slot from the broadcast match_ended event (−1 until set). */
+  private matchWinnerSlot = -1;
   /** Edge reader for "press to return to the menu" in the error states. */
   private edges!: EdgeReader;
   private prevReturnKey = false;
@@ -81,6 +92,10 @@ export class OnlineArenaScene extends Phaser.Scene {
     this.prevReturnKey = false;
     this.hudBuilt = false;
     this.scoreTexts = [];
+    this.matchEvents = [];
+    this.matchOver = false;
+    this.resultsStarted = false;
+    this.matchWinnerSlot = -1;
     this.confirmedHashes.clear();
   }
 
@@ -155,6 +170,21 @@ export class OnlineArenaScene extends Phaser.Scene {
       this.handleReturnToMenu();
       return;
     }
+    // The host broadcasts the authoritative match log once at match end. On
+    // receipt, freeze and fade to the awards screen — identical bytes on both
+    // tabs ⇒ identical awards.
+    const stats = this.session.matchStats();
+    if (stats && !this.matchOver) {
+      this.matchEvents = stats;
+      const ended = [...stats].reverse().find((e) => e.type === "match_ended");
+      this.matchWinnerSlot = ended && ended.type === "match_ended" ? ended.winner : -1;
+      this.matchOver = true;
+    }
+    if (this.matchOver) {
+      this.render(0);
+      this.goToResults();
+      return;
+    }
     const alpha = this.driver.advance(delta, this.doNetTick);
     this.render(alpha);
   }
@@ -176,6 +206,7 @@ export class OnlineArenaScene extends Phaser.Scene {
 
   /** One fixed step: sample the local input, predict + send via the session. */
   private readonly doNetTick = (): void => {
+    if (this.matchOver) return;
     const before = this.session.predictedState();
     const beforeTick = this.session.predictedTick;
     this.prev = before ? this.snapshotPositions(before) : null;
@@ -190,6 +221,30 @@ export class OnlineArenaScene extends Phaser.Scene {
     }
     this.recordConfirmedHash();
   };
+
+  /** Fade to the awards screen from the host's authoritative match log (broadcast
+   *  once at match_ended — identical bytes on every tab ⇒ identical awards).
+   *  Online is FFA; return to the title on continue. */
+  private goToResults(): void {
+    if (this.resultsStarted) return;
+    this.resultsStarted = true;
+    const n = this.session.snapshotConfirmed()?.state.players.length ?? this.slots.length;
+    const players: PlayerMeta[] = this.slots.slice(0, n).map((s) => ({
+      slot: s.slot,
+      name: s.name,
+      color: s.color,
+      team: null
+    }));
+    const name = (slot: number): string =>
+      this.slots.find((s) => s.slot === slot)?.name ?? `P${String(slot)}`;
+    const config: ResultsConfig = {
+      events: this.matchEvents,
+      players,
+      winnerLabel: this.matchWinnerSlot >= 0 ? `${name(this.matchWinnerSlot)} wins the match!` : "Match over",
+      returnTo: "title"
+    };
+    transitionTo(this, "results", config);
+  }
 
   private snapshotPositions(state: Readonly<SimState>): PrevPositions {
     return {
