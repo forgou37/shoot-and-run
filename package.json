@@ -8,13 +8,14 @@
   ],
   "scripts": {
     "dev": "npm run dev -w @shoot-and-run/game",
-    "dev:host": "tsx scripts/dev-host/main.ts",
+    "dev:host": "tsx packages/server/src/main.ts",
+    "start:host": "npm run start -w @shoot-and-run/server",
     "build": "npm run typecheck && npm run build -w @shoot-and-run/game",
-    "typecheck": "tsc --noEmit -p packages/sim && tsc --noEmit -p packages/sim/tsconfig.test.json && tsc --noEmit -p packages/bots && tsc --noEmit -p packages/bots/tsconfig.test.json && tsc --noEmit -p packages/net && tsc --noEmit -p packages/net/tsconfig.test.json && tsc --noEmit -p packages/game && tsc --noEmit -p scripts/dev-host && tsc --noEmit -p e2e",
+    "typecheck": "tsc --noEmit -p packages/sim && tsc --noEmit -p packages/sim/tsconfig.test.json && tsc --noEmit -p packages/bots && tsc --noEmit -p packages/bots/tsconfig.test.json && tsc --noEmit -p packages/net && tsc --noEmit -p packages/net/tsconfig.test.json && tsc --noEmit -p packages/game && tsc --noEmit -p packages/server && tsc --noEmit -p packages/server/tsconfig.test.json && tsc --noEmit -p e2e",
     "test": "vitest run",
     "e2e": "playwright test",
     "lint": "eslint .",
-    "check:deps": "depcruise --config .dependency-cruiser.cjs packages/sim/src packages/bots/src packages/net/src",
+    "check:deps": "depcruise --config .dependency-cruiser.cjs packages/sim/src packages/bots/src packages/net/src packages/server/src",
     "export:art": "node scripts/export-art.mjs",
     "export:cards": "node scripts/slice-cards.mjs"
   },

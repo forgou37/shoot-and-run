@@ -12,6 +12,7 @@ import arenaJson from "../../../../content/arenas/arena-002.json";
 import tuningJson from "../../../../content/tuning.json";
 import { getAppContext, type AppContext } from "../app-context";
 import type { InputDevice } from "../input/device";
+import { EdgeReader } from "../input/menu-input";
 import type { SlotConfig } from "../input/players-config";
 import { parseJuice, type JuiceConfig } from "../juice";
 import { FixedStepDriver } from "../loop";
@@ -62,6 +63,9 @@ export class OnlineArenaScene extends Phaser.Scene {
 
   private prev: PrevPositions | null = null;
   private disconnected = false;
+  /** Edge reader for "press to return to the menu" in the error states. */
+  private edges!: EdgeReader;
+  private prevReturnKey = false;
   /** Dev-only: confirmed-state hashes by tick, for the two-tab convergence probe. */
   private readonly confirmedHashes = new Map<number, number>();
 
@@ -73,6 +77,7 @@ export class OnlineArenaScene extends Phaser.Scene {
     this.cfg = data;
     this.prev = null;
     this.disconnected = false;
+    this.prevReturnKey = false;
     this.hudBuilt = false;
     this.scoreTexts = [];
     this.confirmedHashes.clear();
@@ -87,6 +92,7 @@ export class OnlineArenaScene extends Phaser.Scene {
 
   create(): void {
     this.app = getAppContext(this);
+    this.edges = new EdgeReader();
     this.slots = this.app.slots;
     const arena = parseArena(arenaJson);
     const tuning = parseTuning(tuningJson);
@@ -135,12 +141,35 @@ export class OnlineArenaScene extends Phaser.Scene {
   }
 
   override update(_time: number, delta: number): void {
+    // Version mismatch wins over "disconnected" (the refusal closes the socket,
+    // which also flags disconnected) — show the actionable message.
+    if (this.session.versionMismatch) {
+      this.statusText.setText("Version mismatch\nrefresh the page · space for menu").setVisible(true);
+      this.handleReturnToMenu();
+      return;
+    }
     if (this.disconnected) {
-      this.statusText.setText("Disconnected").setVisible(true);
+      this.statusText.setText("Disconnected\nspace for menu").setVisible(true);
+      this.handleReturnToMenu();
       return;
     }
     const alpha = this.driver.advance(delta, this.doNetTick);
     this.render(alpha);
+  }
+
+  /** In an error state, a confirm/back press returns to the join menu with the
+   *  host URL pre-filled so the player can retry or edit it. */
+  private handleReturnToMenu(): void {
+    const kDown =
+      this.app.keyboard.isDown("Space") ||
+      this.app.keyboard.isDown("Enter") ||
+      this.app.keyboard.isDown("Escape");
+    const keyEdge = kDown && !this.prevReturnKey;
+    this.prevReturnKey = kDown;
+    const dev = this.edges.read(this.app.manager.devices());
+    if (keyEdge || dev.some((e) => e.joinOrConfirm || e.back || e.pause)) {
+      this.scene.start("online-join", { url: this.cfg.url });
+    }
   }
 
   /** One fixed step: sample the local input, predict + send via the session. */
@@ -174,7 +203,7 @@ export class OnlineArenaScene extends Phaser.Scene {
       return;
     }
     if (!this.session.ready || this.session.confirmedTick === 0) {
-      this.statusText.setText(this.session.ready ? "Waiting for host…" : "Connecting…").setVisible(true);
+      this.statusText.setText(this.waitingLabel()).setVisible(true);
     } else {
       this.statusText.setVisible(false);
     }
@@ -211,6 +240,16 @@ export class OnlineArenaScene extends Phaser.Scene {
       this.arrowSprites.draw(ar, x, y);
     }
     this.arrowSprites.endFrame();
+  }
+
+  /** Pre-match status: connecting → "waiting for players n/N" once the host's
+   *  hello + lobby status arrive (T11.3). */
+  private waitingLabel(): string {
+    if (!this.session.ready) return "Connecting…";
+    const lobby = this.session.lobbyStatus;
+    return lobby
+      ? `Waiting for players ${String(lobby.connected)}/${String(lobby.expected)}…`
+      : "Waiting for host…";
   }
 
   private buildHud(playerCount: number): void {

@@ -18,9 +18,16 @@
 export class ClockSync {
   /** Estimated hostTick - localTick. */
   private offset = 0;
+  /** Estimated one-way delay in ticks (EMA) — how long a datagram is in flight.
+   *  Used to floor outbound input ticks at the host tick they'll arrive on, so the
+   *  client never sends inputs the host will already have committed (T11.2). */
+  private oneWayEst = 0;
   private initialized = false;
   /** inputTick -> local tick it was sent at, awaiting that input's ack. */
   private readonly sentAt = new Map<number, number>();
+  /** pingId -> local tick it was sent at, awaiting that ping's pong. A disjoint
+   *  id space from `sentAt` so ping and input samples never collide (T11.2). */
+  private readonly pingSentAt = new Map<number, number>();
 
   constructor(
     private readonly smoothing = 0.2,
@@ -43,14 +50,41 @@ export class ClockSync {
     const sentLocal = this.sentAt.get(inputTick);
     if (sentLocal === undefined) return; // no matching send (lost/duplicate); ignore
     this.sentAt.delete(inputTick);
+    this.fold(sentLocal, hostTick, localNow);
+  }
+
+  /** Record that the client sent ping `pingId` at `localTick` (clock bootstrap). */
+  onPingSent(pingId: number, localTick: number): void {
+    this.pingSentAt.set(pingId, localTick);
+    if (this.pingSentAt.size > this.maxPending) {
+      const oldest = this.pingSentAt.keys().next().value; // insertion order
+      if (oldest !== undefined) this.pingSentAt.delete(oldest);
+    }
+  }
+
+  /** Fold in the pong for `pingId`: host was at `hostTick`, received now. The
+   *  same RTT estimator as `onAck`, but driven by a ping that carries no input —
+   *  so the clock can converge before the client ever leads (T11.2). */
+  onPong(pingId: number, hostTick: number, localNow: number): void {
+    const sentLocal = this.pingSentAt.get(pingId);
+    if (sentLocal === undefined) return; // no matching ping (lost/duplicate); ignore
+    this.pingSentAt.delete(pingId);
+    this.fold(sentLocal, hostTick, localNow);
+  }
+
+  /** Fold one round-trip sample (sent at `sentLocal`, host at `hostTick`, back
+   *  at `localNow`) into the EMA offset estimate. Shared by acks and pongs. */
+  private fold(sentLocal: number, hostTick: number, localNow: number): void {
     const rtt = localNow - sentLocal;
     const oneWay = rtt / 2;
     const sampleOffset = hostTick + oneWay - localNow;
     if (!this.initialized) {
       this.offset = sampleOffset;
+      this.oneWayEst = oneWay;
       this.initialized = true;
     } else {
       this.offset += this.smoothing * (sampleOffset - this.offset);
+      this.oneWayEst += this.smoothing * (oneWay - this.oneWayEst);
     }
   }
 
@@ -62,6 +96,12 @@ export class ClockSync {
   /** Best estimate of the host's current tick. */
   estimateHostTick(localNow: number): number {
     return Math.round(localNow + this.offset);
+  }
+
+  /** Estimated one-way delay in ticks (rounded UP, so flooring outbound input
+   *  ticks by it is conservative — never sends an input the host already has). */
+  estimateOneWay(): number {
+    return Math.max(0, Math.ceil(this.oneWayEst));
   }
 
   /** The tick a client should tag its current input with. */
