@@ -44,8 +44,15 @@ export interface HostSessionConfig {
   clients: HostClient[];
   /** Broadcast a full snapshot every this many committed ticks (>= 1). */
   snapshotIntervalTicks: number;
-  /** Emit one already-encoded datagram to one client (wire to a transport). */
+  /** Emit one already-encoded datagram to one client — for per-client acks. */
   send: (clientId: string, data: Uint8Array) => void;
+  /**
+   * Emit one already-encoded datagram to EVERY sink — players and (spec 013,
+   * T13.2) spectators. Used for the authoritative + snapshot broadcast; the
+   * caller (HostRuntime) decides who the sinks are, so spectators receive the
+   * stream without the session knowing they exist.
+   */
+  broadcast: (data: Uint8Array) => void;
 }
 
 export interface HostSessionHandle extends HostSession {
@@ -77,8 +84,7 @@ export function createHostSession(config: HostSessionConfig): HostSessionHandle 
   let lateDropped = 0;
 
   function broadcast(message: NetMessage): void {
-    const data = encodeMessage(message); // encode once, send the same bytes to every client
-    for (const c of config.clients) config.send(c.id, data);
+    config.broadcast(encodeMessage(message)); // encode once; the runtime fans out to players + spectators
   }
 
   return {

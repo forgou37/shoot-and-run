@@ -79,7 +79,10 @@ function runSession(o: SessionOpts): SessionResult {
     seed: o.seed,
     clients: clientIds.map((id, i) => ({ id, slot: i })),
     snapshotIntervalTicks: o.snapshotInterval,
-    send: (clientId, data) => hostTransports.get(clientId)!.send(data) // host encodes once
+    send: (clientId, data) => hostTransports.get(clientId)!.send(data), // host encodes once
+    broadcast: (data) => {
+      for (const t of hostTransports.values()) t.send(data); // authoritative + snapshot to all
+    }
   });
 
   const hostStates = new Map<number, string>();

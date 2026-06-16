@@ -121,4 +121,33 @@ describe("HostRuntime join handshake (T13.1)", () => {
     expect(inbound.some((m) => m.type === "hello")).toBe(true);
     expect(inbound.some((m) => m.type === "pong")).toBe(true);
   });
+
+  it("admits a spectator without a player slot and does not gate the start (T13.2)", () => {
+    const net = new LoopbackNetwork({ seed: 1 });
+    const runtime = makeRuntime(net); // expects 2 players
+    const spec = net.connect("s0");
+    const inbound = collectInbound(spec);
+
+    spec.send(encodeMessage({ type: "join", role: "spectator", version }));
+    net.advance(1); // join → host: admit as spectator
+    expect(runtime.connectedCount).toBe(0); // spectators aren't counted as players
+    expect(runtime.ready).toBe(false); // and never satisfy the start gate
+
+    net.advance(2);
+    expect(inbound.some((m) => m.type === "hello")).toBe(true);
+  });
+
+  it("refuses a spectator past maxSpectators with reject:full (T13.2)", () => {
+    const net = new LoopbackNetwork({ seed: 1 });
+    makeRuntime(net, { maxSpectators: 1 });
+    const a = net.connect("s0");
+    const b = net.connect("s1");
+    const bIn = collectInbound(b);
+    a.send(encodeMessage({ type: "join", role: "spectator", version })); // takes the only slot
+    b.send(encodeMessage({ type: "join", role: "spectator", version })); // over the cap
+    net.advance(1);
+    net.advance(2);
+    expect(bIn).toContainEqual({ type: "reject", reason: "full" });
+    expect(bIn.some((m) => m.type === "hello")).toBe(false);
+  });
 });

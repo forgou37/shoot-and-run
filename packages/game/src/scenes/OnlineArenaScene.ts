@@ -2,6 +2,7 @@ import Phaser from "phaser";
 import {
   ARENA_HEIGHT,
   ARENA_WIDTH,
+  emptyInput,
   parseArena,
   parseTuning,
   wrapMod,
@@ -26,6 +27,8 @@ import { WebSocketTransport } from "../net/websocket-transport";
 interface OnlineConfig {
   /** ws://host:port of the dedicated host (spec 010). */
   url: string;
+  /** Join as a spectator — watch only, no slot, no input (spec 013, T13.2). */
+  spectate?: boolean;
 }
 
 interface PrevPositions {
@@ -123,6 +126,7 @@ export class OnlineArenaScene extends Phaser.Scene {
       transport: this.transport,
       arena,
       tuning,
+      role: this.cfg.spectate ? "spectator" : "player",
       inputDelayTicks: net.inputDelayTicks,
       maxRollbackTicks: net.maxRollbackTicks
     });
@@ -136,6 +140,12 @@ export class OnlineArenaScene extends Phaser.Scene {
       .setOrigin(0.5)
       .setDepth(20)
       .setVisible(false);
+
+    if (this.cfg.spectate) {
+      addPixelText(this, ARENA_WIDTH / 2, ARENA_HEIGHT - 10, "SPECTATING", 9, "#9aa0b5")
+        .setOrigin(0.5)
+        .setDepth(30);
+    }
 
     this.installTestApi();
   }
@@ -168,7 +178,7 @@ export class OnlineArenaScene extends Phaser.Scene {
     this.prevReturnKey = kDown;
     const dev = this.edges.read(this.app.manager.devices());
     if (keyEdge || dev.some((e) => e.joinOrConfirm || e.back || e.pause)) {
-      this.scene.start("online-join", { url: this.cfg.url });
+      this.scene.start("online-join", { url: this.cfg.url, spectate: this.cfg.spectate });
     }
   }
 
@@ -177,7 +187,9 @@ export class OnlineArenaScene extends Phaser.Scene {
     const before = this.session.predictedState();
     const beforeTick = this.session.predictedTick;
     this.prev = before ? this.snapshotPositions(before) : null;
-    const events = this.session.tick(this.localDevice.sample());
+    // A spectator feeds no input (the session ignores it and sends nothing).
+    const input = this.cfg.spectate ? emptyInput() : this.localDevice.sample();
+    const events = this.session.tick(input);
     // A single tick() can advance prediction by >1 tick (startup lead, or
     // catch-up after a rollback-cap stall). One `prev` can't interpolate a
     // multi-tick jump, so snap to the current state instead of smearing across it.

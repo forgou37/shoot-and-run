@@ -21,6 +21,8 @@ function defaultUrl(): string {
 interface JoinData {
   /** Pre-fill the field with this (e.g. returning from a failed connection). */
   url?: string;
+  /** Restore the play/spectate choice (e.g. returning from a failed connection). */
+  spectate?: boolean;
 }
 
 /**
@@ -35,6 +37,9 @@ export class OnlineJoinScene extends Phaser.Scene {
   private onResize!: () => void;
   private onKey!: (e: KeyboardEvent) => void;
   private initialUrl = "";
+  /** Play (false) vs spectate (true); toggled with Tab (spec 013, T13.2). */
+  private spectate = false;
+  private modeText!: Phaser.GameObjects.BitmapText;
 
   constructor() {
     super("online-join");
@@ -42,14 +47,19 @@ export class OnlineJoinScene extends Phaser.Scene {
 
   init(data: JoinData): void {
     this.initialUrl = data.url ?? defaultUrl();
+    this.spectate = data.spectate ?? false;
   }
 
   create(): void {
     this.cameras.main.setBackgroundColor("#10121f");
     addPixelText(this, ARENA_WIDTH / 2, 64, "ONLINE", 24, "#f0e6c8").setOrigin(0.5);
     addPixelText(this, ARENA_WIDTH / 2, 108, "host address", 11, "#9aa0b5").setOrigin(0.5);
-    addPixelText(this, ARENA_WIDTH / 2, ARENA_HEIGHT - 28, "enter connect", 10, "#9aa0b5").setOrigin(0.5);
+    this.modeText = addPixelText(this, ARENA_WIDTH / 2, ARENA_HEIGHT - 44, "", 10, "#f0e6c8").setOrigin(0.5);
+    addPixelText(this, ARENA_WIDTH / 2, ARENA_HEIGHT - 28, "enter connect · tab spectate", 10, "#9aa0b5").setOrigin(
+      0.5
+    );
     addPixelText(this, ARENA_WIDTH / 2, ARENA_HEIGHT - 14, "esc back", 9, "#5a6079").setOrigin(0.5);
+    this.renderMode();
 
     // DOM text field over the canvas — the pixel buffer can't host text entry.
     const input = document.createElement("input");
@@ -81,6 +91,10 @@ export class OnlineJoinScene extends Phaser.Scene {
       } else if (e.key === "Escape") {
         e.preventDefault();
         this.scene.start("title");
+      } else if (e.key === "Tab") {
+        e.preventDefault(); // toggle play/spectate instead of moving focus off the field
+        this.spectate = !this.spectate;
+        this.renderMode();
       }
     };
     input.addEventListener("keydown", this.onKey);
@@ -110,6 +124,11 @@ export class OnlineJoinScene extends Phaser.Scene {
     this.urlInput.style.fontSize = `${String(Math.max(11, Math.round(r.height * 0.04)))}px`;
   }
 
+  /** Reflect the current play/spectate choice in the mode line. */
+  private renderMode(): void {
+    this.modeText.setText(this.spectate ? "mode: SPECTATE" : "mode: PLAY");
+  }
+
   private connect(): void {
     const url = this.urlInput.value.trim();
     if (!url) return;
@@ -118,7 +137,7 @@ export class OnlineJoinScene extends Phaser.Scene {
     } catch {
       /* storage unavailable — connecting still works, just won't be remembered */
     }
-    this.scene.start("online", { url });
+    this.scene.start("online", { url, spectate: this.spectate });
   }
 
   private teardown(): void {

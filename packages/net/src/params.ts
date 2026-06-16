@@ -18,13 +18,21 @@ export interface NetParams extends PredictionParams {
    * 010). Validated here so the knob's contract is fixed up front.
    */
   jitterBufferTicks: number;
+  /**
+   * Max concurrent spectators the host accepts (spec 013, T13.2). Spectators
+   * receive the authoritative stream but take no slot and never gate the start;
+   * the cap also bounds fan-out / connection load on an open `wss://`. 0 disables
+   * spectating. Host-side only — the sim and the prediction client ignore it.
+   */
+  maxSpectators: number;
 }
 
 const NET_KEYS: readonly (keyof NetParams)[] = [
   "inputDelayTicks",
   "snapshotIntervalTicks",
   "maxRollbackTicks",
-  "jitterBufferTicks"
+  "jitterBufferTicks",
+  "maxSpectators"
 ];
 
 /** Validate the `net` block of a parsed content/tuning.json object. */

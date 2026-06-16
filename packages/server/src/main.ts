@@ -62,6 +62,7 @@ const { stop } = startHost({
   arena,
   tuning,
   snapshotIntervalTicks: net.snapshotIntervalTicks,
+  maxSpectators: net.maxSpectators,
   tls,
   onStarted: () => console.log(`[host] all ${String(PLAYERS)} clients connected — match started`)
 });

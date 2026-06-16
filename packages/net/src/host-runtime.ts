@@ -56,6 +56,12 @@ export interface HostRuntimeConfig {
    * ~3 s at 60 Hz; a real `join` arrives within one RTT, long before this.
    */
   joinGraceTicks?: number;
+  /**
+   * Max concurrent spectators (spec 013, T13.2; from the `net` block). Spectators
+   * receive the authoritative stream but take no slot and never gate the start.
+   * Extra spectators are refused with `reject:full`. Default 4; 0 disables.
+   */
+  maxSpectators?: number;
 }
 
 export interface HostRuntimeHandle {
@@ -80,13 +86,17 @@ export interface HostRuntimeHandle {
 
 /** Default join-grace: ~3 s at 60 Hz (see HostRuntimeConfig.joinGraceTicks). */
 const DEFAULT_JOIN_GRACE_TICKS = 180;
+/** Default spectator cap when the caller doesn't pass one (tests). */
+const DEFAULT_MAX_SPECTATORS = 4;
 
-/** A connection that has not yet been admitted as a player (awaiting its join). */
+/** A connection awaiting admission (its join), then admitted as a player/spectator. */
 interface PendingConnection {
   transport: Transport;
   state: "pending" | "admitted" | "rejected";
   ageTicks: number;
-  /** Set once admitted — the HostSession client id its inputs route to. */
+  /** What it was admitted as (set on admit). */
+  role?: "player" | "spectator";
+  /** Set once admitted as a player — the HostSession client id its inputs route to. */
   clientId?: string;
 }
 
@@ -94,6 +104,7 @@ export function createHostRuntime(config: HostRuntimeConfig): HostRuntimeHandle 
   const expected = config.expectedClients ?? config.players.length;
   const playerCount = config.players.length;
   const joinGraceTicks = config.joinGraceTicks ?? DEFAULT_JOIN_GRACE_TICKS;
+  const maxSpectators = config.maxSpectators ?? DEFAULT_MAX_SPECTATORS;
 
   // Contract enforced loudly at init: clients are assigned slots in connection
   // order and the canonical sim addresses players by ARRAY INDEX, while the
@@ -112,8 +123,10 @@ export function createHostRuntime(config: HostRuntimeConfig): HostRuntimeHandle 
     }
   });
 
-  /** clientId -> its transport, for the host's per-client send. */
+  /** clientId -> its transport, for the host's per-client send (acks). */
   const transports = new Map<string, Transport>();
+  /** Admitted spectators (no slot, no ack) — broadcast targets only (T13.2). */
+  const spectators = new Set<Transport>();
   /** Connections awaiting their `join` (or grace fallback). */
   const pending: PendingConnection[] = [];
   /** Players admitted so far (== the next slot to assign; only grows in v1). */
@@ -123,6 +136,12 @@ export function createHostRuntime(config: HostRuntimeConfig): HostRuntimeHandle 
   // (different pinned arena/tuning) is rejected loudly instead of desyncing (S4).
   const version = computeContentVersion(config.arena, config.tuning);
 
+  /** Fan a datagram out to every sink — players + spectators (T13.2). */
+  function broadcastToAll(data: Uint8Array): void {
+    for (const t of transports.values()) t.send(data);
+    for (const t of spectators) t.send(data);
+  }
+
   const host: HostSessionHandle = createHostSession({
     arena: config.arena,
     tuning: config.tuning,
@@ -131,7 +150,8 @@ export function createHostRuntime(config: HostRuntimeConfig): HostRuntimeHandle 
     friendlyFire: config.friendlyFire,
     clients: config.players.map((p, i) => ({ id: `c${i}`, slot: p.slot })),
     snapshotIntervalTicks: config.snapshotIntervalTicks,
-    send: (clientId, data) => transports.get(clientId)?.send(data)
+    send: (clientId, data) => transports.get(clientId)?.send(data),
+    broadcast: broadcastToAll
   });
 
   function dropPending(conn: PendingConnection): void {
@@ -154,6 +174,7 @@ export function createHostRuntime(config: HostRuntimeConfig): HostRuntimeHandle 
     const k = admittedPlayers++;
     const clientId = `c${k}`;
     conn.state = "admitted";
+    conn.role = "player";
     conn.clientId = clientId;
     transports.set(clientId, conn.transport);
     conn.transport.send(
@@ -172,13 +193,35 @@ export function createHostRuntime(config: HostRuntimeConfig): HostRuntimeHandle 
     return true;
   }
 
+  /** Admit a connection as a spectator (T13.2): no slot, never gates the start,
+   *  just joins the broadcast fan-out. Refuses past the cap with `reject:full`.
+   *  The hello's `slot` is a placeholder (the client knows it's a spectator and
+   *  uses slot −1 locally); `playerCount` lets it build the matching confirmed sim. */
+  function admitSpectator(conn: PendingConnection): void {
+    if (conn.state !== "pending") return;
+    dropPending(conn);
+    if (spectators.size >= maxSpectators) {
+      conn.state = "rejected";
+      conn.transport.send(encodeMessage({ type: "reject", reason: "full" }));
+      return;
+    }
+    conn.state = "admitted";
+    conn.role = "spectator";
+    spectators.add(conn.transport);
+    conn.transport.send(
+      encodeMessage({ type: "hello", slot: 0, seed: config.seed, playerCount, version, arenaId: config.arenaId })
+    );
+    broadcastLobby();
+  }
+
   function routeAdmitted(conn: PendingConnection, msg: ReturnType<typeof decodeMessage>): void {
-    if (msg.type === "input") {
-      host.receiveInput(conn.clientId!, msg.tick, msg.input);
-    } else if (msg.type === "ping") {
+    if (msg.type === "ping") {
       // Clock-sync probe: answer with the host's current tick so the client can
-      // converge its clock before it leads (T11.2). Echo the ping id to pair it.
+      // converge its clock (T11.2). Spectators ping too (they have no acks), so
+      // answer regardless of role. Echo the ping id to pair it.
       conn.transport.send(encodeMessage({ type: "pong", id: msg.id, hostTick: host.tick }));
+    } else if (msg.type === "input" && conn.role === "player") {
+      host.receiveInput(conn.clientId!, msg.tick, msg.input); // spectators send none; ignore if they do
     }
     // The host originates everything else; ignore other inbound kinds.
   }
@@ -206,9 +249,10 @@ export function createHostRuntime(config: HostRuntimeConfig): HostRuntimeHandle 
             transport.send(encodeMessage({ type: "reject", reason: "version" }));
             return;
           }
-          // T13.1: any valid-version join is admitted as a player. role + token
-          // are decoded but not yet acted on (spectator → T13.2, reconnect → T13.3).
-          admitPlayer(conn);
+          // Admit by intent: spectator (T13.2) takes no slot; player takes the next.
+          // reconnectToken is decoded but not yet acted on (reconnect → T13.3).
+          if (msg.role === "spectator") admitSpectator(conn);
+          else admitPlayer(conn);
         } else {
           // A pre-013 client that sends input/ping before any join: admit it the
           // legacy way (player), then process this first message normally.
@@ -222,14 +266,16 @@ export function createHostRuntime(config: HostRuntimeConfig): HostRuntimeHandle 
 
     transport.onClose(() => {
       if (conn.clientId) transports.delete(conn.clientId);
+      spectators.delete(conn.transport);
       conn.state = "rejected";
       dropPending(conn);
     });
   });
 
+  /** `connected` counts admitted PLAYERS only (the start gate), but the status is
+   *  fanned out to spectators too so a watching tab also sees the roster fill. */
   function broadcastLobby(): void {
-    const data = encodeMessage({ type: "lobby", connected: transports.size, expected });
-    for (const t of transports.values()) t.send(data);
+    broadcastToAll(encodeMessage({ type: "lobby", connected: transports.size, expected }));
   }
 
   return {

@@ -24,6 +24,7 @@
  * the PREDICTED state is what a renderer shows.
  */
 import {
+  emptyInput,
   type ArenaData,
   type PlayerInput,
   type PlayerSlotConfig,
@@ -67,6 +68,8 @@ export class ClientSession {
   /** The client's own monotonic tick counter (its local clock), 1 per `tick()`. */
   private localTick = 0;
   private slot = -1;
+  /** Spectator mode (T13.2): never sends input; predicts every slot to follow. */
+  private readonly spectator: boolean;
   private arenaId = "";
   /** Datagrams that failed to decode (version/format mismatch) — diagnostics. */
   private malformed = 0;
@@ -86,6 +89,7 @@ export class ClientSession {
   private lobby: { connected: number; expected: number } | null = null;
 
   constructor(private readonly config: ClientSessionConfig) {
+    this.spectator = config.role === "spectator";
     this.contentVersion = computeContentVersion(config.arena, config.tuning);
     config.transport.onMessage((data) => this.onMessage(data));
     // Announce ourselves first (T13.1): role + our content fingerprint, so the
@@ -109,7 +113,11 @@ export class ClientSession {
   get lobbyStatus(): { connected: number; expected: number } | null {
     return this.lobby;
   }
-  /** Slot the Host assigned this client (−1 until bootstrapped). */
+  /** True if this session is a spectator (no slot, never sends input — T13.2). */
+  get spectating(): boolean {
+    return this.spectator;
+  }
+  /** Slot the Host assigned this client (−1 until bootstrapped, and for spectators). */
   get localSlot(): number {
     return this.slot;
   }
@@ -150,6 +158,8 @@ export class ClientSession {
     const controller = this.controller;
     if (!controller) return []; // not bootstrapped (or the session was refused)
 
+    if (this.spectator) return this.spectatorTick(controller);
+
     if (this.clock.synced) {
       // Steady state: lead off the synced clock, but only SEND inputs the host
       // won't have committed by the time they ARRIVE — i.e. tick >= the host tick
@@ -176,6 +186,23 @@ export class ClientSession {
     // ping until the first pong syncs the clock; the next tick then leads correctly.
     this.sendPing();
     return [];
+  }
+
+  /**
+   * Spectator step (T13.2): never sends input. The controller's localSlot is −1,
+   * so prediction guesses EVERY slot by repeat-last — a smooth follow view that
+   * authoritative messages keep honest. Before the host starts there is nothing
+   * to predict; once it runs, ping until the clock syncs, then predict up to the
+   * estimated host tick (no inputDelay — a spectator isn't racing inputs there).
+   */
+  private spectatorTick(controller: RollbackControllerHandle): SimEvent[] {
+    if (!this.hostStarted) return [];
+    if (!this.clock.synced) {
+      this.sendPing();
+      return [];
+    }
+    const target = this.clock.estimateHostTick(this.localTick);
+    return this.predictTo(controller, target, emptyInput(), Infinity); // Infinity floor = send nothing
   }
 
   /**
@@ -288,7 +315,9 @@ export class ClientSession {
   }
 
   private bootstrap(slot: number, seed: number, playerCount: number, arenaId: string): void {
-    this.slot = slot;
+    // A spectator owns no slot: localSlot −1 makes the controller guess every slot
+    // by repeat-last (no slot matches), and the hello's placeholder slot is ignored.
+    this.slot = this.spectator ? -1 : slot;
     this.arenaId = arenaId;
     // FFA roster: slot index == player index (matches the Host's player order).
     const players: PlayerSlotConfig[] = Array.from({ length: playerCount }, (_, i) => ({ slot: i }));
@@ -298,7 +327,7 @@ export class ClientSession {
       players,
       seed,
       friendlyFire: this.config.friendlyFire,
-      localSlot: slot,
+      localSlot: this.slot,
       maxRollbackTicks: this.config.maxRollbackTicks
     });
   }

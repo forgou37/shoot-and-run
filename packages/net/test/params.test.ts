@@ -9,7 +9,8 @@ describe("net params (T9.6 / M7)", () => {
       inputDelayTicks: 3,
       snapshotIntervalTicks: 30,
       maxRollbackTicks: 120,
-      jitterBufferTicks: 4
+      jitterBufferTicks: 4,
+      maxSpectators: 4
     });
   });
 

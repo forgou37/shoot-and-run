@@ -60,7 +60,8 @@ export class BootScene extends Phaser.Scene {
       const url = online.startsWith("ws")
         ? online
         : `ws://${window.location.hostname}:8787`;
-      this.scene.start("online", { url });
+      // ?spectate=1 joins as a watch-only spectator (spec 013, T13.2).
+      this.scene.start("online", { url, spectate: params.get("spectate") === "1" });
       return;
     }
 

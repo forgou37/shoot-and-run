@@ -27,6 +27,8 @@ export interface StartHostConfig {
   tuning: Tuning;
   /** Broadcast a full snapshot every this many committed ticks (>= 1). */
   snapshotIntervalTicks: number;
+  /** Max concurrent spectators (spec 013, T13.2; from the `net` block). */
+  maxSpectators?: number;
   /** Sent in each hello so clients load the matching local arena (default arena.name). */
   arenaId?: string;
   friendlyFire?: boolean;
@@ -58,6 +60,7 @@ export function startHost(config: StartHostConfig): RunningHost {
     seed: config.seed,
     friendlyFire: config.friendlyFire,
     snapshotIntervalTicks: config.snapshotIntervalTicks,
+    maxSpectators: config.maxSpectators,
     arenaId: config.arenaId ?? config.arena.name,
     expectedClients: config.players
   });
