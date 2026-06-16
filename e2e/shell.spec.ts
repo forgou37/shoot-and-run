@@ -77,8 +77,19 @@ test("input: real key events move both players simultaneously", async ({ page })
 test("sprites: archer atlas and per-slot animations loaded (spec 006)", async ({ page }) => {
   await boot(page);
   const probe = await page.evaluate(() => window.__testApi!.getSpriteProbe());
-  expect(probe.textures).toContain("archer");
-  expect(probe.textures).toContain("archer-1"); // P2's recolored copy
+  expect(probe.textures).toContain("archer"); // generic atlas — always loaded, recolor-fallback base
+  // spec 014: default-roster slots use per-character named sheets (covered by the
+  // four-atlas test below), so the per-slot recolor copy ("archer-1") is no longer
+  // created; what matters here is every per-slot animation built with no gaps.
+  expect(probe.missingAnims).toEqual([]);
+});
+
+test("sprites: four per-character archer atlases loaded (spec 014)", async ({ page }) => {
+  await boot(page);
+  const probe = await page.evaluate(() => window.__testApi!.getSpriteProbe());
+  for (const key of ["archer_maks", "archer_igorb", "archer_lyosha", "archer_igorsh"]) {
+    expect(probe.textures).toContain(key);
+  }
   expect(probe.missingAnims).toEqual([]);
 });
 
