@@ -1,16 +1,24 @@
 /**
- * Host runtime (spec 010, T10.2). Wraps a `HostSession` with the connection
- * management a real Host needs but the 009 session loop deliberately left out:
- * accept inbound connections from a `TransportServer`, assign each a slot in
- * connection order, send it the `HelloMessage` handshake, decode its inbound
- * inputs into `HostSession.receiveInput`, and gate the authoritative loop on a
- * simple start policy.
+ * Host runtime (spec 010, T10.2; join handshake spec 013, T13.1). Wraps a
+ * `HostSession` with the connection management a real Host needs but the 009
+ * session loop deliberately left out: accept inbound connections from a
+ * `TransportServer`, admit each as a player slot, send it the `HelloMessage`
+ * handshake, decode its inbound inputs into `HostSession.receiveInput`, and gate
+ * the authoritative loop on a simple start policy.
  *
- * v1 start policy: **wait for all expected clients, then run from tick 0.** While
- * waiting, `step()` is a no-op; once every expected client has connected it steps
- * the canonical sim and broadcasts. (Clients that connect early have already
- * received hello and begun predicting, so their inputs for the opening ticks are
- * buffered by the time the loop starts.)
+ * Handshake (T13.1): the client sends a `JoinMessage` FIRST; the host reads it
+ * before assigning a slot, so it can admit by intent (player now; spectator /
+ * reconnect-token land in T13.2/T13.3) and refuse a drifted-build client with a
+ * typed `reject` — without wasting a slot on a doomed connection. A pre-013
+ * client that never sends `join` would otherwise hang waiting for `hello`, so a
+ * tick-driven **join-grace** falls back to a legacy `hello` after
+ * `joinGraceTicks` (then the client's own version check surfaces any drift). The
+ * grace is counted off `step()`, which the caller already calls every tick — no
+ * wall-clock timer, so the host stays pure and deterministic.
+ *
+ * v1 start policy: **wait for all expected players, then run from tick 0.** While
+ * waiting, `step()` is a no-op (but still ages pending joins); once every expected
+ * player has been admitted it steps the canonical sim and broadcasts.
  *
  * Pure and transport-agnostic: it is driven by an explicit `step()` (one sim tick)
  * — the wall clock (a Node interval / the browser accumulator) lives in the
@@ -42,6 +50,12 @@ export interface HostRuntimeConfig {
   arenaId: string;
   /** Start the loop once this many clients have connected (default players.length). */
   expectedClients?: number;
+  /**
+   * Ticks to wait for a connection's `join` before falling back to a legacy
+   * `hello` (T13.1) — rescues a pre-013 client that never sends `join`. Default
+   * ~3 s at 60 Hz; a real `join` arrives within one RTT, long before this.
+   */
+  joinGraceTicks?: number;
 }
 
 export interface HostRuntimeHandle {
@@ -64,9 +78,22 @@ export interface HostRuntimeHandle {
   snapshot(): SimSnapshot;
 }
 
+/** Default join-grace: ~3 s at 60 Hz (see HostRuntimeConfig.joinGraceTicks). */
+const DEFAULT_JOIN_GRACE_TICKS = 180;
+
+/** A connection that has not yet been admitted as a player (awaiting its join). */
+interface PendingConnection {
+  transport: Transport;
+  state: "pending" | "admitted" | "rejected";
+  ageTicks: number;
+  /** Set once admitted — the HostSession client id its inputs route to. */
+  clientId?: string;
+}
+
 export function createHostRuntime(config: HostRuntimeConfig): HostRuntimeHandle {
   const expected = config.expectedClients ?? config.players.length;
   const playerCount = config.players.length;
+  const joinGraceTicks = config.joinGraceTicks ?? DEFAULT_JOIN_GRACE_TICKS;
 
   // Contract enforced loudly at init: clients are assigned slots in connection
   // order and the canonical sim addresses players by ARRAY INDEX, while the
@@ -87,7 +114,10 @@ export function createHostRuntime(config: HostRuntimeConfig): HostRuntimeHandle 
 
   /** clientId -> its transport, for the host's per-client send. */
   const transports = new Map<string, Transport>();
-  let connections = 0;
+  /** Connections awaiting their `join` (or grace fallback). */
+  const pending: PendingConnection[] = [];
+  /** Players admitted so far (== the next slot to assign; only grows in v1). */
+  let admittedPlayers = 0;
   let malformed = 0;
   // Content fingerprint stamped into every hello so a client on a drifted build
   // (different pinned arena/tuning) is rejected loudly instead of desyncing (S4).
@@ -104,17 +134,29 @@ export function createHostRuntime(config: HostRuntimeConfig): HostRuntimeHandle 
     send: (clientId, data) => transports.get(clientId)?.send(data)
   });
 
-  config.server.onConnection((transport) => {
-    if (connections >= expected) {
-      transport.close(); // session full — reject extras
-      return;
-    }
-    const k = connections++;
-    const clientId = `c${k}`;
-    transports.set(clientId, transport);
+  function dropPending(conn: PendingConnection): void {
+    const i = pending.indexOf(conn);
+    if (i >= 0) pending.splice(i, 1);
+  }
 
-    // Handshake: tell the client its slot + the session contract to rebuild from.
-    transport.send(
+  /** Admit a connection as a player: assign the next slot, send hello, announce
+   *  the lobby; returns whether it was admitted. Refuses with `reject:full` (no
+   *  close — the client closes) when every slot is taken. Shared by the join path
+   *  and the grace fallback. */
+  function admitPlayer(conn: PendingConnection): boolean {
+    if (conn.state !== "pending") return false;
+    dropPending(conn);
+    if (admittedPlayers >= expected) {
+      conn.state = "rejected";
+      conn.transport.send(encodeMessage({ type: "reject", reason: "full" }));
+      return false;
+    }
+    const k = admittedPlayers++;
+    const clientId = `c${k}`;
+    conn.state = "admitted";
+    conn.clientId = clientId;
+    transports.set(clientId, conn.transport);
+    conn.transport.send(
       encodeMessage({
         type: "hello",
         slot: config.players[k]!.slot,
@@ -124,6 +166,26 @@ export function createHostRuntime(config: HostRuntimeConfig): HostRuntimeHandle 
         arenaId: config.arenaId
       })
     );
+    // Tell every waiting client the roster filled up ("connected / expected") so
+    // the join lobby can show progress until the match starts (T11.3).
+    broadcastLobby();
+    return true;
+  }
+
+  function routeAdmitted(conn: PendingConnection, msg: ReturnType<typeof decodeMessage>): void {
+    if (msg.type === "input") {
+      host.receiveInput(conn.clientId!, msg.tick, msg.input);
+    } else if (msg.type === "ping") {
+      // Clock-sync probe: answer with the host's current tick so the client can
+      // converge its clock before it leads (T11.2). Echo the ping id to pair it.
+      conn.transport.send(encodeMessage({ type: "pong", id: msg.id, hostTick: host.tick }));
+    }
+    // The host originates everything else; ignore other inbound kinds.
+  }
+
+  config.server.onConnection((transport) => {
+    const conn: PendingConnection = { transport, state: "pending", ageTicks: 0 };
+    pending.push(conn);
 
     transport.onMessage((data) => {
       let msg;
@@ -133,23 +195,36 @@ export function createHostRuntime(config: HostRuntimeConfig): HostRuntimeHandle 
         malformed++; // version/format mismatch — drop, keep serving
         return;
       }
-      if (msg.type === "input") {
-        host.receiveInput(clientId, msg.tick, msg.input);
-      } else if (msg.type === "ping") {
-        // Clock-sync probe: answer with the host's current tick so the client can
-        // converge its clock before it leads (T11.2). Echo the ping id to pair it.
-        transport.send(encodeMessage({ type: "pong", id: msg.id, hostTick: host.tick }));
+      if (conn.state === "pending") {
+        if (msg.type === "join") {
+          if (msg.version !== version) {
+            // Drifted build: refuse loudly, without consuming a slot. We do NOT
+            // close — the client closes on `reject`, so the reason is never lost
+            // to a close racing ahead of delivery.
+            conn.state = "rejected";
+            dropPending(conn);
+            transport.send(encodeMessage({ type: "reject", reason: "version" }));
+            return;
+          }
+          // T13.1: any valid-version join is admitted as a player. role + token
+          // are decoded but not yet acted on (spectator → T13.2, reconnect → T13.3).
+          admitPlayer(conn);
+        } else {
+          // A pre-013 client that sends input/ping before any join: admit it the
+          // legacy way (player), then process this first message normally.
+          if (admitPlayer(conn)) routeAdmitted(conn, msg);
+        }
+        return;
       }
-      // The host originates everything else; ignore other inbound kinds.
+      if (conn.state === "admitted") routeAdmitted(conn, msg);
+      // rejected: ignore further traffic
     });
 
     transport.onClose(() => {
-      transports.delete(clientId);
+      if (conn.clientId) transports.delete(conn.clientId);
+      conn.state = "rejected";
+      dropPending(conn);
     });
-
-    // Tell every waiting client the roster filled up ("connected / expected") so
-    // the join lobby can show progress until the match starts (T11.3).
-    broadcastLobby();
   });
 
   function broadcastLobby(): void {
@@ -162,7 +237,7 @@ export function createHostRuntime(config: HostRuntimeConfig): HostRuntimeHandle 
       return host.tick;
     },
     get ready(): boolean {
-      return connections >= expected;
+      return admittedPlayers >= expected;
     },
     get connectedCount(): number {
       return transports.size;
@@ -174,7 +249,15 @@ export function createHostRuntime(config: HostRuntimeConfig): HostRuntimeHandle 
       return malformed;
     },
     step(): boolean {
-      if (connections < expected) return false;
+      // Age connections still awaiting their join; once past the grace, admit
+      // them the legacy way so a pre-013 client can't hang waiting for hello.
+      // Runs every tick (the caller calls step() unconditionally), even while the
+      // start gate isn't satisfied — that's the only window a join can be pending.
+      for (let i = pending.length - 1; i >= 0; i--) {
+        const conn = pending[i]!;
+        if (conn.state === "pending" && ++conn.ageTicks >= joinGraceTicks) admitPlayer(conn);
+      }
+      if (admittedPlayers < expected) return false;
       host.step();
       return true;
     },

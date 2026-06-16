@@ -34,9 +34,10 @@ import {
 } from "@shoot-and-run/sim";
 import { ClockSync } from "./clock";
 import { decodeMessage, encodeMessage } from "./codec";
+import type { JoinRole, RejectReason } from "./protocol";
 import { createRollbackController, type RollbackControllerHandle } from "./rollback";
 import type { Transport } from "./transport";
-import { VersionMismatchError, computeContentVersion } from "./version";
+import { SessionRejectedError, VersionMismatchError, computeContentVersion } from "./version";
 
 export interface ClientSessionConfig {
   /** The channel to the Host. The client registers its sole message handler. */
@@ -46,6 +47,8 @@ export interface ClientSessionConfig {
   /** Tuning, pinned for the whole session (hot-reload disabled online). */
   tuning: Tuning;
   friendlyFire?: boolean;
+  /** What to join as (T13.1): `player` (default) or `spectator` (wired in T13.2). */
+  role?: JoinRole;
   /** Ticks of input lead — how far ahead of the estimated host tick to predict. */
   inputDelayTicks: number;
   /** Max ticks prediction may run ahead of confirmed (bounds rollback). */
@@ -75,11 +78,22 @@ export class ClientSession {
   private nextPingId = 0;
   /** Set if the host's content fingerprint differs from ours — session refused. */
   private versionMismatched = false;
+  /** Set once the host has refused our join (any reason) — session is dead. */
+  private rejected = false;
+  /** Our content fingerprint, computed once: sent in the join + checked on hello. */
+  private contentVersion = 0;
   /** Latest pre-match lobby status from the host (null until first received). */
   private lobby: { connected: number; expected: number } | null = null;
 
   constructor(private readonly config: ClientSessionConfig) {
+    this.contentVersion = computeContentVersion(config.arena, config.tuning);
     config.transport.onMessage((data) => this.onMessage(data));
+    // Announce ourselves first (T13.1): role + our content fingerprint, so the
+    // host admits by intent and can refuse a drifted build before wasting a slot.
+    // The browser transport buffers this until the socket finishes opening.
+    config.transport.send(
+      encodeMessage({ type: "join", role: config.role ?? "player", version: this.contentVersion })
+    );
   }
 
   /** True once the Host's hello has bootstrapped the rollback controller. */
@@ -233,10 +247,28 @@ export class ClientSession {
       case "lobby":
         this.lobby = { connected: msg.connected, expected: msg.expected };
         break;
+      case "reject":
+        this.onReject(msg.reason);
+        break;
       case "input":
       case "ping":
+      case "join":
         break; // clients never receive these
     }
+  }
+
+  /**
+   * Handle the host refusing our join (T13.1). A `version` reject also flips the
+   * `versionMismatch` flag so the shell renders the same "refresh the page"
+   * message the client-side hello check produces; any reason is surfaced via
+   * `onError` and tears the session down.
+   */
+  private onReject(reason: RejectReason): void {
+    if (this.controller || this.versionMismatched || this.rejected) return;
+    this.rejected = true;
+    if (reason === "version") this.versionMismatched = true;
+    this.config.onError?.(new SessionRejectedError(reason));
+    this.config.transport.close();
   }
 
   /**
@@ -245,11 +277,10 @@ export class ClientSession {
    * impossible (S4) — otherwise bootstrap the rollback controller.
    */
   private onHello(slot: number, seed: number, playerCount: number, arenaId: string, version: number): void {
-    if (this.controller || this.versionMismatched) return; // already bootstrapped / refused
-    const localVersion = computeContentVersion(this.config.arena, this.config.tuning);
-    if (version !== localVersion) {
+    if (this.controller || this.versionMismatched || this.rejected) return; // already bootstrapped / refused
+    if (version !== this.contentVersion) {
       this.versionMismatched = true;
-      this.config.onError?.(new VersionMismatchError(localVersion, version));
+      this.config.onError?.(new VersionMismatchError(this.contentVersion, version));
       this.config.transport.close(); // refuse the drifted session
       return;
     }

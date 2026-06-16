@@ -92,6 +92,37 @@ describe("NetMessage codec (T9.1 / M2)", () => {
     }
   });
 
+  it("round-trips join messages across roles, versions, and optional reconnect tokens (T13.1)", () => {
+    for (const role of ["player", "spectator"] as const) {
+      for (const version of [0, 1, 0x9abcdef0]) {
+        const noToken: NetMessage = { type: "join", role, version };
+        expect(decodeMessage(encodeMessage(noToken))).toEqual(noToken); // no reconnectToken key
+        for (const reconnectToken of ["t", "abc-123", "tøken-日本"]) {
+          const withToken: NetMessage = { type: "join", role, version, reconnectToken };
+          expect(decodeMessage(encodeMessage(withToken))).toEqual(withToken);
+        }
+      }
+    }
+  });
+
+  it("round-trips reject messages for every reason (T13.1)", () => {
+    for (const reason of ["version", "full"] as const) {
+      const msg: NetMessage = { type: "reject", reason };
+      expect(decodeMessage(encodeMessage(msg))).toEqual(msg);
+    }
+  });
+
+  it("rejects a join with an unknown role byte, and a reject with an unknown reason byte", () => {
+    // Layout is [version varint (1 B for v1)][tag][code byte] — the code is at index 2.
+    const join = encodeMessage({ type: "join", role: "player", version: 7 });
+    join[2] = 99;
+    expect(() => decodeMessage(join)).toThrow(WireFormatError);
+
+    const reject = encodeMessage({ type: "reject", reason: "version" });
+    reject[2] = 99;
+    expect(() => decodeMessage(reject)).toThrow(WireFormatError);
+  });
+
   it("rejects a truncated hello buffer with WireFormatError", () => {
     const hello = encodeMessage({ type: "hello", slot: 1, seed: 99, playerCount: 2, version: 42, arenaId: "canopy" });
     expect(() => decodeMessage(hello.slice(0, hello.length - 2))).toThrow(WireFormatError);

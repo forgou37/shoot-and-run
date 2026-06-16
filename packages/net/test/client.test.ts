@@ -6,7 +6,7 @@ import { ClientSession } from "../src/client";
 import { decodeMessage, encodeMessage } from "../src/codec";
 import type { NetMessage } from "../src/protocol";
 import type { Transport } from "../src/transport";
-import { VersionMismatchError, computeContentVersion } from "../src/version";
+import { SessionRejectedError, VersionMismatchError, computeContentVersion } from "../src/version";
 
 /**
  * T10.1 / W3 — ClientSession unit behavior, driven through a spy Transport so the
@@ -72,12 +72,15 @@ function rightInput(): PlayerInput {
 }
 
 describe("ClientSession (T10.1 / W3)", () => {
-  it("is a no-op until the Host's hello arrives", () => {
+  it("sends a join on construct and predicts nothing until the Host's hello arrives (T13.1)", () => {
     const t = new SpyTransport();
     const s = makeSession(t);
+    // Construct announces the client first: exactly one join (role player, our version).
+    expect(t.sentMessages()).toEqual([{ type: "join", role: "player", version: VERSION }]);
     expect(s.ready).toBe(false);
     expect(s.tick(rightInput())).toEqual([]);
-    expect(t.sent).toHaveLength(0);
+    // Still just the join — no inputs predicted before bootstrap.
+    expect(t.sentMessages().filter((m) => m.type === "input")).toHaveLength(0);
   });
 
   it("bootstraps on hello and predicts forward, sending inputs tagged from tick 0", () => {
@@ -90,9 +93,9 @@ describe("ClientSession (T10.1 / W3)", () => {
     expect(s.arena).toBe("crossfire");
 
     s.tick(emptyInput());
-    // Pre-sync lead = confirmed(0) + inputDelay → predicts ticks 0..inputDelay.
-    const sentInputs = t.sentMessages();
-    expect(sentInputs.every((m) => m.type === "input")).toBe(true);
+    // Pre-sync lead = confirmed(0) + inputDelay → predicts ticks 0..inputDelay
+    // (the join sent on construct is filtered out here).
+    const sentInputs = t.sentMessages().filter((m) => m.type === "input");
     expect(sentInputs.map((m) => (m.type === "input" ? m.tick : -1))).toEqual([0, 1, 2, 3]);
     expect(s.predictedTick).toBe(INPUT_DELAY + 1);
   });
@@ -218,5 +221,44 @@ describe("ClientSession (T10.1 / W3)", () => {
     t.sent.length = 0;
     s.tick(rightInput());
     expect(t.sentMessages().some((m) => m.type === "input")).toBe(true);
+  });
+
+  it("surfaces a host reject:version as a version mismatch and tears down (T13.1)", () => {
+    const t = new SpyTransport();
+    const errors: Error[] = [];
+    const s = new ClientSession({
+      transport: t,
+      arena,
+      tuning,
+      inputDelayTicks: INPUT_DELAY,
+      maxRollbackTicks: MAX_ROLLBACK,
+      onError: (e) => errors.push(e)
+    });
+    t.deliver({ type: "reject", reason: "version" });
+    expect(s.ready).toBe(false);
+    expect(s.versionMismatch).toBe(true); // reuses the shell's "refresh the page" path
+    expect(errors[0]).toBeInstanceOf(SessionRejectedError);
+    expect(t.closed).toBe(true);
+    // A subsequent hello is ignored — the session stays refused.
+    t.deliver({ type: "hello", slot: 0, seed: 1, playerCount: 2, version: VERSION, arenaId: "crossfire" });
+    expect(s.ready).toBe(false);
+  });
+
+  it("surfaces a host reject:full and tears down, without flagging a version mismatch", () => {
+    const t = new SpyTransport();
+    const errors: Error[] = [];
+    const s = new ClientSession({
+      transport: t,
+      arena,
+      tuning,
+      inputDelayTicks: INPUT_DELAY,
+      maxRollbackTicks: MAX_ROLLBACK,
+      onError: (e) => errors.push(e)
+    });
+    t.deliver({ type: "reject", reason: "full" });
+    expect(s.versionMismatch).toBe(false);
+    expect(errors[0]).toBeInstanceOf(SessionRejectedError);
+    expect((errors[0] as SessionRejectedError).reason).toBe("full");
+    expect(t.closed).toBe(true);
   });
 });

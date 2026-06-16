@@ -7,6 +7,8 @@
  *
  * Layout: `[uvarint PROTOCOL_VERSION][uint8 tag][payload]`
  *   hello        → [uvarint slot][uvarint seed][uvarint playerCount][uvarint version][uvarint utf8Len][utf8(arenaId)]
+ *   join         → [uint8 roleCode][uvarint version][uvarint utf8Len][utf8(reconnectToken)]   (len 0 = no token)
+ *   reject       → [uint8 reasonCode]
  *   input        → [uvarint tick][input byte]
  *   authoritative→ [uvarint tick][uvarint count][count input bytes]
  *   ack          → [uvarint tick][uvarint inputTick]
@@ -49,6 +51,13 @@ const TAG_HELLO = 4;
 const TAG_PING = 5;
 const TAG_PONG = 6;
 const TAG_LOBBY = 7;
+const TAG_JOIN = 8;
+const TAG_REJECT = 9;
+
+// Small closed enums carried as a single code byte. Order is the wire contract —
+// only append, never reorder. An out-of-range code is a WireFormatError on decode.
+const JOIN_ROLES = ["player", "spectator"] as const;
+const REJECT_REASONS = ["version", "full"] as const;
 
 // --- minimal DOM-free UTF-8 (TextEncoder/Decoder are not in the no-DOM lib) ---
 
@@ -141,6 +150,19 @@ export function encodeMessage(msg: NetMessage): Uint8Array {
       for (const b of id) out.push(b);
       break;
     }
+    case "join": {
+      out.push(TAG_JOIN);
+      out.push(JOIN_ROLES.indexOf(msg.role)); // role validated by the type; codec stores its index
+      writeVarint(out, msg.version);
+      const tok = encodeUtf8(msg.reconnectToken ?? "");
+      writeVarint(out, tok.length);
+      for (const b of tok) out.push(b);
+      break;
+    }
+    case "reject":
+      out.push(TAG_REJECT);
+      out.push(REJECT_REASONS.indexOf(msg.reason));
+      break;
     case "input":
       out.push(TAG_INPUT);
       writeVarint(out, msg.tick);
@@ -211,6 +233,25 @@ export function decodeMessage(bytes: Uint8Array): NetMessage {
         version: version.value,
         arenaId
       };
+    }
+    case TAG_JOIN: {
+      if (pos >= bytes.length) throw new WireFormatError("join message missing role");
+      const role = JOIN_ROLES[bytes[pos++]!];
+      if (role === undefined) throw new WireFormatError("join message has unknown role");
+      const version = readVarint(bytes, pos);
+      const len = readVarint(bytes, version.next);
+      pos = len.next;
+      if (bytes.length - pos < len.value) throw new WireFormatError("join message truncated");
+      const token = len.value === 0 ? undefined : decodeUtf8(bytes.subarray(pos, pos + len.value));
+      return token === undefined
+        ? { type: "join", role, version: version.value }
+        : { type: "join", role, version: version.value, reconnectToken: token };
+    }
+    case TAG_REJECT: {
+      if (pos >= bytes.length) throw new WireFormatError("reject message missing reason");
+      const reason = REJECT_REASONS[bytes[pos]!];
+      if (reason === undefined) throw new WireFormatError("reject message has unknown reason");
+      return { type: "reject", reason };
     }
     case TAG_INPUT: {
       const tick = readVarint(bytes, pos);

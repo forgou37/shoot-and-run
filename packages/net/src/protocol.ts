@@ -29,6 +29,45 @@ export interface HelloMessage {
   version: number;
 }
 
+/** What a connecting client wants to be (spec 013, T13.1). `player` takes a slot
+ *  and drives the sim; `spectator` (consumed in T13.2) only watches — no slot,
+ *  never gates the start, sends no input. */
+export type JoinRole = "player" | "spectator";
+
+/**
+ * Client -> Host: the FIRST message a client sends, right after the socket opens
+ * (spec 013, T13.1). It precedes the host's `hello` so the host can assign by
+ * INTENT — player vs spectator (T13.2), or reclaiming a specific slot via
+ * `reconnectToken` (T13.3) — instead of blind connection order. It also carries
+ * the client's content `version` so the host can refuse a drifted build loudly
+ * (a `reject`) without wasting a slot, complementing the client-side check on
+ * `hello` (S4). A pre-013 client never sends this; the host's join-grace falls
+ * back to a legacy `hello` so such a client can't hang (see host-runtime).
+ */
+export interface JoinMessage {
+  type: "join";
+  role: JoinRole;
+  /** Client's content fingerprint (computeContentVersion) — host must match. */
+  version: number;
+  /** Reclaim a prior slot after a drop (T13.3); absent on a fresh join. */
+  reconnectToken?: string;
+}
+
+/** Why the host refused a `join` (spec 013, T13.1). The client surfaces a
+ *  message per reason: `version` → "refresh the page"; `full` → "game is full". */
+export type RejectReason = "version" | "full";
+
+/**
+ * Host -> Client: the join was refused (spec 013, T13.1). A typed, surfaced
+ * reason — the actionable alternative to silently closing the socket. The host
+ * does NOT close after sending it; the client closes on receipt (so the reason
+ * is never dropped by a close that races ahead of delivery).
+ */
+export interface RejectMessage {
+  type: "reject";
+  reason: RejectReason;
+}
+
 /** Client -> Host: this client's input for a target tick (the Host applies its
  *  input-delay window before stepping). On the wire: a serializeInputFrame. */
 export interface InputMessage {
@@ -96,6 +135,8 @@ export interface LobbyMessage {
 
 export type NetMessage =
   | HelloMessage
+  | JoinMessage
+  | RejectMessage
   | InputMessage
   | AuthoritativeInputsMessage
   | SnapshotMessage

@@ -48,3 +48,20 @@ export class VersionMismatchError extends Error {
     this.name = "VersionMismatchError";
   }
 }
+
+/**
+ * The host refused this client's `join` (spec 013, T13.1) — `version` (drifted
+ * build → refresh) or `full` (no slot free). Surfaced via `ClientSession.onError`
+ * so the shell can show the reason; a `version` reject also flips the session's
+ * `versionMismatch` flag so the existing shell path renders the refresh message.
+ */
+export class SessionRejectedError extends Error {
+  constructor(readonly reason: "version" | "full") {
+    super(
+      reason === "version"
+        ? "host rejected the connection: version mismatch — refresh the page"
+        : "host rejected the connection: the game is full"
+    );
+    this.name = "SessionRejectedError";
+  }
+}
