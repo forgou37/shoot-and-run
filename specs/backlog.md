@@ -20,6 +20,7 @@ Everything that is not in the current spec lives here. New ideas land here first
 | 011 | Self-hosted dedicated server (`packages/server` Node process on owner's VPS/local, reached over `wss://`) + clock/version hardening for real RTT + Title→Online join menu (single game, no room codes) — **first internet match, no Cloudflare** — **done** (T11.1–T11.4, specs/008-netcode.md § Phase 011) | 010 ✓ |
 | 012 | Player-hosted / listen-server: WebRTC DataChannel P2P, NAT traversal + TURN, host-leaving policy + **host migration** (moved from 013 — only meaningful with a player-host) | 011 |
 | 013 | Netplay polish (dedicated-server): spectators, reconnection, metrics, anti-cheat posture, lag-comp tuning — **done** (T13.1–T13.6, specs/013-netplay-polish.md; reordered ahead of 012 — these five ride the 011 dedicated host, host migration split out to 012) | 011 ✓ |
+| 017 | Lobby character select: pick your card with arrows/gamepad, exclusive per character, host places bots — **done** (specs/017-character-select.md; shell-only) | 003 ✓ |
 
 ---
 
@@ -64,7 +65,7 @@ Everything that is not in the current spec lives here. New ideas land here first
 
 ## Menus & UX (spec 003 candidates)
 
-- Title screen, lobby/character-select, arena select (reads whatever is in `content/arenas/`), pause menu, settings (volume, screen scale).
+- Arena select (reads whatever is in `content/arenas/`), settings (volume, screen scale). (Title screen + pause menu shipped in spec 003; lobby character-select in spec 017.)
 
 ## Audio
 

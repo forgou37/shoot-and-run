@@ -134,7 +134,7 @@ arcade-game/
 │        ├─ theme.ts          # pixel bitmap font: FreePixel→1-bit RetroFont atlas (buildPixelFont) + addPixelText/loadFont()
 │        ├─ scene-transition.ts # spec 015: full-viewport DOM fade-through-black overlay (transitionTo/fadeIn wrap every scene change; above canvas + DOM card/input layers)
 │        ├─ test-api.ts       # dev-only window.__testApi (getPhase + match probes + online getNetProbe[+metrics]/getConfirmedHashAt/forceDisconnect)
-│        ├─ scenes/           # BootScene (?online/?spectate/?token/?netdebug), TitleScene (LOCAL/ONLINE), LobbyScene, ArenaScene (match + pause), OnlineJoinScene (host URL + join-token fields), OnlineArenaScene (online match: spectate/reconnect/net-overlay/correction-smoothing)
+│        ├─ scenes/           # BootScene (?online/?spectate/?token/?netdebug), TitleScene (LOCAL/ONLINE), LobbyScene (character select — left/right pick your card, one human/bot per card, host dash=place bot; spec 017), ArenaScene (match + pause), OnlineJoinScene (host URL + join-token fields), OnlineArenaScene (online match: spectate/reconnect/net-overlay/correction-smoothing)
 │        ├─ net/              # spec 010: WebSocketTransport (browser Transport impl over a DOM WebSocket)
 │        ├─ input/            # InputDevice (keyboard/gamepad/bot), hot-plug manager, edge reader, players.json/tuning parsers
 │        └─ render/           # sprite renderers (archer, arrows); environment.ts — theme-aware env (THEMES table maps autotile roles→tag names + tileset/bg per theme: jungle (spec 007) / castle (spec 016); ArenaTheme + themeFromArena()); cards.ts (card image URL) + card-overlay.ts (hi-res DOM card layer over the canvas); rect debug via ?rects=1
