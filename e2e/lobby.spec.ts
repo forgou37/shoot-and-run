@@ -15,6 +15,17 @@ async function waitForPhase(
   await page.waitForFunction((p) => window.__testApi?.getPhase() === p, phase, { timeout });
 }
 
+/**
+ * Tap a key, then leave a released gap. The lobby reads rising edges per device,
+ * so two presses of the *same* action need a frame where the key is up between
+ * them or the second edge is swallowed (a human always has that gap; a test
+ * firing presses back-to-back may not).
+ */
+async function tap(page: Page, code: string): Promise<void> {
+  await page.keyboard.press(code, { delay: 80 });
+  await page.waitForTimeout(80);
+}
+
 test("lobby flow: two keyboards join, ready, countdown starts the match", async ({ page }) => {
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(String(e)));
@@ -41,6 +52,42 @@ test("lobby flow: two keyboards join, ready, countdown starts the match", async 
   );
   const players = await page.evaluate(() => window.__testApi!.getState!().players.length);
   expect(players).toBe(2);
+  expect(errors).toEqual([]);
+});
+
+test("character select: a player navigates to a non-default card and starts on it", async ({
+  page
+}) => {
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(String(e)));
+  page.on("console", (m) => {
+    if (m.type() === "error") errors.push(m.text());
+  });
+
+  await page.goto("/");
+  await page.waitForFunction(() => Boolean(window.__testApi));
+  await waitForPhase(page, "title");
+  await page.keyboard.press("Space", { delay: 90 }); // title → lobby
+  await waitForPhase(page, "lobby");
+
+  // Keyboard P1 joins (claims slot 0), then walks its selection right to slot 2
+  // (KeyD = P1 "right"). The chosen card, not the join order, decides the slot.
+  await tap(page, "KeyG");
+  await tap(page, "KeyD");
+  await tap(page, "KeyD");
+
+  // Host adds a bot (dash → first empty card = slot 0 → confirm), then readies.
+  await tap(page, "ShiftLeft");
+  await tap(page, "KeyG");
+  await tap(page, "KeyG");
+
+  await waitForPhase(page, "match");
+  // Spawns map to the chosen slots: the bot took the first empty card (slot 0)
+  // and P1 kept its navigated card (slot 2) — proving selection, not join order.
+  const slots = await page.evaluate(() =>
+    window.__testApi!.getState!().players.map((p) => p.slot)
+  );
+  expect(slots).toEqual([0, 2]);
   expect(errors).toEqual([]);
 });
 

@@ -15,6 +15,13 @@ async function waitForPhase(
   await page.waitForFunction((p) => window.__testApi?.getPhase() === p, phase, { timeout });
 }
 
+/** Tap a key with a released gap after it, so two presses of the same lobby
+ *  action register as two distinct rising edges (see lobby.spec for the why). */
+async function tap(page: Page, code: string): Promise<void> {
+  await page.keyboard.press(code, { delay: 80 });
+  await page.waitForTimeout(80);
+}
+
 /** The bot-controlled player (slot 1) moves or shoots; the keyboard player
  *  (slot 0) is idle in these tests, so any arrow_fired is the bot's. */
 async function waitForBotToAct(page: Page): Promise<void> {
@@ -66,9 +73,10 @@ test("lobby: a human adds a bot and starts the match", async ({ page }) => {
   await page.keyboard.press("Space", { delay: 90 }); // title → lobby
   await waitForPhase(page, "lobby");
 
-  await page.keyboard.press("KeyG", { delay: 90 }); // P1 (keyboard 0) joins slot 0 = controller
-  await page.keyboard.press("KeyD", { delay: 90 }); // controller right → add a bot
-  await page.keyboard.press("KeyG", { delay: 90 }); // P1 readies; bot is always ready
+  await tap(page, "KeyG"); // P1 (keyboard 0) joins slot 0 = controller/host
+  await tap(page, "ShiftLeft"); // host dash → bot placement (cursor on slot 1)
+  await tap(page, "KeyG"); // confirm: place a bot on slot 1
+  await tap(page, "KeyG"); // P1 readies; bot is always ready
 
   await waitForPhase(page, "match"); // the lobby countdown elapses
   const players = await page.evaluate(() => window.__testApi!.getState!().players.length);

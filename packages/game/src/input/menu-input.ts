@@ -12,6 +12,8 @@ export interface DeviceEdges {
   down: boolean;
   left: boolean;
   right: boolean;
+  /** dash pressed — host bot placement (spec 017). */
+  dash: boolean;
   /** pad Start pressed — open/close pause. */
   pause: boolean;
 }
@@ -47,6 +49,7 @@ export class EdgeReader {
         down: cur.down && !prev.down,
         left: cur.left && !prev.left,
         right: cur.right && !prev.right,
+        dash: cur.dash && !prev.dash,
         pause: pause && !prev.pause
       };
     });
@@ -67,6 +70,7 @@ function noEdges(device: InputDevice): DeviceEdges {
     down: false,
     left: false,
     right: false,
+    dash: false,
     pause: false
   };
 }
