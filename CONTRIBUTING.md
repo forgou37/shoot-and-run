@@ -24,7 +24,7 @@ The point of the split: the agent that writes the change is no longer the only t
 6. **Open PR.** Use the PR template. CI runs against the PR; attach test/preview evidence (screenshot for visual changes, golden-log status for sim changes).
 7. **Review → merge.** Owner reviews the diff. **Squash-merge** so `main` keeps exactly one commit per task (hard rule 5). The PR closes its issue (`Closes #N`).
 8. **`main` stays green.** A red gate blocks the next task. CI (`gate` + `e2e`) runs on every PR; a red PR is not merged. (See *Enforcement* below — this is convention, not yet server-blocked.)
-9. **Record.** Log any non-trivial choice in the CLAUDE.md Decisions Log *in the same PR*. Promote remaining ideas to `specs/backlog.md`, never into code.
+9. **Record.** Log any non-trivial choice in [docs/DECISIONS.md](docs/DECISIONS.md) *in the same PR*. Promote remaining ideas to `specs/backlog.md`, never into code.
 
 ### Enforcement
 
@@ -50,11 +50,11 @@ A change is done when **all** of these hold (this is the PR checklist):
 - [ ] Tests added or updated; sim tests run headless in Node (no Phaser in their tree).
 - [ ] Local gate green: `npm run typecheck && npm run lint && npm run check:deps && npm test && npm run build`.
 - [ ] `npm run e2e` green if the shell (`packages/game`) changed.
-- [ ] **Determinism:** the golden log is byte-identical, *or* it was regenerated with the justification logged in the Decisions Log (hard rule 4).
+- [ ] **Determinism:** the golden log is byte-identical, *or* it was regenerated with the justification logged in [docs/DECISIONS.md](docs/DECISIONS.md) (hard rule 4).
 - [ ] **Sim purity** held — no Phaser/DOM/ambient-time in `packages/sim` / `packages/bots` / `packages/net` (hard rule 2; `check:deps` enforces).
 - [ ] **Tuning is data** — no hardcoded tunable numbers; they live in `content/tuning.json` (hard rule 3).
 - [ ] `/code-review` and `/security-review` run; findings fixed or consciously deferred to the backlog.
-- [ ] CLAUDE.md updated (Decisions Log / Commands / Conventions / Project structure) in the same PR if anything non-trivial changed.
+- [ ] [docs/DECISIONS.md](docs/DECISIONS.md) appended (if a non-trivial choice was made) and CLAUDE.md updated (Commands / Conventions / Project structure) in the same PR if anything non-trivial changed.
 - [ ] PR description states what + why, links the issue, and includes test/preview evidence.
 
 ## Branching & commits

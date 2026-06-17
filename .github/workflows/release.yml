@@ -32,4 +32,4 @@ jobs:
             --generate-notes
       # Deploy is intentionally NOT wired here: the static-host target is still
       # owner-decided (Pages needs a public/paid repo; Cloudflare needs an account
-      # call — see the CLAUDE.md Decisions Log). Add the deploy step once chosen.
+      # call — see docs/DECISIONS.md). Add the deploy step once chosen.
