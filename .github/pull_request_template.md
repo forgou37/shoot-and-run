@@ -26,4 +26,4 @@ Closes #
 - [ ] Sim purity held — no Phaser/DOM/ambient-time in sim/bots/net (hard rule 2)
 - [ ] No hardcoded tunables — values in `content/tuning.json` (hard rule 3)
 - [ ] `/code-review` + `/security-review` run, findings addressed
-- [ ] CLAUDE.md updated (Decisions Log / Commands / Conventions) if a non-trivial choice was made
+- [ ] docs/DECISIONS.md appended + CLAUDE.md updated (Commands / Conventions) if a non-trivial choice was made
