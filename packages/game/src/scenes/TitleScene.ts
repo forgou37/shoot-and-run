@@ -18,10 +18,11 @@ const ITEMS: readonly MenuItem[] = [
 ];
 
 const TINT_ON = 0xf0e6c8;
-const TINT_OFF = 0x5a6079;
+const TINT_OFF = 0x9aa0b8;
 
-/** Title card with a Local / Online menu. Navigate with up/down (any device or
- *  keyboard W/S/arrows); confirm with jump/Start/Space/Enter. */
+/** Title card with a Local / Online menu over the night-castle art. Navigate
+ *  with up/down (any device or keyboard W/S/arrows); confirm with
+ *  jump/Start/Space/Enter. */
 export class TitleScene extends Phaser.Scene {
   private app!: AppContext;
   private edges!: EdgeReader;
@@ -35,6 +36,10 @@ export class TitleScene extends Phaser.Scene {
     super("title");
   }
 
+  preload(): void {
+    this.load.image("title-bg", "assets/title-bg.png");
+  }
+
   create(): void {
     this.app = getAppContext(this);
     this.edges = new EdgeReader();
@@ -43,14 +48,32 @@ export class TitleScene extends Phaser.Scene {
     this.cameras.main.setBackgroundColor("#10121f");
     fadeIn();
 
-    addPixelText(this, ARENA_WIDTH / 2, 64, "SHOOT & RUN", 28, "#f0e6c8").setOrigin(0.5);
+    // Full-screen art background (exactly ARENA_WIDTH×ARENA_HEIGHT, drawn 1:1),
+    // dimmed slightly so the light text stays legible over the bright moon/sky.
+    this.add.image(0, 0, "title-bg").setOrigin(0, 0);
+    this.add.rectangle(0, 0, ARENA_WIDTH, ARENA_HEIGHT, 0x0a0c16, 0.32).setOrigin(0, 0);
+
+    this.addShadowed(ARENA_WIDTH / 2, 56, "SHOOT & RUN", 28, "#f0e6c8");
     this.items = ITEMS.map((it, i) =>
-      addPixelText(this, ARENA_WIDTH / 2, 132 + i * 24, it.label, 14, "#ffffff").setOrigin(0.5)
+      this.addShadowed(ARENA_WIDTH / 2, 132 + i * 22, it.label, 14, "#ffffff")
     );
-    addPixelText(this, ARENA_WIDTH / 2, ARENA_HEIGHT - 16, "up/down · jump start space", 9, "#5a6079").setOrigin(
-      0.5
-    );
+    this.addShadowed(ARENA_WIDTH / 2, ARENA_HEIGHT - 14, "up/down · jump start space", 9, "#c2c8de");
     this.renderSelection();
+  }
+
+  /** A pixel label with a 1px dark drop shadow behind it, for contrast on the
+   *  art. The pixel font only renders crisply at integer scales (addPixelText
+   *  snaps to those), so labels stay at the font's native sizes — no sub-cell
+   *  shrinking, which mangles the 1-bit glyphs. Returns the foreground. */
+  private addShadowed(
+    x: number,
+    y: number,
+    text: string,
+    sizePx: number,
+    color: string
+  ): Phaser.GameObjects.BitmapText {
+    addPixelText(this, x + 1, y + 1, text, sizePx, "#000000").setOrigin(0.5).setAlpha(0.6);
+    return addPixelText(this, x, y, text, sizePx, color).setOrigin(0.5);
   }
 
   override update(): void {

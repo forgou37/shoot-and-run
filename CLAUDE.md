@@ -85,10 +85,11 @@ arcade-game/
 ├─ specs/
 │  ├─ 000-baseline.md
 │  └─ backlog.md
-├─ assets/                    # Aseprite sprite sources (art pass, spec 006); jungle-tiles/jungle-bg (spec 007) + castle-tiles/castle-bg (spec 016, dark-stone-castle theme); cards/ (cards.aseprite+cards.png — combined lobby character-card sheet, kept out of the export:art glob); fonts/ (FreePixel.ttf, the shell's pixel font)
+├─ assets/                    # Aseprite sprite sources (art pass, spec 006); jungle-tiles/jungle-bg (spec 007) + castle-tiles/castle-bg (spec 016, dark-stone-castle theme); cards/ (cards.aseprite+cards.png — combined lobby character-card sheet, kept out of the export:art glob); backgrounds/ (title.png — raw title-screen art source for export:title-bg); fonts/ (FreePixel.ttf, the shell's pixel font)
 ├─ scripts/
 │  ├─ export-art.mjs          # assets/*.aseprite → packages/game/public/assets/ (sprite atlases)
-│  └─ slice-cards.mjs         # assets/cards/cards.png → public/assets/card_<name>.png (per-slot master cards)
+│  ├─ slice-cards.mjs         # assets/cards/cards.png → public/assets/card_<name>.png (per-slot master cards)
+│  └─ make-title-bg.mjs       # assets/backgrounds/title.png → public/assets/title-bg.png (watermark-infill + cover-crop + area-average down to 320×240; pure Node)
 
 ├─ content/
 │  ├─ arenas/arena-001.json   # "crossfire" — sim-test + golden-log fixture
@@ -125,7 +126,7 @@ arcade-game/
 │  └─ game/
 │     ├─ index.html
 │     ├─ vite.config.ts
-│     ├─ public/assets/       # committed sprite atlases (PNG + Aseprite JSON), via export:art; card_*.png (master-res lobby cards, drawn by the hi-res DOM overlay), via export:cards
+│     ├─ public/assets/       # committed sprite atlases (PNG + Aseprite JSON), via export:art; card_*.png (master-res lobby cards, drawn by the hi-res DOM overlay), via export:cards; title-bg.png (320×240 title-screen background), via export:title-bg
 │     └─ src/
 │        ├─ main.ts           # Phaser game: registers boot→title→lobby→arena(+online) scenes
 │        ├─ loop.ts           # accumulator + interpolation driver
@@ -134,7 +135,7 @@ arcade-game/
 │        ├─ theme.ts          # pixel bitmap font: FreePixel→1-bit RetroFont atlas (buildPixelFont) + addPixelText/loadFont()
 │        ├─ scene-transition.ts # spec 015: full-viewport DOM fade-through-black overlay (transitionTo/fadeIn wrap every scene change; above canvas + DOM card/input layers)
 │        ├─ test-api.ts       # dev-only window.__testApi (getPhase + match probes + online getNetProbe[+metrics]/getConfirmedHashAt/forceDisconnect)
-│        ├─ scenes/           # BootScene (?online/?spectate/?token/?netdebug), TitleScene (LOCAL/ONLINE), LobbyScene (character select — left/right pick your card, one human/bot per card, host dash=place bot; spec 017), ArenaScene (match + pause), OnlineJoinScene (host URL + join-token fields), OnlineArenaScene (online match: spectate/reconnect/net-overlay/correction-smoothing)
+│        ├─ scenes/           # BootScene (?online/?spectate/?token/?netdebug), TitleScene (LOCAL/ONLINE menu over the title-bg art), LobbyScene (character select — left/right pick your card, one human/bot per card, host dash=place bot; spec 017), ArenaScene (match + pause), OnlineJoinScene (host URL + join-token fields), OnlineArenaScene (online match: spectate/reconnect/net-overlay/correction-smoothing)
 │        ├─ net/              # spec 010: WebSocketTransport (browser Transport impl over a DOM WebSocket)
 │        ├─ input/            # InputDevice (keyboard/gamepad/bot), hot-plug manager, edge reader, players.json/tuning parsers
 │        └─ render/           # sprite renderers (archer, arrows); environment.ts — theme-aware env (THEMES table maps autotile roles→tag names + tileset/bg per theme: jungle (spec 007) / castle (spec 016); ArenaTheme + themeFromArena()); cards.ts (card image URL) + card-overlay.ts (hi-res DOM card layer over the canvas); rect debug via ?rects=1
@@ -158,6 +159,7 @@ Keep this section current as scripts change.
 | `npm run check:deps` | dependency-cruiser: fails if `packages/sim/src`, `packages/bots/src`, `packages/net/src`, or `packages/server/src` imports outside its allowed set (bots + net may import the sim; sim imports nothing; server may import net + sim + ws + Node, never Phaser/game). Analyzes type-only edges (`tsPreCompilationDeps`) so the sim↔net types seam is enforced |
 | `npm run export:art` | Re-export all `assets/*.aseprite` → `packages/game/public/assets/` atlases (needs local Aseprite; exports are committed, CI never runs this) |
 | `npm run export:cards` | Slice `assets/cards/cards.png` → per-slot `public/assets/card_<name>.png` master cards (pure Node, no Aseprite; outputs committed) |
+| `npm run export:title-bg` | Build `assets/backgrounds/title.png` → `public/assets/title-bg.png` (watermark-infill + cover-crop + area-average to 320×240; pure Node, output committed) |
 
 Notes: `packages/sim` has no build step — its package `exports` points at `src/index.ts` and Vite/Vitest consume the TS source directly. Sim's tsconfig has no DOM lib, so `window`/`document` fail to typecheck there (first line of defense for hard rule 2).
 
