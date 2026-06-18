@@ -17,9 +17,12 @@ interface ShellTestApi {
       quiver: string[];
       alive: boolean;
       grounded: boolean;
+      wallCharges: number;
     }[];
     arrows: unknown[];
     chests: { x: number; y: number }[];
+    boosters: { id: number; x: number; y: number; contents: string; spawnTick: number }[];
+    walls: { id: number; ownerSlot: number; x: number; y: number; rotation: number }[];
   };
   getArenaName(): string;
   getEvents(): { tick: number; type: string }[];

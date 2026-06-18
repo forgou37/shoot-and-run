@@ -132,6 +132,46 @@ test("render: floating boosters + shield bubble draw without errors (spec 014)",
   expect(errors).toEqual([]);
 });
 
+test("art: the booster atlas ships the wall icon frame (spec 018)", async ({ page }) => {
+  await boot(page);
+  const atlas = await page.evaluate(
+    async () =>
+      (await (await fetch("/assets/boosters.json")).json()) as {
+        frames: Record<string, unknown>;
+        meta: { frameTags: { name: string }[] };
+      }
+  );
+  expect(atlas.meta.frameTags.map((t) => t.name)).toContain("wall");
+  expect(Object.keys(atlas.frames)).toHaveLength(7); // 6 spec-014 boosters + wall
+});
+
+test("build (spec 018): a real build keypress deploys a wall that renders", async ({ page }) => {
+  const errors = await boot(page);
+  // Grant slot 0 one build charge, then press its build key (KeyR = profile 0).
+  await page.evaluate(() => {
+    const api = window.__testApi!;
+    api.setManual(true);
+    api.getState().players[0]!.wallCharges = 1;
+  });
+  await page.keyboard.down("KeyR");
+  await page.evaluate(() => window.__testApi!.stepTicks(2)); // edge builds on the first tick
+  await page.keyboard.up("KeyR");
+
+  const result = await page.evaluate(() => ({
+    walls: window.__testApi!.getState().walls.length,
+    charges: window.__testApi!.getState().players[0]!.wallCharges,
+    built: window.__testApi!.getEvents().some((e) => e.type === "wall_built")
+  }));
+  expect(result.built).toBe(true); // device → sim glue produced the event
+  expect(result.walls).toBe(1);
+  expect(result.charges).toBe(0); // edge-triggered: one press spends one charge
+
+  // Render a frame with the wall present — the WallRenderer draws without errors.
+  await page.evaluate(() => window.__testApi!.stepTicks(0));
+  await page.waitForTimeout(50);
+  expect(errors).toEqual([]);
+});
+
 test("stability: ~10s under rAF ticks the sim at ~60 Hz with no errors", async ({ page }) => {
   const errors = await boot(page);
   const t0 = await page.evaluate(() => window.__testApi!.getState().tick);
