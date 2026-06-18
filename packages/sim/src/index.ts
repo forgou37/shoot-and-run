@@ -11,7 +11,7 @@ import { updateRound } from "./round";
 import { deepClone, type SimSnapshot } from "./snapshot";
 import type { SimState } from "./state";
 import { deriveTuning, type DerivedTuning, type Tuning } from "./tuning";
-import { handleBuilding } from "./wall";
+import { handleBuilding, resolveWallCollisions } from "./wall";
 
 export const SIM_VERSION = "0.0.0";
 
@@ -134,10 +134,11 @@ function buildSim(
           if (!p.alive) return;
           updatePlayer(p, inputs[i]!, arena, tuning);
         });
+        resolveWallCollisions(state.players, state.walls);
         checkStomps(state.players, tuning, events, state.tick, friendlyFire);
         handleBuilding(state.players, inputs, state.walls, allocId, tuning, events, state.tick);
         handleShooting(state.players, inputs, state.arrows, allocId, tuning, events, state.tick);
-        updateArrows(arena, state.arrows, tuning, events, state.tick);
+        updateArrows(arena, state.arrows, state.walls, tuning, events, state.tick);
         checkArrowKills(state.arrows, state.players, events, state.tick, friendlyFire);
         resolveExplosions(state.arrows, state.players, tuning, events, state.tick, friendlyFire);
         state.arrows = collectPickups(

@@ -3,8 +3,35 @@ import type { ArenaData } from "../src/arena";
 import { WALL_HALF_LENGTH, WALL_HALF_THICKNESS } from "../src/constants";
 import { createSim, type Sim, type SimEvent } from "../src/index";
 import { emptyInput, type PlayerInput } from "../src/input";
-import { wallRotation } from "../src/wall";
-import { FLAT_ARENA, TEST_TUNING } from "./fixtures";
+import { ARENA_HEIGHT, ARENA_WIDTH } from "../src/arena";
+import { wrapDelta } from "../src/physics";
+import type { PlayerState, WallState } from "../src/state";
+import { wallAxes, wallRotation } from "../src/wall";
+import { DROP_ARENA, FLAT_ARENA, TEST_TUNING } from "./fixtures";
+
+/** Positive ⇒ the player's AABB overlaps the wall's box by that many px (the
+ *  minimum-overlap SAT axis); ≤ 0 ⇒ separated. Mirrors the sim's collider. */
+function wallPenetration(p: PlayerState, w: WallState): number {
+  const ax = wallAxes(w.rotation);
+  const dx = wrapDelta(w.x - p.x, ARENA_WIDTH);
+  const dy = wrapDelta(w.y - p.y, ARENA_HEIGHT);
+  const axes = [
+    { x: 1, y: 0 },
+    { x: 0, y: 1 },
+    { x: ax.ux, y: ax.uy },
+    { x: ax.vx, y: ax.vy }
+  ];
+  let minOverlap = Infinity;
+  for (const a of axes) {
+    const rP = 6 * Math.abs(a.x) + 6 * Math.abs(a.y);
+    const rW =
+      WALL_HALF_LENGTH * Math.abs(ax.ux * a.x + ax.uy * a.y) +
+      WALL_HALF_THICKNESS * Math.abs(ax.vx * a.x + ax.vy * a.y);
+    const overlap = rP + rW - Math.abs(dx * a.x + dy * a.y);
+    if (overlap < minOverlap) minOverlap = overlap;
+  }
+  return minOverlap;
+}
 
 const SQRT1_2 = Math.SQRT1_2;
 const DIST = TEST_TUNING.wallBuildDistancePx; // 16
@@ -179,5 +206,173 @@ describe("wall building (spec 018 T18.1)", () => {
     expect(sim.state.walls).toHaveLength(0);
     expect(sim.state.players.every((p) => p.wallCharges === 0)).toBe(true);
     expect(sim.state.players.every((p) => p.prevBuildHeld === false)).toBe(true);
+  });
+});
+
+let nextWallId = 9000;
+function addWall(sim: Sim, x: number, y: number, rotation: 0 | 45 | 90 | 135, ownerSlot = 0): WallState {
+  const wall: WallState = { id: nextWallId++, ownerSlot, x, y, rotation };
+  sim.state.walls.push(wall);
+  return wall;
+}
+
+describe("wall collision (spec 018 T18.2)", () => {
+  it("a vertical wall blocks a player walking into it (no pass-through)", () => {
+    const sim = makeSim();
+    const p0 = sim.state.players[0]!;
+    const wallX = p0.x + 20;
+    addWall(sim, wallX, p0.y, 0); // vertical: thin face toward the player
+    const wallLeftFace = wallX - WALL_HALF_THICKNESS; // 2px half-thickness
+
+    let maxX = p0.x;
+    for (let i = 0; i < 60; i++) {
+      sim.step([inp({ right: true }), emptyInput()]);
+      maxX = Math.max(maxX, p0.x);
+    }
+    // The player's right edge can never cross the wall's near face.
+    expect(maxX + 6).toBeLessThanOrEqual(wallLeftFace + 0.001);
+    // ...and it pressed up against it (not stuck far away).
+    expect(p0.x + 6).toBeGreaterThan(wallLeftFace - 1);
+  });
+
+  it("a dashing player never tunnels through a wall", () => {
+    const sim = makeSim();
+    const p0 = sim.state.players[0]!;
+    const wallX = p0.x + 22; // within one dash's reach
+    addWall(sim, wallX, p0.y, 0);
+    const wallRightFace = wallX + WALL_HALF_THICKNESS;
+
+    let crossed = false;
+    // Dash (facing right by default), then keep holding right for a while.
+    sim.step([inp({ dash: true }), emptyInput()]);
+    for (let i = 0; i < 40; i++) {
+      sim.step([inp({ right: true }), emptyInput()]);
+      if (p0.x - 6 > wallRightFace) crossed = true; // player left edge past far face
+    }
+    expect(crossed).toBe(false);
+    expect(p0.x + 6).toBeLessThanOrEqual(wallX - WALL_HALF_THICKNESS + 0.001);
+  });
+
+  it("a horizontal wall is a platform: a falling player lands and stands on it", () => {
+    const sim = createSim({
+      arena: DROP_ARENA, // P0 spawns high at (160, 40)
+      tuning: TEST_TUNING,
+      players: [{ slot: 0 }, { slot: 1 }],
+      seed: 3
+    });
+    const p0 = sim.state.players[0]!;
+    const wallY = 120;
+    addWall(sim, 160, wallY, 90); // horizontal plank under the falling player
+    const restY = wallY - WALL_HALF_THICKNESS - 6; // wall top minus player half-height
+
+    let everGrounded = false;
+    for (let i = 0; i < 120; i++) {
+      sim.step([emptyInput(), emptyInput()]);
+      if (p0.grounded) everGrounded = true;
+    }
+    expect(everGrounded).toBe(true);
+    expect(p0.y).toBeCloseTo(restY, 0); // resting on the plank, ~112
+    expect(p0.y).toBeLessThan(150); // never fell through to the floor (~202)
+  });
+
+  it("walls are solid: a dashing player never penetrates any orientation", () => {
+    // The hard guarantee (A18.5) is that an alive player never ends a tick
+    // overlapping a wall — at any reachable speed, for every orientation. (A short
+    // diagonal plank can be slid around its ends; that's not a tunnel.)
+    for (const rotation of [0, 45, 90, 135] as const) {
+      const sim = makeSim();
+      const p0 = sim.state.players[0]!;
+      const w = addWall(sim, p0.x + 18, p0.y, rotation);
+      let maxPen = -Infinity;
+      sim.step([inp({ dash: true }), emptyInput()]);
+      maxPen = Math.max(maxPen, wallPenetration(p0, w));
+      for (let i = 0; i < 40; i++) {
+        sim.step([inp({ right: true, dash: i % 12 === 0 }), emptyInput()]);
+        maxPen = Math.max(maxPen, wallPenetration(p0, w));
+      }
+      expect(maxPen).toBeLessThan(0.01); // never left overlapping
+    }
+  });
+
+  it("a normal arrow dissolves the wall and sticks where it was", () => {
+    const sim = makeSim();
+    const p0 = sim.state.players[0]!;
+    const wall = addWall(sim, p0.x + 60, p0.y, 0);
+
+    const events: SimEvent[] = [];
+    for (let t = 0; t < 60; t++) {
+      events.push(...sim.step([inp({ shoot: t === 0 }), emptyInput()]));
+      if (events.some((e) => e.type === "wall_destroyed")) break;
+    }
+    const destroyed = events.find((e) => e.type === "wall_destroyed");
+    expect(destroyed).toMatchObject({ type: "wall_destroyed", wallId: wall.id });
+    expect(sim.state.walls).toHaveLength(0);
+    // The arrow stopped (became a pickup) rather than flying on to a victim.
+    expect(events.some((e) => e.type === "arrow_stuck")).toBe(true);
+    expect(sim.state.arrows.every((a) => a.phase === "stuck")).toBe(true);
+  });
+
+  it("a bomb arrow dissolves the wall and explodes", () => {
+    const sim = makeSim();
+    const p0 = sim.state.players[0]!;
+    p0.quiver.unshift("bomb");
+    const wall = addWall(sim, p0.x + 60, p0.y, 0);
+
+    const events: SimEvent[] = [];
+    for (let t = 0; t < 60; t++) {
+      events.push(...sim.step([inp({ shoot: t === 0 }), emptyInput()]));
+      if (events.some((e) => e.type === "arrow_exploded")) break;
+    }
+    expect(events.find((e) => e.type === "wall_destroyed")).toMatchObject({ wallId: wall.id });
+    expect(events.some((e) => e.type === "arrow_exploded")).toBe(true);
+    expect(sim.state.walls).toHaveLength(0);
+  });
+
+  it("a wall shields the player behind it (the arrow never reaches them)", () => {
+    const sim = makeSim();
+    const p0 = sim.state.players[0]!;
+    const p1 = sim.state.players[1]!;
+    p1.x = p0.x + 60; // bring the victim into range, in front of P0
+    p1.y = p0.y;
+    addWall(sim, p0.x + 30, p0.y, 0); // wall between them
+
+    const events: SimEvent[] = [];
+    for (let t = 0; t < 60; t++) {
+      events.push(...sim.step([inp({ shoot: t === 0 }), emptyInput()]));
+      if (events.some((e) => e.type === "arrow_stuck")) break;
+    }
+    expect(events.some((e) => e.type === "wall_destroyed")).toBe(true);
+    expect(events.some((e) => e.type === "player_killed")).toBe(false);
+    expect(p1.alive).toBe(true);
+  });
+
+  it("is neutral: a wall stops the builder's own arrow too", () => {
+    const sim = makeSim();
+    const p0 = sim.state.players[0]!;
+    const wall = addWall(sim, p0.x + 50, p0.y, 0, 0); // owned by P0
+
+    const events: SimEvent[] = [];
+    for (let t = 0; t < 60; t++) {
+      events.push(...sim.step([inp({ shoot: t === 0 }), emptyInput()]));
+      if (events.some((e) => e.type === "wall_destroyed")) break;
+    }
+    expect(events.find((e) => e.type === "wall_destroyed")).toMatchObject({ wallId: wall.id });
+    expect(sim.state.walls).toHaveLength(0);
+  });
+
+  it("one wall stops exactly one arrow; later arrows pass through where it was", () => {
+    const sim = makeSim();
+    const p0 = sim.state.players[0]!;
+    sim.state.players[1]!.y = 100; // move the victim off the shot line
+    addWall(sim, p0.x + 70, p0.y, 0);
+
+    const events: SimEvent[] = [];
+    // Two shoot edges (tick 0 and tick 2) → two arrows down the same lane.
+    for (let t = 0; t < 80; t++) {
+      events.push(...sim.step([inp({ shoot: t === 0 || t === 2 }), emptyInput()]));
+    }
+    expect(events.filter((e) => e.type === "arrow_fired").length).toBe(2);
+    expect(events.filter((e) => e.type === "wall_destroyed").length).toBe(1);
+    expect(sim.state.walls).toHaveLength(0);
   });
 });
