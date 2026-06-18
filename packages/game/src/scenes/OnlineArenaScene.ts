@@ -24,6 +24,7 @@ import { addPixelText } from "../theme";
 import { ArcherRenderer, loadArcherAssets } from "../render/archer";
 import { ArrowRenderer, loadArrowAssets } from "../render/arrows";
 import { BoosterRenderer, loadBoosterAssets } from "../render/boosters";
+import { WallRenderer } from "../render/walls";
 import { EnvironmentRenderer, loadEnvironmentAssets } from "../render/environment";
 import { WebSocketTransport } from "../net/websocket-transport";
 
@@ -74,6 +75,7 @@ export class OnlineArenaScene extends Phaser.Scene {
   private archers!: ArcherRenderer;
   private arrowSprites!: ArrowRenderer;
   private boosters!: BoosterRenderer;
+  private wallSprites!: WallRenderer;
   private statusText!: Phaser.GameObjects.BitmapText;
   private overlayText!: Phaser.GameObjects.BitmapText;
   private scoreTexts: Phaser.GameObjects.BitmapText[] = [];
@@ -148,6 +150,7 @@ export class OnlineArenaScene extends Phaser.Scene {
       this.juice.boosterBobPeriodMs,
       this.tuning.boosterFloatOffsetPx
     );
+    this.wallSprites = new WallRenderer(this);
 
     // Local input: the first keyboard profile in this tab (each tab/machine has
     // its own). Online play binds one device per browser, not a lobby roster.
@@ -295,6 +298,7 @@ export class OnlineArenaScene extends Phaser.Scene {
     if (events.length > 0) {
       this.archers.onEvents(events);
       this.boosters.onEvents(events);
+      this.wallSprites.onEvents(events, (slot) => this.tintForSlot(slot));
     }
     this.recordConfirmedHash();
   };
@@ -333,6 +337,9 @@ export class OnlineArenaScene extends Phaser.Scene {
     this.boosters.beginFrame();
     for (const b of state.boosters) this.boosters.draw(b);
     this.boosters.endFrame();
+    this.wallSprites.beginFrame();
+    for (const w of state.walls) this.wallSprites.draw(w, this.tintForSlot(w.ownerSlot));
+    this.wallSprites.endFrame();
 
     // A rollback/resync between frames teleports predicted positions; smooth it
     // over correctionSmoothingMs so only large jumps ease (normal motion is untouched).
@@ -398,6 +405,12 @@ export class OnlineArenaScene extends Phaser.Scene {
         .setDepth(20)
     );
     this.hudBuilt = true;
+  }
+
+  /** Phaser color int for a slot's roster color (white if unknown). */
+  private tintForSlot(slot: number): number {
+    const hex = this.slots.find((s) => s.slot === slot)?.color ?? "#ffffff";
+    return Phaser.Display.Color.HexStringToColor(hex).color;
   }
 
   private endLabel(state: Readonly<SimState>): string {
