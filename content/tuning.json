@@ -29,6 +29,8 @@
   "maxChestsAlive": 2,
   "specialArrowsPerChest": 3,
   "boosterFloatOffsetPx": 20,
+  "wallBuildDistancePx": 16,
+  "wallChargesPerPickup": 1,
   "input": {
     "stickDeadzone": 0.25
   },

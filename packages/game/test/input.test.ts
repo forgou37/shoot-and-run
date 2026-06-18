@@ -68,7 +68,7 @@ describe("parsePlayersConfig (spec 003 reshape)", () => {
 describe("readStandardGamepad (standard mapping, A3.2)", () => {
   it("ignores stick movement within the deadzone", () => {
     const input = readStandardGamepad(fakePad({ axes: [0.2, -0.2] }), DEADZONE);
-    expect(input).toEqual({ left: false, right: false, up: false, down: false, jump: false, shoot: false, dash: false });
+    expect(input).toEqual({ left: false, right: false, up: false, down: false, jump: false, shoot: false, dash: false, build: false });
   });
 
   it("maps the left stick past the deadzone to directions", () => {
@@ -103,7 +103,7 @@ describe("GamepadDevice", () => {
 
     pad = null; // unplugged
     expect(dev.connected).toBe(false);
-    expect(dev.sample()).toEqual({ left: false, right: false, up: false, down: false, jump: false, shoot: false, dash: false });
+    expect(dev.sample()).toEqual({ left: false, right: false, up: false, down: false, jump: false, shoot: false, dash: false, build: false });
     expect(dev.pausePressed()).toBe(false);
   });
 });

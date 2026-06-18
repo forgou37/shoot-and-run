@@ -21,7 +21,8 @@ function input(bits: number): PlayerInput {
     down: (bits & 8) !== 0,
     jump: (bits & 16) !== 0,
     shoot: (bits & 32) !== 0,
-    dash: (bits & 64) !== 0
+    dash: (bits & 64) !== 0,
+    build: (bits & 128) !== 0
   };
 }
 
@@ -39,7 +40,7 @@ function makeSnapshot() {
 describe("NetMessage codec (T9.1 / M2)", () => {
   it("round-trips input messages across tick varint sizes and all input bits", () => {
     for (const tick of [0, 1, 200, 100_000]) {
-      for (let bits = 0; bits < 128; bits += 17) {
+      for (let bits = 0; bits < 256; bits += 17) {
         const msg: NetMessage = { type: "input", tick, input: input(bits) };
         expect(decodeMessage(encodeMessage(msg))).toEqual(msg);
       }

@@ -1,7 +1,7 @@
 import { ARENA_HEIGHT, ARENA_WIDTH, TILE_SIZE, type ArenaData } from "./arena";
 import { ARROW_HALF_LONG, ARROW_HALF_SHORT, DT, PICKUP_RADIUS } from "./constants";
 import type { SimEvent } from "./events";
-import type { PlayerInput } from "./input";
+import { aimDir, type PlayerInput } from "./input";
 import { moveAxisX, moveAxisY, solidAt, wrapDelta, wrapMod } from "./physics";
 import type { ArrowState, PlayerState } from "./state";
 import type { DerivedTuning } from "./tuning";
@@ -34,18 +34,7 @@ export function handleShooting(
     p.prevShootHeld = input.shoot;
     if (!pressed || p.quiver.length === 0) return;
 
-    const dirX = (input.right ? 1 : 0) - (input.left ? 1 : 0);
-    const dirY = (input.down ? 1 : 0) - (input.up ? 1 : 0);
-    let nx: number;
-    let ny: number;
-    if (dirX === 0 && dirY === 0) {
-      nx = p.facing;
-      ny = 0;
-    } else {
-      const len = Math.sqrt(dirX * dirX + dirY * dirY);
-      nx = dirX / len;
-      ny = dirY / len;
-    }
+    const { nx, ny } = aimDir(input, p.facing);
 
     const kind = p.quiver.shift()!;
     const arrow: ArrowState = {

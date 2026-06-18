@@ -71,7 +71,9 @@ export function readStandardGamepad(pad: GamepadLike, deadzone: number): PlayerI
     down: ay > deadzone || btn(pad, 13),
     jump: btn(pad, 0),
     shoot: btn(pad, 2),
-    dash: btn(pad, 5)
+    dash: btn(pad, 5),
+    // Real binding wired in T18.3 (PR B); placeholder so PR A compiles.
+    build: false
   };
 }
 

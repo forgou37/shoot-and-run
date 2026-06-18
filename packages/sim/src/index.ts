@@ -11,6 +11,7 @@ import { updateRound } from "./round";
 import { deepClone, type SimSnapshot } from "./snapshot";
 import type { SimState } from "./state";
 import { deriveTuning, type DerivedTuning, type Tuning } from "./tuning";
+import { handleBuilding } from "./wall";
 
 export const SIM_VERSION = "0.0.0";
 
@@ -27,6 +28,7 @@ export * from "./rng";
 export * from "./round";
 export * from "./state";
 export * from "./tuning";
+export * from "./wall";
 export * from "./wire";
 export type { SimSnapshot } from "./snapshot";
 
@@ -133,6 +135,7 @@ function buildSim(
           updatePlayer(p, inputs[i]!, arena, tuning);
         });
         checkStomps(state.players, tuning, events, state.tick, friendlyFire);
+        handleBuilding(state.players, inputs, state.walls, allocId, tuning, events, state.tick);
         handleShooting(state.players, inputs, state.arrows, allocId, tuning, events, state.tick);
         updateArrows(arena, state.arrows, tuning, events, state.tick);
         checkArrowKills(state.arrows, state.players, events, state.tick, friendlyFire);
@@ -223,12 +226,15 @@ export function createSim(config: SimConfig): Sim {
         jumpCutAvailable: false,
         invisibleTicksLeft: 0,
         flightTicksLeft: 0,
-        shielded: false
+        shielded: false,
+        wallCharges: 0,
+        prevBuildHeld: false
       };
     }),
     arrows: [],
     chests: [],
     boosters: [],
+    walls: [],
     nextChestTick: tuning.chestIntervalTicks
   };
 

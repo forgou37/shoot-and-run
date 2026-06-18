@@ -49,6 +49,10 @@ export interface Tuning {
   specialArrowsPerChest: number;
   /** Height a popped booster floats above its chest's spot before pickup (px). */
   boosterFloatOffsetPx: number;
+  /** Distance in front of the player center where a built wall spawns (spec 018, px). */
+  wallBuildDistancePx: number;
+  /** Build charges granted per "wall" booster collected (integer ≥ 1, spec 018). */
+  wallChargesPerPickup: number;
 }
 
 const TUNING_KEYS: readonly (keyof Tuning)[] = [
@@ -81,7 +85,9 @@ const TUNING_KEYS: readonly (keyof Tuning)[] = [
   "chestIntervalMs",
   "maxChestsAlive",
   "specialArrowsPerChest",
-  "boosterFloatOffsetPx"
+  "boosterFloatOffsetPx",
+  "wallBuildDistancePx",
+  "wallChargesPerPickup"
 ];
 
 /** Validate untyped data (parsed content/tuning.json) as a Tuning object. */
@@ -111,6 +117,9 @@ export function parseTuning(data: unknown): Tuning {
   }
   if (!Number.isInteger(t.specialArrowsPerChest) || t.specialArrowsPerChest < 1) {
     throw new Error("tuning: specialArrowsPerChest must be a positive integer");
+  }
+  if (!Number.isInteger(t.wallChargesPerPickup) || t.wallChargesPerPickup < 1) {
+    throw new Error("tuning: wallChargesPerPickup must be a positive integer");
   }
   return TUNING_KEYS.reduce((acc, key) => {
     acc[key] = t[key];

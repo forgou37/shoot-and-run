@@ -126,6 +126,9 @@ function assertSnapshotShape(snap: unknown): asserts snap is SimSnapshot {
   if (!Array.isArray(st["players"])) {
     throw new WireFormatError("snapshot.state.players is not an array");
   }
+  if (!Array.isArray(st["walls"])) {
+    throw new WireFormatError("snapshot.state.walls is not an array");
+  }
   if (typeof s["rngState"] !== "number" || !Number.isFinite(s["rngState"])) {
     throw new WireFormatError("snapshot.rngState is not a finite number");
   }

@@ -48,6 +48,7 @@ export function updateRound(
     state.arrows = [];
     state.chests = [];
     state.boosters = [];
+    state.walls = [];
     state.nextChestTick = state.tick + t.chestIntervalTicks;
     state.round.phase = "running";
     state.round.winner = null;
@@ -139,4 +140,6 @@ function resetPlayer(p: PlayerState, index: number, arena: ArenaData, t: Derived
   p.invisibleTicksLeft = 0;
   p.flightTicksLeft = 0;
   p.shielded = false;
+  p.wallCharges = 0;
+  p.prevBuildHeld = false;
 }

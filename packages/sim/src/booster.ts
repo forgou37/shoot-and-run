@@ -87,5 +87,8 @@ export function grant(p: PlayerState, contents: ChestContents, t: DerivedTuning)
     case "shield":
       p.shielded = true;
       break;
+    case "wall":
+      p.wallCharges += t.wallChargesPerPickup;
+      break;
   }
 }

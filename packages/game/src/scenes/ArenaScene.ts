@@ -53,7 +53,8 @@ const BOOSTER_COLORS: Record<ChestContents, number> = {
   bounce: 0xffd740,
   invisibility: 0xcdbfe8,
   flight: 0xe8f2ff,
-  shield: 0x4fa3e8
+  shield: 0x4fa3e8,
+  wall: 0x9e9e9e
 };
 const SHIELD_RING_COLOR = 0x9fd8ff;
 const PAUSE_OPTIONS = ["Resume", "To Lobby", "To Title"] as const;

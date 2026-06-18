@@ -33,7 +33,9 @@ export const TEST_TUNING: Tuning = {
   chestIntervalMs: 2000, // 120 ticks: fast for tests
   maxChestsAlive: 2,
   specialArrowsPerChest: 3,
-  boosterFloatOffsetPx: 20
+  boosterFloatOffsetPx: 20,
+  wallBuildDistancePx: 16,
+  wallChargesPerPickup: 1
 };
 
 /** Flat full-width floor (rows 13–14), nothing else. For wrap-X tests. */

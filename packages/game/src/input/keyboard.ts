@@ -38,7 +38,9 @@ export class KeyboardInput {
       down: this.isDown(keys.down),
       jump: this.isDown(keys.jump),
       shoot: this.isDown(keys.shoot),
-      dash: this.isDown(keys.dash)
+      dash: this.isDown(keys.dash),
+      // Real binding wired in T18.3 (PR B); placeholder so PR A compiles.
+      build: false
     };
   }
 
