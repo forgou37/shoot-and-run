@@ -112,7 +112,8 @@ arcade-game/
 │  │  │  ├─ round.ts          # round + match state machine
 │  │  │  ├─ events.ts         # SimEvent definitions
 │  │  │  ├─ snapshot.ts       # spec 008: SimSnapshot + DOM-free deepClone (snapshot/restore)
-│  │  │  └─ wire.ts           # spec 008: 1-byte input + versioned input-frame (de)serialization
+│  │  │  ├─ wire.ts           # spec 008: 1-byte input + versioned input-frame (de)serialization (build = bit 7, PROTOCOL_VERSION 2)
+│  │  │  └─ wall.ts           # spec 018: build action + WallState placement (shared aimDir); neutral wall collision (player SAT pushout + arrow swept dissolve)
 │  │  └─ test/
 │  │     └─ determinism.test.ts
 │  ├─ bots/                   # spec 004: heuristic AI archers (pure, headless, imports only sim)
@@ -138,7 +139,7 @@ arcade-game/
 │        ├─ scenes/           # BootScene (?online/?spectate/?token/?netdebug), TitleScene (LOCAL/ONLINE menu over the title-bg art), LobbyScene (character select — left/right pick your card, one human/bot per card, host dash=place bot; spec 017), ArenaScene (match + pause), OnlineJoinScene (host URL + join-token fields), OnlineArenaScene (online match: spectate/reconnect/net-overlay/correction-smoothing)
 │        ├─ net/              # spec 010: WebSocketTransport (browser Transport impl over a DOM WebSocket)
 │        ├─ input/            # InputDevice (keyboard/gamepad/bot), hot-plug manager, edge reader, players.json/tuning parsers
-│        └─ render/           # sprite renderers (archer, arrows); environment.ts — theme-aware env (THEMES table maps autotile roles→tag names + tileset/bg per theme: jungle (spec 007) / castle (spec 016); ArenaTheme + themeFromArena()); cards.ts (card image URL) + card-overlay.ts (hi-res DOM card layer over the canvas); rect debug via ?rects=1
+│        └─ render/           # sprite renderers (archer, arrows); walls.ts (spec 018: owner-tinted plank, angle from wallAxes, build/dissolve FX); environment.ts — theme-aware env (THEMES table maps autotile roles→tag names + tileset/bg per theme: jungle (spec 007) / castle (spec 016); ArenaTheme + themeFromArena()); cards.ts (card image URL) + card-overlay.ts (hi-res DOM card layer over the canvas); rect debug via ?rects=1
 └─ packages/pipeline/         # FUTURE (spec 005): evals + generator. Do not create yet. (bots → packages/bots spec 004; net → packages/net spec 008)
 ```
 
