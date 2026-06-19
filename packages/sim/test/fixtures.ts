@@ -41,7 +41,9 @@ export const TEST_TUNING: Tuning = {
   noHomoRadiusPx: 16,
   blackoutDurationMs: 10000,
   phaseDurationMs: 1000,
-  phaseCharges: 3
+  phaseCharges: 3,
+  seekerSpeedFactor: 0.75,
+  seekerArrowsPerPickup: 3
 };
 
 /** Flat full-width floor (rows 13–14), nothing else. For wrap-X tests. */

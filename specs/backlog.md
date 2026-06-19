@@ -22,6 +22,7 @@ Everything that is not in the current spec lives here. New ideas land here first
 | 013 | Netplay polish (dedicated-server): spectators, reconnection, metrics, anti-cheat posture, lag-comp tuning — **done** (T13.1–T13.6, specs/013-netplay-polish.md; reordered ahead of 012 — these five ride the 011 dedicated host, host migration split out to 012) | 011 ✓ |
 | 017 | Lobby character select: pick your card with arrows/gamepad, exclusive per character, host places bots — **done** (specs/017-character-select.md; shell-only) | 003 ✓ |
 | 018 | Build-wall booster: a chest item grants a build charge; a dedicated button deploys a neutral solid 4×24 wall in front, dissolved when shot — **done** (specs/018-build-wall.md; first entity-vs-entity solid) | 002 ✓ |
+| 019 | Character abilities: one `"character"` chest item, ability keyed to the collector's slot — Maks blackout / Igor B "No homo" shield / Lyosha seeker arrows / Igor Sh phase-dodge — **done** (specs/019-character-abilities.md; 4 PRs on a shared foundation) | 002 ✓, 017 ✓ |
 
 ---
 
@@ -39,6 +40,7 @@ Everything that is not in the current spec lives here. New ideas land here first
 ## Power-ups (invisibility + flight moved to spec 002)
 
 - Speed boost, mirror/decoy, shield. All original takes, all parameters in content files.
+- Character-ability follow-ups (deferred from spec 019): seeker turn-rate limiting / dodgeable homing + alternate targeting modes (019 is perfect nearest-enemy lock); bots using abilities (a bot Igor Sh won't phase — bots sample `build:false`; bot Maks/Igor B still benefit from on-pickup effects, bot Lyosha still fires seekers); per-character balancing/rarity + weighted chest tables to bias the character drop rate; Igor Sh phase also dodging stomps/bombs (019: arrows only); blackout persisting past Maks's death / spectator-view handling; ability SFX, cooldowns, stacking rules.
 
 ## Game feel / juice (hitstop, shake, kill/stick particles moved to spec 001)
 

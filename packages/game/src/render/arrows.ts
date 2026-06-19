@@ -20,7 +20,8 @@ const DEPTH_ARROWS = 1;
 const KIND_TINTS: Partial<Record<ArrowKind, number>> = {
   bomb: 0xff5252,
   laser: 0x40e8ff,
-  bounce: 0xffd740
+  bounce: 0xffd740,
+  seeker: 0xff5dd2
 };
 
 export function loadArrowAssets(loader: Phaser.Loader.LoaderPlugin): void {

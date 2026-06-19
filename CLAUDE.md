@@ -106,8 +106,8 @@ arcade-game/
 │  │  │  ├─ arena.ts          # arena types + schema validation
 │  │  │  ├─ physics.ts        # wrap-aware AABB vs tile grid
 │  │  │  ├─ player.ts         # movement, jump, stomp, power-up timers
-│  │  │  ├─ arrow.ts          # flight per kind, sticking, pickup
-│  │  │  ├─ kills.ts          # arrow/stomp/bomb kills
+│  │  │  ├─ arrow.ts          # flight per kind, sticking, pickup; spec 019: steerSeekers homing for "seeker" arrows (gravity-skipped, nearest-enemy lock)
+│  │  │  ├─ kills.ts          # arrow/stomp/bomb kills; spec 019 character kill-gates: protectedByNoHomo (Igor B) + phaseTicksLeft arrow pass-through (Igor Sh)
 │  │  │  ├─ chest.ts          # chest spawn/open (PRNG-driven)
 │  │  │  ├─ round.ts          # round + match state machine
 │  │  │  ├─ events.ts         # SimEvent definitions
