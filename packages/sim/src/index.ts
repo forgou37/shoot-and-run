@@ -1,5 +1,5 @@
 import type { ArenaData } from "./arena";
-import { collectPickups, handleShooting, updateArrows } from "./arrow";
+import { collectPickups, handleShooting, steerSeekers, updateArrows } from "./arrow";
 import { updateBoosters } from "./booster";
 import { updateChests } from "./chest";
 import type { SimEvent } from "./events";
@@ -140,6 +140,7 @@ function buildSim(
         handlePhase(state.players, inputs, tuning);
         handleBuilding(state.players, inputs, state.walls, allocId, tuning, events, state.tick);
         handleShooting(state.players, inputs, state.arrows, allocId, tuning, events, state.tick);
+        steerSeekers(state.arrows, state.players, tuning, friendlyFire);
         updateArrows(arena, state.arrows, state.walls, tuning, events, state.tick);
         checkArrowKills(state.arrows, state.players, tuning, events, state.tick, friendlyFire);
         resolveExplosions(state.arrows, state.players, tuning, events, state.tick, friendlyFire);

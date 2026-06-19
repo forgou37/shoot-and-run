@@ -12,6 +12,8 @@ import {
   MUZZLE_IMMUNITY_TICKS,
   protectedByNoHomo,
   resolveExplosions,
+  steerSeekers,
+  updateArrows,
   type ArrowState,
   type BoosterState,
   type PlayerInput,
@@ -77,6 +79,7 @@ function mkArrow(over: Partial<ArrowState> = {}): ArrowState {
     bouncesLeft: 0,
     pierced: false,
     insideSolid: false,
+    targetSlot: -1,
     x: 100,
     y: 100,
     vx: 100,
@@ -106,7 +109,9 @@ describe("character booster — grant dispatch (spec 019)", () => {
 
     const lyosha = mkPlayer(2);
     grant(lyosha, "character", DERIVED);
-    expect(lyosha.noHomoTicksLeft).toBe(0); // filled in by Phase 4
+    expect(lyosha.quiver.filter((k) => k === "seeker")).toHaveLength(DERIVED.seekerArrowsPerPickup);
+    expect(lyosha.quiver.slice(0, DERIVED.seekerArrowsPerPickup).every((k) => k === "seeker")).toBe(true); // pushed to the front
+    expect(lyosha.noHomoTicksLeft).toBe(0);
     expect(lyosha.blackoutTicksLeft).toBe(0);
     expect(lyosha.phaseChargesLeft).toBe(0);
   });
@@ -319,5 +324,82 @@ describe("phase / 'Where am I?' (spec 019, Igor Sh / slot 3)", () => {
     expect(sim.state.round.phase).toBe("running");
     expect(sim.state.players[1]!.phaseTicksLeft).toBe(0);
     expect(sim.state.players[1]!.phaseChargesLeft).toBe(0);
+  });
+});
+
+describe("seeker arrows / 'Get things done' (spec 019, Lyosha / slot 2)", () => {
+  const SEEKER_SPEED = DERIVED.arrowSpeed * DERIVED.seekerSpeedFactor;
+
+  it("acquires the nearest alive enemy and points straight at it", () => {
+    const owner = mkPlayer(2, { x: 100, y: 100 });
+    const near = mkPlayer(0, { x: 130, y: 100 });
+    const far = mkPlayer(1, { x: 250, y: 100 });
+    const seeker = mkArrow({ kind: "seeker", ownerSlot: 2, x: 100, y: 100, vx: 1, vy: 1 });
+    steerSeekers([seeker], [near, far, owner], DERIVED, true);
+    expect(seeker.targetSlot).toBe(0); // nearest, owner skipped
+    expect(seeker.vx).toBeCloseTo(SEEKER_SPEED); // dead right at seeker speed
+    expect(seeker.vy).toBeCloseTo(0);
+  });
+
+  it("breaks ties toward the lowest slot", () => {
+    const hi = mkPlayer(3, { x: 120, y: 100 }); // 20px
+    const lo = mkPlayer(1, { x: 80, y: 100 }); // 20px, other side
+    const seeker = mkArrow({ kind: "seeker", ownerSlot: 2, x: 100, y: 100 });
+    steerSeekers([seeker], [hi, lo], DERIVED, true);
+    expect(seeker.targetSlot).toBe(1);
+  });
+
+  it("re-steers toward a moving target each tick", () => {
+    const owner = mkPlayer(2, { x: 160, y: 100 });
+    const enemy = mkPlayer(0, { x: 200, y: 100 });
+    const seeker = mkArrow({ kind: "seeker", ownerSlot: 2, x: 160, y: 100, vx: SEEKER_SPEED, vy: 0 });
+    steerSeekers([seeker], [enemy, owner], DERIVED, true);
+    expect(seeker.vy).toBeCloseTo(0); // target dead right
+    enemy.y = 40; // target jumps up
+    steerSeekers([seeker], [enemy, owner], DERIVED, true);
+    expect(seeker.vy).toBeLessThan(0); // now angled upward toward it
+  });
+
+  it("with no valid target (FF teammate only) keeps its heading", () => {
+    const owner = mkPlayer(2, { x: 100, y: 100, team: 0 });
+    const mate = mkPlayer(0, { x: 130, y: 100, team: 0 });
+    const seeker = mkArrow({ kind: "seeker", ownerSlot: 2, x: 100, y: 100, vx: 5, vy: 7 });
+    steerSeekers([seeker], [owner, mate], DERIVED, false);
+    expect(seeker.targetSlot).toBe(-1);
+    expect(seeker.vx).toBe(5); // unchanged
+    expect(seeker.vy).toBe(7);
+  });
+
+  it("flies without gravity (a normal arrow falls under the same step)", () => {
+    const seeker = mkArrow({ kind: "seeker", x: 160, y: 50, vx: 100, vy: 0 });
+    const normal = mkArrow({ kind: "normal", x: 160, y: 50, vx: 100, vy: 0 });
+    updateArrows(FLAT_ARENA, [seeker], [], DERIVED, [], 0);
+    updateArrows(FLAT_ARENA, [normal], [], DERIVED, [], 0);
+    expect(seeker.vy).toBe(0); // gravity skipped
+    expect(normal.vy).toBeGreaterThan(0); // gravity applied
+  });
+
+  it("kills on contact like a normal arrow, then sticks as a collectable seeker", () => {
+    const enemy = mkPlayer(0, { x: 100, y: 100 });
+    const seeker = mkArrow({ kind: "seeker", ownerSlot: 2, x: 100, y: 100 });
+    const events: SimEvent[] = [];
+    checkArrowKills([seeker], [enemy], DERIVED, events, farPastImmunity, true);
+    expect(enemy.alive).toBe(false);
+    expect(events.find((e) => e.type === "player_killed")).toMatchObject({ cause: "arrow" });
+    expect(seeker.phase).toBe("stuck");
+    expect(seeker.kind).toBe("seeker"); // kind preserved → picks up as a seeker
+  });
+
+  it("a fired seeker homes deterministically per seed", () => {
+    const scenario = (): SimEvent[] => {
+      const sim = createSim({ arena: FLAT_ARENA, tuning: TEST_TUNING, players: [{ slot: 2 }, { slot: 0 }], seed: 11 });
+      grant(sim.state.players[0]!, "character", DERIVED); // Lyosha gets seekers
+      const ev: SimEvent[] = [];
+      for (let t = 0; t < 80 && sim.state.round.phase === "running"; t++) {
+        ev.push(...sim.step([{ ...emptyInput(), shoot: t === 0 }, { ...emptyInput(), left: true }]));
+      }
+      return ev;
+    };
+    expect(JSON.stringify(scenario())).toBe(JSON.stringify(scenario()));
   });
 });

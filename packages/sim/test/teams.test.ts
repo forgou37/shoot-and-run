@@ -88,6 +88,7 @@ function mkArrow(over: Partial<ArrowState> = {}): ArrowState {
     bouncesLeft: 0,
     pierced: false,
     insideSolid: false,
+    targetSlot: -1,
     x: 0,
     y: 0,
     vx: 100,

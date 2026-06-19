@@ -66,6 +66,10 @@ export interface Tuning {
   phaseDurationMs: number;
   /** Phase charges granted per character booster (integer ≥ 1, spec 019). */
   phaseCharges: number;
+  /** Seeker arrow speed as a fraction of arrowSpeed (spec 019, Lyosha). */
+  seekerSpeedFactor: number;
+  /** Seeker arrows granted per character booster (integer ≥ 1, spec 019). */
+  seekerArrowsPerPickup: number;
 }
 
 const TUNING_KEYS: readonly (keyof Tuning)[] = [
@@ -106,7 +110,9 @@ const TUNING_KEYS: readonly (keyof Tuning)[] = [
   "noHomoRadiusPx",
   "blackoutDurationMs",
   "phaseDurationMs",
-  "phaseCharges"
+  "phaseCharges",
+  "seekerSpeedFactor",
+  "seekerArrowsPerPickup"
 ];
 
 /** Validate untyped data (parsed content/tuning.json) as a Tuning object. */
@@ -145,6 +151,12 @@ export function parseTuning(data: unknown): Tuning {
   }
   if (!Number.isInteger(t.phaseCharges) || t.phaseCharges < 1) {
     throw new Error("tuning: phaseCharges must be a positive integer");
+  }
+  if (t.seekerSpeedFactor <= 0) {
+    throw new Error("tuning: seekerSpeedFactor must be positive");
+  }
+  if (!Number.isInteger(t.seekerArrowsPerPickup) || t.seekerArrowsPerPickup < 1) {
+    throw new Error("tuning: seekerArrowsPerPickup must be a positive integer");
   }
   return TUNING_KEYS.reduce((acc, key) => {
     acc[key] = t[key];

@@ -47,6 +47,7 @@ export function handleShooting(
       bouncesLeft: kind === "bounce" ? t.arrowBounceCount : 0,
       pierced: false,
       insideSolid: false,
+      targetSlot: -1, // seekers acquire in steerSeekers; inert for other kinds
       x: p.x,
       y: p.y,
       vx: nx * t.arrowSpeed,
@@ -55,6 +56,53 @@ export function handleShooting(
     arrows.push(arrow);
     events.push({ tick, type: "arrow_fired", playerSlot: p.slot, arrowId: arrow.id, kind });
   });
+}
+
+/**
+ * Auto-aim steering for seeker arrows (spec 019, Lyosha). Runs before
+ * updateArrows. Each flying seeker re-acquires the nearest alive, non-spared
+ * enemy (wrap-aware distance; ties break to the lowest slot; the owner and
+ * friendly-fire-spared teammates are skipped) and is pointed straight at it at
+ * arrowSpeed×seekerSpeedFactor — perfect lock, no turn-rate cap (backlog). With
+ * no valid target the seeker keeps its current heading. Pure: position/velocity
+ * only, deterministic from state + tuning.
+ */
+export function steerSeekers(
+  arrows: ArrowState[],
+  players: PlayerState[],
+  t: DerivedTuning,
+  friendlyFire: boolean
+): void {
+  for (const a of arrows) {
+    if (a.phase !== "flying" || a.kind !== "seeker") continue;
+    const ownerTeam = players.find((p) => p.slot === a.ownerSlot)?.team ?? null;
+
+    let target: PlayerState | null = null;
+    let bestDistSq = Infinity;
+    for (const p of players) {
+      if (!p.alive || p.slot === a.ownerSlot) continue;
+      if (!friendlyFire && ownerTeam !== null && ownerTeam === p.team) continue; // teammate
+      const dx = wrapDelta(p.x - a.x, ARENA_WIDTH);
+      const dy = wrapDelta(p.y - a.y, ARENA_HEIGHT);
+      const distSq = dx * dx + dy * dy;
+      if (distSq < bestDistSq || (distSq === bestDistSq && target !== null && p.slot < target.slot)) {
+        bestDistSq = distSq;
+        target = p;
+      }
+    }
+
+    a.targetSlot = target ? target.slot : -1;
+    if (target) {
+      const dx = wrapDelta(target.x - a.x, ARENA_WIDTH);
+      const dy = wrapDelta(target.y - a.y, ARENA_HEIGHT);
+      const len = Math.hypot(dx, dy);
+      if (len > 0) {
+        const speed = t.arrowSpeed * t.seekerSpeedFactor;
+        a.vx = (dx / len) * speed;
+        a.vy = (dy / len) * speed;
+      }
+    }
+  }
 }
 
 /** What an arrow's move this tick resolves to, before any event is emitted. */
@@ -126,7 +174,8 @@ export function updateArrows(
  *  returns the tile outcome without emitting (the caller emits after the wall
  *  sweep so wall and tile outcomes can't double-fire). */
 function moveBallistic(a: ArrowState, arena: ArenaData, t: DerivedTuning): ArrowOutcome {
-  a.vy += t.arrowGravity * DT;
+  // Seekers fly straight along their steered heading — no gravity (spec 019).
+  if (a.kind !== "seeker") a.vy += t.arrowGravity * DT;
   const { hw, hh } = arrowHalves(a);
 
   const movedX = moveAxisX(arena, a.x, a.y, hw, hh, a.vx * DT);

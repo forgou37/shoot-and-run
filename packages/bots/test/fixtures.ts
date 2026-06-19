@@ -66,6 +66,7 @@ export function mkArrow(over: Partial<ArrowState> & Pick<ArrowState, "id" | "x" 
     bouncesLeft: 0,
     pierced: false,
     insideSolid: false,
+    targetSlot: -1,
     vx: 0,
     vy: 0,
     ...over

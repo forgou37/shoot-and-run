@@ -96,6 +96,7 @@ describe("arrows (spec 000 T0.6)", () => {
       bouncesLeft: 0,
       pierced: false,
       insideSolid: false,
+      targetSlot: -1,
       x: player.x,
       y: player.y,
       vx: 0,

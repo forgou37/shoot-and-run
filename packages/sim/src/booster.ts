@@ -98,9 +98,9 @@ export function grant(p: PlayerState, contents: ChestContents, t: DerivedTuning)
 
 /**
  * Character-specific ability grant (spec 019). The ability is keyed to the
- * player's `slot` (== character identity from players.json: 0 Maks, 1 Igor B,
- * 2 Lyosha, 3 Igor Sh). Phase 1 implements only Igor B's "No homo" shield;
- * slots 0/2/3 are filled in by later phases and are no-ops until then.
+ * player's `slot` (== character identity from players.json: 0 Maks "Blackout",
+ * 1 Igor B "No homo", 2 Lyosha seeker arrows, 3 Igor Sh "Where am I?" phasing).
+ * Any other slot is a no-op.
  */
 function grantCharacterAbility(p: PlayerState, t: DerivedTuning): void {
   switch (p.slot) {
@@ -110,9 +110,11 @@ function grantCharacterAbility(p: PlayerState, t: DerivedTuning): void {
     case 1: // Igor B — "No homo": a timed stomp/point-blank shield.
       p.noHomoTicksLeft = t.noHomoTicks;
       break;
+    case 2: // Lyosha — "Get things done": auto-aim seeker arrows, fired front-first.
+      for (let i = 0; i < t.seekerArrowsPerPickup; i++) p.quiver.unshift("seeker");
+      break;
     case 3: // Igor Sh — "Where am I?": charges of arrow-phasing, spent on build.
       p.phaseChargesLeft += t.phaseCharges;
       break;
-    // case 2 (Lyosha seekers): later phase.
   }
 }

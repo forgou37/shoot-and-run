@@ -1,4 +1,4 @@
-export type ArrowKind = "normal" | "bomb" | "laser" | "bounce";
+export type ArrowKind = "normal" | "bomb" | "laser" | "bounce" | "seeker";
 
 export interface PlayerState {
   /** Deterministic entity id, assigned by the sim's id counter at init. */
@@ -82,6 +82,10 @@ export interface ArrowState {
   pierced: boolean;
   /** Laser kind: currently inside the first obstacle. */
   insideSolid: boolean;
+  /** Seeker kind (spec 019, Lyosha): slot of the locked target, or -1 when
+   *  unacquired/none. Re-acquired each tick in steerSeekers; ignored for every
+   *  other kind. */
+  targetSlot: number;
   x: number;
   y: number;
   vx: number;
@@ -101,7 +105,9 @@ export interface RoundState {
 }
 
 export type ChestContents =
-  | Exclude<ArrowKind, "normal">
+  // "seeker" is excluded: seeker arrows only enter Lyosha's quiver via the
+  // character grant, never as a standalone chest drop (spec 019).
+  | Exclude<ArrowKind, "normal" | "seeker">
   | "invisibility"
   | "flight"
   | "shield"
