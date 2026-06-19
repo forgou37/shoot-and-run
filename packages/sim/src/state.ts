@@ -47,6 +47,10 @@ export interface PlayerState {
   wallCharges: number;
   /** Previous tick's build-held state, for press edge detection. */
   prevBuildHeld: boolean;
+  /** "No homo" shield timer (spec 019, Igor B / slot 1): while > 0 the player is
+   *  immune to stomps and to any kill whose source is within noHomoRadiusPx. A
+   *  timer, not a charge — blocking does not consume it. Cleared on death/reset. */
+  noHomoTicksLeft: number;
 }
 
 /** "exploding" and "spent" are transient within a tick: a contacted bomb is
@@ -90,7 +94,8 @@ export type ChestContents =
   | "invisibility"
   | "flight"
   | "shield"
-  | "wall";
+  | "wall"
+  | "character";
 
 export interface ChestState {
   id: number;

@@ -32,6 +32,8 @@
   "wallBuildDistancePx": 16,
   "wallChargesPerPickup": 1,
   "wallLifetimeMs": 30000,
+  "noHomoDurationMs": 30000,
+  "noHomoRadiusPx": 16,
   "input": {
     "stickDeadzone": 0.25
   },

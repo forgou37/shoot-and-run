@@ -36,6 +36,26 @@ export function consumeShield(victim: PlayerState, events: SimEvent[], tick: num
 }
 
 /**
+ * "No homo" gate (spec 019, Igor B). While the victim's shield timer is active,
+ * an arrow/bomb kill is negated when its source is within noHomoRadiusPx of the
+ * victim (wrap-aware). Stomp immunity is handled inline at the stomp site (a
+ * stomp is always negated while active). Unlike the shield charge, this is a
+ * timer — blocking does not consume it. Returns false when inactive, so every
+ * non-Igor-B path stays byte-identical.
+ */
+export function protectedByNoHomo(
+  victim: PlayerState,
+  sourceX: number,
+  sourceY: number,
+  t: DerivedTuning
+): boolean {
+  if (victim.noHomoTicksLeft <= 0) return false;
+  const dx = wrapDelta(victim.x - sourceX, ARENA_WIDTH);
+  const dy = wrapDelta(victim.y - sourceY, ARENA_HEIGHT);
+  return dx * dx + dy * dy <= t.noHomoRadiusPx * t.noHomoRadiusPx;
+}
+
+/**
  * Flying-arrow-vs-player overlap, wrap-aware. One hit kills. The shooter is
  * immune to their own arrow for MUZZLE_IMMUNITY_TICKS after firing (the arrow
  * spawns at the player's center); after that, your own arrow can kill you.
@@ -44,6 +64,7 @@ export function consumeShield(victim: PlayerState, events: SimEvent[], tick: num
 export function checkArrowKills(
   arrows: ArrowState[],
   players: PlayerState[],
+  t: DerivedTuning,
   events: SimEvent[],
   tick: number,
   friendlyFire: boolean
@@ -66,9 +87,10 @@ export function checkArrowKills(
           a.phase = "exploding";
           break;
         }
-        // A shield absorbs this hit: the victim survives, but the arrow still
-        // sticks (becomes a pickup) / a laser still pierces, exactly as a kill.
-        if (!consumeShield(p, events, tick)) {
+        // "No homo" negates a point-blank hit without consuming anything;
+        // otherwise a shield absorbs it. Either way the victim survives but the
+        // arrow still sticks (becomes a pickup) / a laser still pierces.
+        if (!protectedByNoHomo(p, a.x, a.y, t) && !consumeShield(p, events, tick)) {
           p.alive = false;
           events.push({
             tick,
@@ -114,7 +136,9 @@ export function resolveExplosions(
       const dx = wrapDelta(p.x - a.x, ARENA_WIDTH);
       const dy = wrapDelta(p.y - a.y, ARENA_HEIGHT);
       if (dx * dx + dy * dy <= t.bombRadiusPx * t.bombRadiusPx) {
-        if (consumeShield(p, events, tick)) continue; // shield eats the blast
+        // "No homo" negates an adjacent blast (≤ radius) without consuming;
+        // otherwise a shield eats it.
+        if (protectedByNoHomo(p, a.x, a.y, t) || consumeShield(p, events, tick)) continue;
         p.alive = false;
         events.push({
           tick,
@@ -160,7 +184,13 @@ export function checkStomps(
       // become platforms. The kill + event are skipped; the bounce still fires.
       // A shield likewise absorbs the stomp (no kill) but the attacker still
       // bounces off the shielded head.
-      if (!spared(friendlyFire, attacker.team, victim.team) && !consumeShield(victim, events, tick)) {
+      // "No homo" makes the victim immune to stomps (always, while active); it
+      // takes precedence over the shield so the charge is preserved.
+      if (
+        !spared(friendlyFire, attacker.team, victim.team) &&
+        victim.noHomoTicksLeft <= 0 &&
+        !consumeShield(victim, events, tick)
+      ) {
         victim.alive = false;
         events.push({
           tick,

@@ -142,4 +142,5 @@ function resetPlayer(p: PlayerState, index: number, arena: ArenaData, t: Derived
   p.shielded = false;
   p.wallCharges = 0;
   p.prevBuildHeld = false;
+  p.noHomoTicksLeft = 0;
 }
