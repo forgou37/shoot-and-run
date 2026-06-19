@@ -50,7 +50,8 @@ const ARROW_COLORS: Record<ArrowKind, number> = {
   normal: 0xf0e6c8,
   bomb: 0xff5252,
   laser: 0x40e8ff,
-  bounce: 0xffd740
+  bounce: 0xffd740,
+  seeker: 0xff5dd2
 };
 /** ?rects=1 fallback colors for floating boosters, by content. */
 const BOOSTER_COLORS: Record<ChestContents, number> = {
