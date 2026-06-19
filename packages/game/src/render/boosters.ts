@@ -24,6 +24,52 @@ const BOOSTERS_KEY = "boosters";
 const BOOSTERS_DATA_KEY = "boosters-data";
 /** Shield-bubble texture (loaded here, drawn by the archer renderer). */
 export const SHIELD_BUBBLE_KEY = "shield-bubble";
+/** Character-booster icon — generated procedurally (spec 019), no atlas frame. */
+export const CHARACTER_ICON_KEY = "character-icon";
+/** "No homo" over-head indicator — generated procedurally (spec 019), drawn by
+ *  the archer renderer above an Igor-B player while the shield is active. */
+export const NO_HOMO_KEY = "no-homo-indicator";
+
+/** Rainbow ramp shared by the character icon + the no-homo indicator. */
+const RAINBOW = [0xff3b3b, 0xff9e2c, 0xffe14d, 0x49d65a, 0x3aa0ff, 0x9b4dff] as const;
+
+/** Build the 16×16 character-booster icon (a rainbow bullseye orb) once. */
+export function ensureCharacterIcon(scene: Phaser.Scene): void {
+  if (scene.textures.exists(CHARACTER_ICON_KEY)) return;
+  const g = scene.make.graphics();
+  for (let i = 0; i < RAINBOW.length; i++) {
+    g.fillStyle(RAINBOW[i]!, 1);
+    g.fillCircle(8, 8, 7.5 - i * 1.1);
+  }
+  g.fillStyle(0xffffff, 1);
+  g.fillCircle(8, 8, 1.4); // bright core
+  g.generateTexture(CHARACTER_ICON_KEY, 16, 16);
+  g.destroy();
+}
+
+/** Build the 16×16 "No homo" indicator (rainbow-striped circle with a dark ring
+ *  and a diagonal bar, per the owner reference) once. */
+export function ensureNoHomoTexture(scene: Phaser.Scene): void {
+  if (scene.textures.exists(NO_HOMO_KEY)) return;
+  const g = scene.make.graphics();
+  const cx = 8;
+  const cy = 8;
+  const r = 7;
+  const bandH = (2 * r) / RAINBOW.length;
+  for (let i = 0; i < RAINBOW.length; i++) {
+    const top = cy - r + i * bandH;
+    const midDy = top + bandH / 2 - cy;
+    const halfW = Math.sqrt(Math.max(0, r * r - midDy * midDy));
+    g.fillStyle(RAINBOW[i]!, 1);
+    g.fillRect(cx - halfW, top, halfW * 2, bandH + 0.5);
+  }
+  g.lineStyle(1.5, 0x1b1b1b, 1);
+  g.strokeCircle(cx, cy, r); // dark ring hides the blocky stripe edges
+  g.lineStyle(2, 0x1b1b1b, 1);
+  g.lineBetween(cx + r - 1, cy - r + 1, cx - r + 1, cy + r - 1); // diagonal slash
+  g.generateTexture(NO_HOMO_KEY, 16, 16);
+  g.destroy();
+}
 const SPRITE_SIZE = 16;
 /** Main image + up to 3 wrap mirrors, parity with the other renderers. */
 const QUAD = 4;
@@ -65,6 +111,7 @@ export class BoosterRenderer {
       if (frame) this.frameFor.set(tag.name as ChestContents, frame);
     }
     this.openedChestFrame = chestFrameName(scene, "opened");
+    ensureCharacterIcon(scene); // "character" has no atlas frame — generated
 
     // 1-color particle texture, shared with ArenaScene's "px" if present.
     if (!scene.textures.exists("px")) {
@@ -92,8 +139,9 @@ export class BoosterRenderer {
 
   /** Draw one booster: opened-chest deco at the base + bobbing icon overhead. */
   draw(b: BoosterState): void {
+    const isChar = b.contents === "character";
     const frame = this.frameFor.get(b.contents);
-    if (!frame) return;
+    if (!isChar && !frame) return;
     this.drawnThisFrame.add(b.id);
 
     // Opened chest sits at the original chest spot (floatOffset below the icon),
@@ -118,7 +166,12 @@ export class BoosterRenderer {
     let quad = this.icons.get(b.id);
     if (!quad) {
       quad = Array.from({ length: QUAD }, () =>
-        this.scene.add.image(0, 0, BOOSTERS_KEY, frame).setDepth(DEPTH_BOOSTER).setVisible(false)
+        (isChar
+          ? this.scene.add.image(0, 0, CHARACTER_ICON_KEY)
+          : this.scene.add.image(0, 0, BOOSTERS_KEY, frame)
+        )
+          .setDepth(DEPTH_BOOSTER)
+          .setVisible(false)
       );
       this.icons.set(b.id, quad);
     }

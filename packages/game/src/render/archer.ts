@@ -7,7 +7,7 @@ import {
   type SimEvent
 } from "@shoot-and-run/sim";
 import { orderedFrameNames, type AsepriteData } from "./aseprite-data";
-import { SHIELD_BUBBLE_KEY } from "./boosters";
+import { ensureNoHomoTexture, NO_HOMO_KEY, SHIELD_BUBBLE_KEY } from "./boosters";
 import { archerAtlasKey } from "./cards";
 import type { PlayerInput } from "@shoot-and-run/sim";
 
@@ -139,6 +139,8 @@ export class ArcherRenderer {
   private readonly shieldPos: { x: number; y: number }[] = [];
   private shieldPop: Phaser.GameObjects.Image | null = null;
   private readonly hasShieldTex: boolean;
+  /** Per-slot "No homo" indicator wrap-quad (spec 019), floated above the head. */
+  private readonly noHomoQuads: Phaser.GameObjects.Image[][] = [];
 
   constructor(
     private readonly scene: Phaser.Scene,
@@ -185,6 +187,16 @@ export class ArcherRenderer {
         .image(0, 0, SHIELD_BUBBLE_KEY)
         .setDepth(DEPTH_SHIELD)
         .setVisible(false);
+    }
+
+    // "No homo" indicator (spec 019): one wrap-quad per slot, generated icon.
+    ensureNoHomoTexture(scene);
+    for (let i = 0; i < slots.length; i++) {
+      this.noHomoQuads.push(
+        Array.from({ length: QUAD }, () =>
+          scene.add.image(0, 0, NO_HOMO_KEY).setDepth(DEPTH_SHIELD).setVisible(false)
+        )
+      );
     }
   }
 
@@ -238,6 +250,35 @@ export class ArcherRenderer {
     }
 
     this.updateShield(p, slotIndex, x, y);
+    this.updateNoHomo(p, slotIndex, x, y);
+  }
+
+  /** "No homo" indicator floating just above an Igor-B player's head while the
+   *  shield timer is active (spec 019). Wrap-mirrored like the shield bubble. */
+  private updateNoHomo(p: PlayerState, slotIndex: number, x: number, y: number): void {
+    const quad = this.noHomoQuads[slotIndex]!;
+    if (!p.alive || p.noHomoTicksLeft <= 0) {
+      for (const img of quad) img.setVisible(false);
+      return;
+    }
+    const bob = Math.sin(this.scene.time.now / 200) * 1;
+    const cy = y - PLAYER_HEIGHT / 2 - 8 + bob; // float above the head
+    const HALF = 8;
+    const xs = x - HALF < 0 ? [ARENA_WIDTH] : x + HALF > ARENA_WIDTH ? [-ARENA_WIDTH] : [];
+    const ys = cy - HALF < 0 ? [ARENA_HEIGHT] : cy + HALF > ARENA_HEIGHT ? [-ARENA_HEIGHT] : [];
+    const offsets: [number, number][] = [[0, 0]];
+    for (const dx of xs) offsets.push([dx, 0]);
+    for (const dy of ys) offsets.push([0, dy]);
+    if (xs.length > 0 && ys.length > 0) offsets.push([xs[0]!, ys[0]!]);
+    for (let m = 0; m < QUAD; m++) {
+      const img = quad[m]!;
+      const off = offsets[m];
+      if (!off) {
+        img.setVisible(false);
+        continue;
+      }
+      img.setPosition(x + off[0], cy + off[1]).setVisible(true);
+    }
   }
 
   /** Shield bubble around a `shielded`, alive player — a gentle alpha pulse,
