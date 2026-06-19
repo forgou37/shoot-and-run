@@ -25,7 +25,7 @@ const BOOSTERS_DATA_KEY = "boosters-data";
 /** Shield-bubble texture (loaded here, drawn by the archer renderer). */
 export const SHIELD_BUBBLE_KEY = "shield-bubble";
 /** Character-booster icon — generated procedurally (spec 019), no atlas frame. */
-export const CHARACTER_ICON_KEY = "character-icon";
+const CHARACTER_ICON_KEY = "character-icon";
 /** "No homo" over-head indicator — generated procedurally (spec 019), drawn by
  *  the archer renderer above an Igor-B player while the shield is active. */
 export const NO_HOMO_KEY = "no-homo-indicator";
@@ -34,7 +34,7 @@ export const NO_HOMO_KEY = "no-homo-indicator";
 const RAINBOW = [0xff3b3b, 0xff9e2c, 0xffe14d, 0x49d65a, 0x3aa0ff, 0x9b4dff] as const;
 
 /** Build the 16×16 character-booster icon (a rainbow bullseye orb) once. */
-export function ensureCharacterIcon(scene: Phaser.Scene): void {
+function ensureCharacterIcon(scene: Phaser.Scene): void {
   if (scene.textures.exists(CHARACTER_ICON_KEY)) return;
   const g = scene.make.graphics();
   for (let i = 0; i < RAINBOW.length; i++) {
@@ -175,7 +175,7 @@ export class BoosterRenderer {
       );
       this.icons.set(b.id, quad);
     }
-    const offsets = wrapOffsets(x, y);
+    const offsets = wrapMirrorOffsets(x, y, SPRITE_SIZE / 2);
     for (let m = 0; m < QUAD; m++) {
       const img = quad[m]!;
       const off = offsets[m];
@@ -209,11 +209,12 @@ export class BoosterRenderer {
   }
 }
 
-/** Wrap-mirror offsets for a SPRITE_SIZE icon centered at (x, y). */
-function wrapOffsets(x: number, y: number): ([number, number] | undefined)[] {
-  const xs = x - SPRITE_SIZE / 2 < 0 ? [ARENA_WIDTH] : x + SPRITE_SIZE / 2 > ARENA_WIDTH ? [-ARENA_WIDTH] : [];
-  const ys =
-    y - SPRITE_SIZE / 2 < 0 ? [ARENA_HEIGHT] : y + SPRITE_SIZE / 2 > ARENA_HEIGHT ? [-ARENA_HEIGHT] : [];
+/** Wrap-mirror offsets for a `2*half`-wide sprite centered at (x, y): the main
+ *  copy plus up to 3 mirrors when it straddles an edge. Shared by the booster
+ *  icons here and the archer renderer's shield bubble / no-homo indicator. */
+export function wrapMirrorOffsets(x: number, y: number, half: number): [number, number][] {
+  const xs = x - half < 0 ? [ARENA_WIDTH] : x + half > ARENA_WIDTH ? [-ARENA_WIDTH] : [];
+  const ys = y - half < 0 ? [ARENA_HEIGHT] : y + half > ARENA_HEIGHT ? [-ARENA_HEIGHT] : [];
   const offsets: [number, number][] = [[0, 0]];
   for (const dx of xs) offsets.push([dx, 0]);
   for (const dy of ys) offsets.push([0, dy]);

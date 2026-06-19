@@ -7,7 +7,7 @@ import {
   type SimEvent
 } from "@shoot-and-run/sim";
 import { orderedFrameNames, type AsepriteData } from "./aseprite-data";
-import { ensureNoHomoTexture, NO_HOMO_KEY, SHIELD_BUBBLE_KEY } from "./boosters";
+import { ensureNoHomoTexture, NO_HOMO_KEY, SHIELD_BUBBLE_KEY, wrapMirrorOffsets } from "./boosters";
 import { archerAtlasKey } from "./cards";
 import type { PlayerInput } from "@shoot-and-run/sim";
 
@@ -261,15 +261,8 @@ export class ArcherRenderer {
       for (const img of quad) img.setVisible(false);
       return;
     }
-    const bob = Math.sin(this.scene.time.now / 200) * 1;
-    const cy = y - PLAYER_HEIGHT / 2 - 8 + bob; // float above the head
-    const HALF = 8;
-    const xs = x - HALF < 0 ? [ARENA_WIDTH] : x + HALF > ARENA_WIDTH ? [-ARENA_WIDTH] : [];
-    const ys = cy - HALF < 0 ? [ARENA_HEIGHT] : cy + HALF > ARENA_HEIGHT ? [-ARENA_HEIGHT] : [];
-    const offsets: [number, number][] = [[0, 0]];
-    for (const dx of xs) offsets.push([dx, 0]);
-    for (const dy of ys) offsets.push([0, dy]);
-    if (xs.length > 0 && ys.length > 0) offsets.push([xs[0]!, ys[0]!]);
+    const cy = y - PLAYER_HEIGHT / 2 - 8; // float above the head
+    const offsets = wrapMirrorOffsets(x, cy, 8);
     for (let m = 0; m < QUAD; m++) {
       const img = quad[m]!;
       const off = offsets[m];
@@ -292,12 +285,7 @@ export class ArcherRenderer {
     }
     this.shieldPos[slotIndex] = { x, y };
     const pulse = 0.6 + 0.2 * Math.sin(this.scene.time.now / 220);
-    const xs = x - BUBBLE_HALF < 0 ? [ARENA_WIDTH] : x + BUBBLE_HALF > ARENA_WIDTH ? [-ARENA_WIDTH] : [];
-    const ys = y - BUBBLE_HALF < 0 ? [ARENA_HEIGHT] : y + BUBBLE_HALF > ARENA_HEIGHT ? [-ARENA_HEIGHT] : [];
-    const offsets: [number, number][] = [[0, 0]];
-    for (const dx of xs) offsets.push([dx, 0]);
-    for (const dy of ys) offsets.push([0, dy]);
-    if (xs.length > 0 && ys.length > 0) offsets.push([xs[0]!, ys[0]!]);
+    const offsets = wrapMirrorOffsets(x, y, BUBBLE_HALF);
     for (let m = 0; m < QUAD; m++) {
       const img = quad[m]!;
       const off = offsets[m];
