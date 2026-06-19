@@ -36,7 +36,9 @@ export const TEST_TUNING: Tuning = {
   boosterFloatOffsetPx: 20,
   wallBuildDistancePx: 16,
   wallChargesPerPickup: 1,
-  wallLifetimeMs: 30000
+  wallLifetimeMs: 30000,
+  noHomoDurationMs: 30000,
+  noHomoRadiusPx: 16
 };
 
 /** Flat full-width floor (rows 13–14), nothing else. For wrap-X tests. */

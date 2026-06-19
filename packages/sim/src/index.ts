@@ -140,7 +140,7 @@ function buildSim(
         handleBuilding(state.players, inputs, state.walls, allocId, tuning, events, state.tick);
         handleShooting(state.players, inputs, state.arrows, allocId, tuning, events, state.tick);
         updateArrows(arena, state.arrows, state.walls, tuning, events, state.tick);
-        checkArrowKills(state.arrows, state.players, events, state.tick, friendlyFire);
+        checkArrowKills(state.arrows, state.players, tuning, events, state.tick, friendlyFire);
         resolveExplosions(state.arrows, state.players, tuning, events, state.tick, friendlyFire);
         state.arrows = collectPickups(
           state.arrows.filter((a) => a.phase !== "spent"),
@@ -230,7 +230,8 @@ export function createSim(config: SimConfig): Sim {
         flightTicksLeft: 0,
         shielded: false,
         wallCharges: 0,
-        prevBuildHeld: false
+        prevBuildHeld: false,
+        noHomoTicksLeft: 0
       };
     }),
     arrows: [],

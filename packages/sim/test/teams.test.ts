@@ -70,6 +70,7 @@ function mkPlayer(slot: number, team: number | null, over: Partial<PlayerState> 
     shielded: false,
     wallCharges: 0,
     prevBuildHeld: false,
+    noHomoTicksLeft: 0,
     ...over
   };
 }
@@ -172,14 +173,14 @@ describe("friendly fire off — kill suppression", () => {
     const foe = mkPlayer(2, 1);
     const arrow = mkArrow({ ownerSlot: 0 });
 
-    const noEvents: Parameters<typeof checkArrowKills>[2] = [];
-    checkArrowKills([arrow], [owner, mate], noEvents, farPastImmunity, false);
+    const noEvents: Parameters<typeof checkArrowKills>[3] = [];
+    checkArrowKills([arrow], [owner, mate], DERIVED, noEvents, farPastImmunity, false);
     expect(noEvents).toHaveLength(0);
     expect(mate.alive).toBe(true);
     expect(arrow.phase).toBe("flying"); // passed through, still flying
 
-    const killEvents: Parameters<typeof checkArrowKills>[2] = [];
-    checkArrowKills([mkArrow({ ownerSlot: 0 })], [owner, foe], killEvents, farPastImmunity, false);
+    const killEvents: Parameters<typeof checkArrowKills>[3] = [];
+    checkArrowKills([mkArrow({ ownerSlot: 0 })], [owner, foe], DERIVED, killEvents, farPastImmunity, false);
     expect(killEvents.find((e) => e.type === "player_killed")).toMatchObject({ victim: 2 });
     expect(foe.alive).toBe(false);
   });
@@ -187,8 +188,8 @@ describe("friendly fire off — kill suppression", () => {
   it("a teammate laser passes through without killing", () => {
     const mate = mkPlayer(1, 0);
     const laser = mkArrow({ ownerSlot: 0, kind: "laser" });
-    const events: Parameters<typeof checkArrowKills>[2] = [];
-    checkArrowKills([laser], [mkPlayer(0, 0), mate], events, farPastImmunity, false);
+    const events: Parameters<typeof checkArrowKills>[3] = [];
+    checkArrowKills([laser], [mkPlayer(0, 0), mate], DERIVED, events, farPastImmunity, false);
     expect(events).toHaveLength(0);
     expect(mate.alive).toBe(true);
   });
@@ -219,9 +220,9 @@ describe("friendly fire off — kill suppression", () => {
 describe("friendly fire on (default) and FFA are never suppressed", () => {
   it("with FF on, a teammate's arrow kills", () => {
     const mate = mkPlayer(1, 0);
-    const events: Parameters<typeof checkArrowKills>[2] = [];
+    const events: Parameters<typeof checkArrowKills>[3] = [];
     // Owner off the arrow so the teammate is the one in the line of fire.
-    checkArrowKills([mkArrow({ ownerSlot: 0 })], [mkPlayer(0, 0, { x: 200 }), mate], events, 999, true);
+    checkArrowKills([mkArrow({ ownerSlot: 0 })], [mkPlayer(0, 0, { x: 200 }), mate], DERIVED, events, 999, true);
     expect(mate.alive).toBe(false);
   });
 

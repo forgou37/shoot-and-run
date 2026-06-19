@@ -157,6 +157,7 @@ export function updatePlayer(
   }
   if (p.invisibleTicksLeft > 0) p.invisibleTicksLeft--;
   if (p.flightTicksLeft > 0) p.flightTicksLeft--;
+  if (p.noHomoTicksLeft > 0) p.noHomoTicksLeft--;
 
   p.prevJumpHeld = input.jump;
   p.prevDashHeld = input.dash;
