@@ -34,6 +34,7 @@
   "wallLifetimeMs": 30000,
   "noHomoDurationMs": 30000,
   "noHomoRadiusPx": 16,
+  "blackoutDurationMs": 10000,
   "input": {
     "stickDeadzone": 0.25
   },
@@ -50,7 +51,10 @@
     "bombBurstParticles": 48,
     "invisibilityOpacity": 0.2,
     "boosterBobAmplitudePx": 2,
-    "boosterBobPeriodMs": 1400
+    "boosterBobPeriodMs": 1400,
+    "blackoutDarknessAlpha": 0.88,
+    "blackoutLightRadiusPx": 38,
+    "blackoutMaksLightRadiusPx": 22
   },
   "net": {
     "inputDelayTicks": 3,

@@ -143,4 +143,5 @@ function resetPlayer(p: PlayerState, index: number, arena: ArenaData, t: Derived
   p.wallCharges = 0;
   p.prevBuildHeld = false;
   p.noHomoTicksLeft = 0;
+  p.blackoutTicksLeft = 0;
 }

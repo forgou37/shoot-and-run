@@ -231,7 +231,8 @@ export function createSim(config: SimConfig): Sim {
         shielded: false,
         wallCharges: 0,
         prevBuildHeld: false,
-        noHomoTicksLeft: 0
+        noHomoTicksLeft: 0,
+        blackoutTicksLeft: 0
       };
     }),
     arrows: [],

@@ -104,9 +104,12 @@ export function grant(p: PlayerState, contents: ChestContents, t: DerivedTuning)
  */
 function grantCharacterAbility(p: PlayerState, t: DerivedTuning): void {
   switch (p.slot) {
+    case 0: // Maks — "Blackout": a timed cosmetic screen-darken (shell-driven).
+      p.blackoutTicksLeft = t.blackoutTicks;
+      break;
     case 1: // Igor B — "No homo": a timed stomp/point-blank shield.
       p.noHomoTicksLeft = t.noHomoTicks;
       break;
-    // case 0 (Maks blackout), 2 (Lyosha seekers), 3 (Igor Sh phase): later phases.
+    // case 2 (Lyosha seekers), 3 (Igor Sh phase): later phases.
   }
 }

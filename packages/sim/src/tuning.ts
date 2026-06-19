@@ -60,6 +60,8 @@ export interface Tuning {
   /** Radius within which a kill source is negated by an active "No homo" shield
    *  (px, spec 019). Stomps are always negated regardless of distance. */
   noHomoRadiusPx: number;
+  /** "Blackout" duration (ms, spec 019, Maks). */
+  blackoutDurationMs: number;
 }
 
 const TUNING_KEYS: readonly (keyof Tuning)[] = [
@@ -97,7 +99,8 @@ const TUNING_KEYS: readonly (keyof Tuning)[] = [
   "wallChargesPerPickup",
   "wallLifetimeMs",
   "noHomoDurationMs",
-  "noHomoRadiusPx"
+  "noHomoRadiusPx",
+  "blackoutDurationMs"
 ];
 
 /** Validate untyped data (parsed content/tuning.json) as a Tuning object. */
@@ -158,6 +161,7 @@ export interface DerivedTuning extends Tuning {
   wallJumpLockTicks: number;
   wallLifetimeTicks: number;
   noHomoTicks: number;
+  blackoutTicks: number;
 }
 
 export function deriveTuning(t: Tuning): DerivedTuning {
@@ -174,6 +178,7 @@ export function deriveTuning(t: Tuning): DerivedTuning {
     flightTicks: msToTicks(t.flightDurationMs),
     chestIntervalTicks: msToTicks(t.chestIntervalMs),
     wallLifetimeTicks: msToTicks(t.wallLifetimeMs),
-    noHomoTicks: msToTicks(t.noHomoDurationMs)
+    noHomoTicks: msToTicks(t.noHomoDurationMs),
+    blackoutTicks: msToTicks(t.blackoutDurationMs)
   };
 }

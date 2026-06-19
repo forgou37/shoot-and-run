@@ -50,6 +50,7 @@ export function mkPlayer(over: Partial<PlayerState> & Pick<PlayerState, "slot" |
     wallCharges: 0,
     prevBuildHeld: false,
     noHomoTicksLeft: 0,
+    blackoutTicksLeft: 0,
     ...over
   };
 }
