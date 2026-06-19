@@ -110,6 +110,9 @@ function grantCharacterAbility(p: PlayerState, t: DerivedTuning): void {
     case 1: // Igor B — "No homo": a timed stomp/point-blank shield.
       p.noHomoTicksLeft = t.noHomoTicks;
       break;
-    // case 2 (Lyosha seekers), 3 (Igor Sh phase): later phases.
+    case 3: // Igor Sh — "Where am I?": charges of arrow-phasing, spent on build.
+      p.phaseChargesLeft += t.phaseCharges;
+      break;
+    // case 2 (Lyosha seekers): later phase.
   }
 }

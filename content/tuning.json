@@ -35,6 +35,8 @@
   "noHomoDurationMs": 30000,
   "noHomoRadiusPx": 16,
   "blackoutDurationMs": 10000,
+  "phaseDurationMs": 1000,
+  "phaseCharges": 3,
   "input": {
     "stickDeadzone": 0.25
   },

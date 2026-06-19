@@ -75,6 +75,7 @@ export function checkArrowKills(
     const ownerTeam = teamOf(players, a.ownerSlot);
     for (const p of players) {
       if (!p.alive) continue;
+      if (p.phaseTicksLeft > 0) continue; // "Where am I?": arrows pass through (spec 019)
       if (p.slot === a.ownerSlot && tick - a.firedTick < MUZZLE_IMMUNITY_TICKS) continue;
       const dx = wrapDelta(p.x - a.x, ARENA_WIDTH);
       const dy = wrapDelta(p.y - a.y, ARENA_HEIGHT);

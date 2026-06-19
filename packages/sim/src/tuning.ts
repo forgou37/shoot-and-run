@@ -62,6 +62,10 @@ export interface Tuning {
   noHomoRadiusPx: number;
   /** "Blackout" duration (ms, spec 019, Maks). */
   blackoutDurationMs: number;
+  /** "Where am I?" phase duration per charge (ms, spec 019, Igor Sh). */
+  phaseDurationMs: number;
+  /** Phase charges granted per character booster (integer ≥ 1, spec 019). */
+  phaseCharges: number;
 }
 
 const TUNING_KEYS: readonly (keyof Tuning)[] = [
@@ -100,7 +104,9 @@ const TUNING_KEYS: readonly (keyof Tuning)[] = [
   "wallLifetimeMs",
   "noHomoDurationMs",
   "noHomoRadiusPx",
-  "blackoutDurationMs"
+  "blackoutDurationMs",
+  "phaseDurationMs",
+  "phaseCharges"
 ];
 
 /** Validate untyped data (parsed content/tuning.json) as a Tuning object. */
@@ -137,6 +143,9 @@ export function parseTuning(data: unknown): Tuning {
   if (t.wallLifetimeMs <= 0) {
     throw new Error("tuning: wallLifetimeMs must be positive");
   }
+  if (!Number.isInteger(t.phaseCharges) || t.phaseCharges < 1) {
+    throw new Error("tuning: phaseCharges must be a positive integer");
+  }
   return TUNING_KEYS.reduce((acc, key) => {
     acc[key] = t[key];
     return acc;
@@ -162,6 +171,7 @@ export interface DerivedTuning extends Tuning {
   wallLifetimeTicks: number;
   noHomoTicks: number;
   blackoutTicks: number;
+  phaseTicks: number;
 }
 
 export function deriveTuning(t: Tuning): DerivedTuning {
@@ -179,6 +189,7 @@ export function deriveTuning(t: Tuning): DerivedTuning {
     chestIntervalTicks: msToTicks(t.chestIntervalMs),
     wallLifetimeTicks: msToTicks(t.wallLifetimeMs),
     noHomoTicks: msToTicks(t.noHomoDurationMs),
-    blackoutTicks: msToTicks(t.blackoutDurationMs)
+    blackoutTicks: msToTicks(t.blackoutDurationMs),
+    phaseTicks: msToTicks(t.phaseDurationMs)
   };
 }

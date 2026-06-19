@@ -64,6 +64,8 @@ const BOOSTER_COLORS: Record<ChestContents, number> = {
   character: 0xff5fd0
 };
 const SHIELD_RING_COLOR = 0x9fd8ff;
+/** Phase-charge pip color (spec 019, Igor Sh "Where am I?"). */
+const PHASE_PIP_COLOR = 0xc9b8ff;
 const PAUSE_OPTIONS = ["Resume", "To Lobby", "To Title"] as const;
 
 interface PrevPositions {
@@ -552,7 +554,10 @@ export class ArenaScene extends Phaser.Scene {
           radius: p.blackoutTicksLeft > 0 ? this.juice.blackoutMaksLightRadiusPx : this.juice.blackoutLightRadiusPx
         });
       }
-      const playerAlpha = p.invisibleTicksLeft > 0 ? this.juice.invisibilityOpacity : 1;
+      // Phasing (spec 019, Igor Sh) reuses the invisibility low-alpha path.
+      const playerAlpha =
+        p.invisibleTicksLeft > 0 || p.phaseTicksLeft > 0 ? this.juice.invisibilityOpacity : 1;
+      if (p.alive && p.phaseChargesLeft > 0) this.drawPhaseCharges(p.phaseChargesLeft, x, y);
       if (this.archers) {
         const aim = this.lastInputs[i] ? aimSuffix(this.lastInputs[i]!) : "";
         this.archers.update(p, i, x, y, playerAlpha, aim);
@@ -600,6 +605,17 @@ export class ArenaScene extends Phaser.Scene {
         2,
         2
       );
+    }
+  }
+
+  /** Phase charges (spec 019, Igor Sh): one pip per remaining charge below the
+   *  feet, at full alpha so they stay readable while the player is phased-out. */
+  private drawPhaseCharges(charges: number, x: number, y: number): void {
+    const shown = Math.min(charges, 6);
+    const totalWidth = shown * 3 - 1;
+    this.entityGfx.fillStyle(PHASE_PIP_COLOR, 1);
+    for (let i = 0; i < shown; i++) {
+      this.entityGfx.fillRect(x - totalWidth / 2 + i * 3, y + PLAYER_HEIGHT / 2 + 2, 2, 2);
     }
   }
 

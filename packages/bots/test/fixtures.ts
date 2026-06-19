@@ -51,6 +51,8 @@ export function mkPlayer(over: Partial<PlayerState> & Pick<PlayerState, "slot" |
     prevBuildHeld: false,
     noHomoTicksLeft: 0,
     blackoutTicksLeft: 0,
+    phaseChargesLeft: 0,
+    phaseTicksLeft: 0,
     ...over
   };
 }
