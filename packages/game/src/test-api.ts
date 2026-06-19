@@ -49,12 +49,15 @@ export interface TestApi {
 declare global {
   interface Window {
     __testApi?: TestApi;
+    /** Dev-only Phaser game handle for browser inspection (textures, scenes). */
+    __game?: Phaser.Game;
   }
 }
 
 /** Install the base hook at boot: getPhase reflects the active scene. */
 export function installBaseTestApi(game: Phaser.Game): void {
   if (!import.meta.env.DEV) return;
+  window.__game = game; // ponytail: dev-only debug handle; stripped from prod builds
   window.__testApi = {
     getPhase: () => {
       const sm = game.scene;

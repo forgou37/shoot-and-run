@@ -40,6 +40,7 @@ import { FixedStepDriver } from "../loop";
 import { ARCHER_TAGS, ArcherRenderer, aimSuffix, animKey, loadArcherAssets } from "../render/archer";
 import { ArrowRenderer, loadArrowAssets } from "../render/arrows";
 import { BoosterRenderer, loadBoosterAssets } from "../render/boosters";
+import { BlackoutRenderer, type LightSpot } from "../render/blackout";
 import { EnvironmentRenderer, loadEnvironmentAssets, themeFromArena } from "../render/environment";
 import { WallRenderer } from "../render/walls";
 
@@ -117,6 +118,8 @@ export class ArenaScene extends Phaser.Scene {
   private boosters: BoosterRenderer | null = null;
   /** Deployed-wall sprites (spec 018); null in `?rects=1` debug mode. */
   private wallSprites: WallRenderer | null = null;
+  /** Maks "Blackout" darkness overlay (spec 019); null in `?rects=1` debug mode. */
+  private blackout: BlackoutRenderer | null = null;
   /** Last sampled inputs per slot — drives the shell-side directional aim pose. */
   private lastInputs: PlayerInput[] = [];
 
@@ -192,6 +195,7 @@ export class ArenaScene extends Phaser.Scene {
         tuning.boosterFloatOffsetPx
       );
       this.wallSprites = new WallRenderer(this);
+      this.blackout = new BlackoutRenderer(this, this.juice.blackoutDarknessAlpha);
     }
     this.createParticles();
     this.overlayText = addPixelText(this, ARENA_WIDTH / 2, ARENA_HEIGHT / 2 - 24, "", 22, "#ffffff")
@@ -532,10 +536,22 @@ export class ArenaScene extends Phaser.Scene {
     } else {
       for (const w of this.sim.state.walls) this.drawWallOutline(w);
     }
+    // Maks "Blackout" (spec 019): collect a light spot per alive player while
+    // any blackout is active — the owner (timer > 0) gets a small pool, others
+    // a broad one. Empty when inactive, which hides the overlay.
+    const blackoutActive = this.sim.state.players.some((p) => p.blackoutTicksLeft > 0);
+    const lightSpots: LightSpot[] = [];
     this.sim.state.players.forEach((p, i) => {
       const prev = this.prev.players[i] ?? p;
       const x = lerpWrapped(prev.x, p.x, alpha, ARENA_WIDTH);
       const y = lerpWrapped(prev.y, p.y, alpha, ARENA_HEIGHT);
+      if (blackoutActive && p.alive) {
+        lightSpots.push({
+          x,
+          y,
+          radius: p.blackoutTicksLeft > 0 ? this.juice.blackoutMaksLightRadiusPx : this.juice.blackoutLightRadiusPx
+        });
+      }
       const playerAlpha = p.invisibleTicksLeft > 0 ? this.juice.invisibilityOpacity : 1;
       if (this.archers) {
         const aim = this.lastInputs[i] ? aimSuffix(this.lastInputs[i]!) : "";
@@ -568,6 +584,7 @@ export class ArenaScene extends Phaser.Scene {
       }
     }
     this.arrowSprites?.endFrame();
+    this.blackout?.update(lightSpots);
   }
 
   /** Ammo readout: one dot per arrow, colored by kind, above the head.

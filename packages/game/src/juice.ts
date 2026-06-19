@@ -11,7 +11,10 @@ const JUICE_KEYS = [
   "bombBurstParticles",
   "invisibilityOpacity",
   "boosterBobAmplitudePx",
-  "boosterBobPeriodMs"
+  "boosterBobPeriodMs",
+  "blackoutDarknessAlpha",
+  "blackoutLightRadiusPx",
+  "blackoutMaksLightRadiusPx"
 ] as const;
 
 export type JuiceConfig = Record<(typeof JUICE_KEYS)[number], number>;
