@@ -72,6 +72,8 @@ function mkPlayer(slot: number, team: number | null, over: Partial<PlayerState> 
     prevBuildHeld: false,
     noHomoTicksLeft: 0,
     blackoutTicksLeft: 0,
+    phaseChargesLeft: 0,
+    phaseTicksLeft: 0,
     ...over
   };
 }

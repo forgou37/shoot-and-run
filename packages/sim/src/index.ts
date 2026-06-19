@@ -11,7 +11,7 @@ import { updateRound } from "./round";
 import { deepClone, type SimSnapshot } from "./snapshot";
 import type { SimState } from "./state";
 import { deriveTuning, type DerivedTuning, type Tuning } from "./tuning";
-import { expireWalls, handleBuilding, resolveWallCollisions } from "./wall";
+import { expireWalls, handleBuilding, handlePhase, resolveWallCollisions } from "./wall";
 
 export const SIM_VERSION = "0.0.0";
 
@@ -137,6 +137,7 @@ function buildSim(
         });
         resolveWallCollisions(state.players, state.walls);
         checkStomps(state.players, tuning, events, state.tick, friendlyFire);
+        handlePhase(state.players, inputs, tuning);
         handleBuilding(state.players, inputs, state.walls, allocId, tuning, events, state.tick);
         handleShooting(state.players, inputs, state.arrows, allocId, tuning, events, state.tick);
         updateArrows(arena, state.arrows, state.walls, tuning, events, state.tick);
@@ -232,7 +233,9 @@ export function createSim(config: SimConfig): Sim {
         wallCharges: 0,
         prevBuildHeld: false,
         noHomoTicksLeft: 0,
-        blackoutTicksLeft: 0
+        blackoutTicksLeft: 0,
+        phaseChargesLeft: 0,
+        phaseTicksLeft: 0
       };
     }),
     arrows: [],

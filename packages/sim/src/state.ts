@@ -55,6 +55,13 @@ export interface PlayerState {
    *  arena and spotlights other players. Purely cosmetic — no gameplay effect. A
    *  timer; cleared on death/round reset. */
   blackoutTicksLeft: number;
+  /** "Where am I?" phase charges (spec 019, Igor Sh / slot 3): each build-press
+   *  spends one to phase. A persistent count — no timer. Cleared on death/reset. */
+  phaseChargesLeft: number;
+  /** "Where am I?" phase timer (spec 019): while > 0 arrows pass through this
+   *  player without harm (stomps/bombs still land). Decrements each tick;
+   *  cleared on death/round reset. */
+  phaseTicksLeft: number;
 }
 
 /** "exploding" and "spent" are transient within a tick: a contacted bomb is

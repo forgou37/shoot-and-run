@@ -7,14 +7,18 @@ import {
   deriveTuning,
   emptyInput,
   grant,
+  handleBuilding,
+  handlePhase,
   MUZZLE_IMMUNITY_TICKS,
   protectedByNoHomo,
   resolveExplosions,
   type ArrowState,
   type BoosterState,
+  type PlayerInput,
   type PlayerState,
   type Sim,
-  type SimEvent
+  type SimEvent,
+  type WallState
 } from "../src/index";
 import { FLAT_ARENA, TEST_TUNING } from "./fixtures";
 
@@ -57,6 +61,8 @@ function mkPlayer(slot: number, over: Partial<PlayerState> = {}): PlayerState {
     prevBuildHeld: false,
     noHomoTicksLeft: 0,
     blackoutTicksLeft: 0,
+    phaseChargesLeft: 0,
+    phaseTicksLeft: 0,
     ...over
   };
 }
@@ -93,12 +99,16 @@ describe("character booster — grant dispatch (spec 019)", () => {
     expect(maks.blackoutTicksLeft).toBe(DERIVED.blackoutTicks);
     expect(maks.noHomoTicksLeft).toBe(0);
 
-    for (const slot of [2, 3]) {
-      const p = mkPlayer(slot);
-      grant(p, "character", DERIVED);
-      expect(p.noHomoTicksLeft).toBe(0); // filled in by later phases
-      expect(p.blackoutTicksLeft).toBe(0);
-    }
+    const igorSh = mkPlayer(3);
+    grant(igorSh, "character", DERIVED);
+    expect(igorSh.phaseChargesLeft).toBe(DERIVED.phaseCharges);
+    expect(igorSh.phaseTicksLeft).toBe(0); // charges only — phasing is spent on build
+
+    const lyosha = mkPlayer(2);
+    grant(lyosha, "character", DERIVED);
+    expect(lyosha.noHomoTicksLeft).toBe(0); // filled in by Phase 4
+    expect(lyosha.blackoutTicksLeft).toBe(0);
+    expect(lyosha.phaseChargesLeft).toBe(0);
   });
 
   it("collecting a floating character booster grants the ability (Igor B)", () => {
@@ -236,5 +246,78 @@ describe("blackout (spec 019, Maks / slot 0)", () => {
     for (let i = 0; i < delay; i++) sim.step([emptyInput(), emptyInput()]);
     expect(sim.state.round.phase).toBe("running");
     expect(sim.state.players[0]!.blackoutTicksLeft).toBe(0);
+  });
+});
+
+describe("phase / 'Where am I?' (spec 019, Igor Sh / slot 3)", () => {
+  const build = (over: Partial<PlayerInput> = {}): PlayerInput => ({ ...emptyInput(), build: true, ...over });
+
+  it("a build edge spends a charge, starts the phase, and builds no wall", () => {
+    const p = mkPlayer(3, { phaseChargesLeft: 2, wallCharges: 5, prevBuildHeld: false });
+    const walls: WallState[] = [];
+    let nextId = 1;
+    handlePhase([p], [build()], DERIVED);
+    handleBuilding([p], [build()], walls, () => nextId++, DERIVED, [], 0);
+    expect(p.phaseChargesLeft).toBe(1); // one charge spent
+    expect(p.phaseTicksLeft).toBe(DERIVED.phaseTicks);
+    expect(walls.length).toBe(0); // phase consumed the edge → no wall built
+    expect(p.wallCharges).toBe(5); // wall charge untouched
+  });
+
+  it("with no charge, the build edge falls through to wall building", () => {
+    const p = mkPlayer(3, { phaseChargesLeft: 0, wallCharges: 1, prevBuildHeld: false });
+    const walls: WallState[] = [];
+    let nextId = 1;
+    handlePhase([p], [build()], DERIVED);
+    handleBuilding([p], [build()], walls, () => nextId++, DERIVED, [], 0);
+    expect(p.phaseTicksLeft).toBe(0);
+    expect(walls.length).toBe(1); // a normal wall
+  });
+
+  it("does not re-trigger while already phasing (needs a fresh press)", () => {
+    const p = mkPlayer(3, { phaseChargesLeft: 2, phaseTicksLeft: 10, prevBuildHeld: false });
+    handlePhase([p], [build()], DERIVED);
+    expect(p.phaseChargesLeft).toBe(2); // already phasing → no spend
+    expect(p.phaseTicksLeft).toBe(10);
+  });
+
+  it("arrows pass through a phasing player (keep flying); a stomp still lands", () => {
+    const victim = mkPlayer(3, { x: 100, y: 100, phaseTicksLeft: 30 });
+    const arrow = mkArrow({ ownerSlot: 0, x: 100, y: 100 });
+    const events: SimEvent[] = [];
+    checkArrowKills([arrow], [mkPlayer(0, { x: 50 }), victim], DERIVED, events, farPastImmunity, true);
+    expect(victim.alive).toBe(true);
+    expect(arrow.phase).toBe("flying"); // unaffected — does NOT stick (unlike no-homo)
+    expect(events.length).toBe(0);
+
+    // Stomps are unaffected by phase (arrows only): the same player is stompable.
+    const attacker = mkPlayer(0, { x: 100, y: 88, vy: 20 });
+    const phasing = mkPlayer(3, { x: 100, y: 100, vy: 0, phaseTicksLeft: 30 });
+    const ev2: SimEvent[] = [];
+    checkStomps([attacker, phasing], DERIVED, ev2, 10, true);
+    expect(phasing.alive).toBe(false);
+  });
+
+  it("once the phase timer expires, arrows kill again", () => {
+    const victim = mkPlayer(3, { x: 100, y: 100, phaseTicksLeft: 0 });
+    const events: SimEvent[] = [];
+    checkArrowKills([mkArrow({ ownerSlot: 0, x: 100, y: 100 })], [mkPlayer(0, { x: 50 }), victim], DERIVED, events, farPastImmunity, true);
+    expect(victim.alive).toBe(false);
+  });
+
+  it("the phase timer decrements each tick and clears on round reset", () => {
+    const sim = createSim({ arena: FLAT_ARENA, tuning: TEST_TUNING, players: [{ slot: 0 }, { slot: 3 }], seed: 4 });
+    sim.state.players[1]!.phaseTicksLeft = 3;
+    sim.state.players[1]!.phaseChargesLeft = 2;
+    sim.step([emptyInput(), emptyInput()]);
+    expect(sim.state.players[1]!.phaseTicksLeft).toBe(2); // decremented
+
+    sim.state.players[1]!.alive = false; // P0 wins → round ends
+    sim.step([emptyInput(), emptyInput()]);
+    const delay = DERIVED.roundRestartDelayTicks + 2;
+    for (let i = 0; i < delay; i++) sim.step([emptyInput(), emptyInput()]);
+    expect(sim.state.round.phase).toBe("running");
+    expect(sim.state.players[1]!.phaseTicksLeft).toBe(0);
+    expect(sim.state.players[1]!.phaseChargesLeft).toBe(0);
   });
 });

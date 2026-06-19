@@ -264,6 +264,32 @@ export function expireWalls(walls: WallState[], events: SimEvent[], tick: number
 }
 
 /**
+ * "Where am I?" phase activation (spec 019, Igor Sh). Runs BEFORE handleBuilding
+ * so a held phase charge takes precedence over building. On a fresh build-press
+ * edge, for an alive player not already phasing with a charge to spend: spend it,
+ * start the phase timer, and consume the edge (set prevBuildHeld) so the same
+ * press builds no wall this tick. For every other player it leaves prevBuildHeld
+ * untouched, so handleBuilding's edge detection stays correct (only one of the
+ * two functions ever writes prevBuildHeld for a given player on a given tick).
+ */
+export function handlePhase(
+  players: PlayerState[],
+  inputs: readonly PlayerInput[],
+  t: DerivedTuning
+): void {
+  players.forEach((p, i) => {
+    if (!p.alive) return;
+    const input = inputs[i]!;
+    const pressed = input.build && !p.prevBuildHeld;
+    if (pressed && p.phaseTicksLeft === 0 && p.phaseChargesLeft > 0) {
+      p.phaseChargesLeft--;
+      p.phaseTicksLeft = t.phaseTicks;
+      p.prevBuildHeld = input.build; // consume the edge → handleBuilding builds nothing
+    }
+  });
+}
+
+/**
  * Per alive player, on the build-press edge: if a charge is available, spend one
  * and append a wall placed in front of the player along the aim direction.
  * Building with no charge is a no-op (no event, no charge change). Mirrors
