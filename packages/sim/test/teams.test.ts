@@ -71,6 +71,7 @@ function mkPlayer(slot: number, team: number | null, over: Partial<PlayerState> 
     wallCharges: 0,
     prevBuildHeld: false,
     noHomoTicksLeft: 0,
+    blackoutTicksLeft: 0,
     ...over
   };
 }

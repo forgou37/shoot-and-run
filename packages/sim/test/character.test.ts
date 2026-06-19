@@ -56,6 +56,7 @@ function mkPlayer(slot: number, over: Partial<PlayerState> = {}): PlayerState {
     wallCharges: 0,
     prevBuildHeld: false,
     noHomoTicksLeft: 0,
+    blackoutTicksLeft: 0,
     ...over
   };
 }
@@ -81,15 +82,22 @@ function mkArrow(over: Partial<ArrowState> = {}): ArrowState {
 const farPastImmunity = MUZZLE_IMMUNITY_TICKS + 5;
 
 describe("character booster — grant dispatch (spec 019)", () => {
-  it("grants Igor B (slot 1) the no-homo timer; other slots are a no-op", () => {
+  it("grants Igor B (slot 1) the no-homo timer; Maks (slot 0) the blackout timer", () => {
     const igorB = mkPlayer(1);
     grant(igorB, "character", DERIVED);
     expect(igorB.noHomoTicksLeft).toBe(DERIVED.noHomoTicks);
+    expect(igorB.blackoutTicksLeft).toBe(0);
 
-    for (const slot of [0, 2, 3]) {
+    const maks = mkPlayer(0);
+    grant(maks, "character", DERIVED);
+    expect(maks.blackoutTicksLeft).toBe(DERIVED.blackoutTicks);
+    expect(maks.noHomoTicksLeft).toBe(0);
+
+    for (const slot of [2, 3]) {
       const p = mkPlayer(slot);
       grant(p, "character", DERIVED);
       expect(p.noHomoTicksLeft).toBe(0); // filled in by later phases
+      expect(p.blackoutTicksLeft).toBe(0);
     }
   });
 
@@ -200,5 +208,33 @@ describe("no-homo lifecycle (spec 019)", () => {
       return ev;
     };
     expect(JSON.stringify(scenario())).toBe(JSON.stringify(scenario()));
+  });
+});
+
+describe("blackout (spec 019, Maks / slot 0)", () => {
+  it("the timer decrements each tick and changes no gameplay", () => {
+    const sim = createSim({ arena: FLAT_ARENA, tuning: TEST_TUNING, players: [{ slot: 0 }, { slot: 1 }], seed: 5 });
+    // Baseline event stream with no blackout active.
+    const baseline = createSim({ arena: FLAT_ARENA, tuning: TEST_TUNING, players: [{ slot: 0 }, { slot: 1 }], seed: 5 });
+    sim.state.players[0]!.blackoutTicksLeft = 5;
+    let ev = "";
+    let evBase = "";
+    for (let i = 0; i < 8; i++) {
+      ev += JSON.stringify(sim.step([emptyInput(), emptyInput()]));
+      evBase += JSON.stringify(baseline.step([emptyInput(), emptyInput()]));
+    }
+    expect(sim.state.players[0]!.blackoutTicksLeft).toBe(0); // 5 → 0, then clamped
+    expect(ev).toBe(evBase); // purely cosmetic: identical events with/without blackout
+  });
+
+  it("round reset clears the blackout timer", () => {
+    const sim = createSim({ arena: FLAT_ARENA, tuning: TEST_TUNING, players: [{ slot: 0 }, { slot: 1 }], seed: 3 });
+    sim.state.players[0]!.blackoutTicksLeft = 500;
+    sim.state.players[1]!.alive = false; // P0 wins → round ends
+    sim.step([emptyInput(), emptyInput()]);
+    const delay = DERIVED.roundRestartDelayTicks + 2;
+    for (let i = 0; i < delay; i++) sim.step([emptyInput(), emptyInput()]);
+    expect(sim.state.round.phase).toBe("running");
+    expect(sim.state.players[0]!.blackoutTicksLeft).toBe(0);
   });
 });

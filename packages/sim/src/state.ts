@@ -51,6 +51,10 @@ export interface PlayerState {
    *  immune to stomps and to any kill whose source is within noHomoRadiusPx. A
    *  timer, not a charge — blocking does not consume it. Cleared on death/reset. */
   noHomoTicksLeft: number;
+  /** "Blackout" timer (spec 019, Maks / slot 0): while > 0 the shell darkens the
+   *  arena and spotlights other players. Purely cosmetic — no gameplay effect. A
+   *  timer; cleared on death/round reset. */
+  blackoutTicksLeft: number;
 }
 
 /** "exploding" and "spent" are transient within a tick: a contacted bomb is

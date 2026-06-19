@@ -38,7 +38,8 @@ export const TEST_TUNING: Tuning = {
   wallChargesPerPickup: 1,
   wallLifetimeMs: 30000,
   noHomoDurationMs: 30000,
-  noHomoRadiusPx: 16
+  noHomoRadiusPx: 16,
+  blackoutDurationMs: 10000
 };
 
 /** Flat full-width floor (rows 13–14), nothing else. For wrap-X tests. */
