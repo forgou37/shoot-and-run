@@ -11,7 +11,7 @@ import { updateRound } from "./round";
 import { deepClone, type SimSnapshot } from "./snapshot";
 import type { SimState } from "./state";
 import { deriveTuning, type DerivedTuning, type Tuning } from "./tuning";
-import { handleBuilding, resolveWallCollisions } from "./wall";
+import { expireWalls, handleBuilding, resolveWallCollisions } from "./wall";
 
 export const SIM_VERSION = "0.0.0";
 
@@ -130,6 +130,7 @@ function buildSim(
         events.push({ tick: 0, type: "round_started" });
       }
       if (state.round.phase === "running") {
+        state.walls = expireWalls(state.walls, events, state.tick);
         state.players.forEach((p, i) => {
           if (!p.alive) return;
           updatePlayer(p, inputs[i]!, arena, tuning);

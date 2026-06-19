@@ -246,6 +246,24 @@ function segmentBoxEntry(
 }
 
 /**
+ * Drop walls whose lifetime has elapsed (spec 018), in build order. A timed
+ * despawn reuses the wall_destroyed event an arrow dissolve emits, so the shell's
+ * dissolve FX and the net codec need no new event. Returns the survivors.
+ */
+export function expireWalls(walls: WallState[], events: SimEvent[], tick: number): WallState[] {
+  if (walls.length === 0) return walls;
+  const survivors: WallState[] = [];
+  for (const w of walls) {
+    if (tick >= w.expireTick) {
+      events.push({ tick, type: "wall_destroyed", wallId: w.id, x: w.x, y: w.y });
+    } else {
+      survivors.push(w);
+    }
+  }
+  return survivors;
+}
+
+/**
  * Per alive player, on the build-press edge: if a charge is available, spend one
  * and append a wall placed in front of the player along the aim direction.
  * Building with no charge is a no-op (no event, no charge change). Mirrors
@@ -272,7 +290,14 @@ export function handleBuilding(
     const x = wrapMod(p.x + nx * t.wallBuildDistancePx, ARENA_WIDTH);
     const y = wrapMod(p.y + ny * t.wallBuildDistancePx, ARENA_HEIGHT);
     const rotation = wallRotation(nx, ny);
-    const wall: WallState = { id: allocId(), ownerSlot: p.slot, x, y, rotation };
+    const wall: WallState = {
+      id: allocId(),
+      ownerSlot: p.slot,
+      x,
+      y,
+      rotation,
+      expireTick: tick + t.wallLifetimeTicks
+    };
     walls.push(wall);
     events.push({ tick, type: "wall_built", wallId: wall.id, slot: p.slot, x, y, rotation });
   });

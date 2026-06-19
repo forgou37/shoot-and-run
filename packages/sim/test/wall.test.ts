@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { ArenaData } from "../src/arena";
 import { WALL_HALF_LENGTH, WALL_HALF_THICKNESS } from "../src/constants";
-import { createSim, type Sim, type SimEvent } from "../src/index";
+import { createSim, msToTicks, type Sim, type SimEvent } from "../src/index";
 import { emptyInput, type PlayerInput } from "../src/input";
 import { ARENA_HEIGHT, ARENA_WIDTH } from "../src/arena";
 import { wrapDelta } from "../src/physics";
@@ -207,11 +207,35 @@ describe("wall building (spec 018 T18.1)", () => {
     expect(sim.state.players.every((p) => p.wallCharges === 0)).toBe(true);
     expect(sim.state.players.every((p) => p.prevBuildHeld === false)).toBe(true);
   });
+
+  it("a built wall dissolves on its own after its lifetime (timed despawn)", () => {
+    const sim = makeSim();
+    sim.state.players[0]!.wallCharges = 1;
+    const buildTick = sim.state.tick;
+    sim.step([inp({ build: true }), emptyInput()]);
+    const wall = sim.state.walls[0]!;
+
+    const lifeTicks = msToTicks(TEST_TUNING.wallLifetimeMs);
+    expect(lifeTicks).toBe(1800); // 30s @ 60Hz
+    expect(wall.expireTick).toBe(buildTick + lifeTicks);
+
+    let destroyed: SimEvent | undefined;
+    for (let i = 0; i < lifeTicks + 5 && sim.state.walls.length > 0; i++) {
+      destroyed ??= sim.step([emptyInput(), emptyInput()]).find((e) => e.type === "wall_destroyed");
+    }
+    expect(sim.state.walls).toHaveLength(0);
+    expect(destroyed).toMatchObject({
+      type: "wall_destroyed",
+      wallId: wall.id,
+      tick: wall.expireTick
+    });
+  });
 });
 
 let nextWallId = 9000;
 function addWall(sim: Sim, x: number, y: number, rotation: 0 | 45 | 90 | 135, ownerSlot = 0): WallState {
-  const wall: WallState = { id: nextWallId++, ownerSlot, x, y, rotation };
+  // Far-future expiry so collision tests (a handful of ticks) never see a despawn.
+  const wall: WallState = { id: nextWallId++, ownerSlot, x, y, rotation, expireTick: 1e9 };
   sim.state.walls.push(wall);
   return wall;
 }

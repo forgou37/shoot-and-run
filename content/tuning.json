@@ -31,6 +31,7 @@
   "boosterFloatOffsetPx": 20,
   "wallBuildDistancePx": 16,
   "wallChargesPerPickup": 1,
+  "wallLifetimeMs": 30000,
   "input": {
     "stickDeadzone": 0.25
   },

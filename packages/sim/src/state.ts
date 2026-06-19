@@ -129,6 +129,9 @@ export interface WallState {
   x: number;
   y: number;
   rotation: 0 | 45 | 90 | 135;
+  /** Absolute tick the wall dissolves on its own (built tick + wallLifetimeTicks,
+   *  spec 018). Reaching it emits the same wall_destroyed event an arrow hit does. */
+  expireTick: number;
 }
 
 export interface MatchState {

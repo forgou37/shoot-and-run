@@ -34,7 +34,7 @@ Everything that is not in the current spec lives here. New ideas land here first
 - Dodge/roll with brief invulnerability.
 - Shield pickup that absorbs one hit.
 - Arrow-vs-arrow collision (deflection).
-- Build-wall follow-ups (deferred from spec 018): placement validation (refuse to build inside terrain/another wall), a build cooldown, per-player/arena wall caps beyond one-charge-per-pickup; timed wall despawn or multi-hit walls (018: one arrow dissolves it); bot wall-awareness (path around / use walls); weighted chest tables to bias the wall drop rate; bomb-blast line-of-sight occlusion by walls (018 keeps blasts a pure radius); deeper platforming on built walls (coyote/wall-jump/-slide off a built wall — basic stand-on works).
+- Build-wall follow-ups (deferred from spec 018): placement validation (refuse to build inside terrain/another wall), a build cooldown, per-player/arena wall caps beyond one-charge-per-pickup; multi-hit walls (018: one arrow dissolves it) — a timed 30s despawn shipped 2026-06-19 (`wallLifetimeMs`, reuses `wall_destroyed`); bot wall-awareness (path around / use walls); weighted chest tables to bias the wall drop rate; bomb-blast line-of-sight occlusion by walls (018 keeps blasts a pure radius); deeper platforming on built walls (coyote/wall-jump/-slide off a built wall — basic stand-on works).
 
 ## Power-ups (invisibility + flight moved to spec 002)
 
