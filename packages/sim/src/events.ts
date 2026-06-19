@@ -35,4 +35,14 @@ export type SimEvent =
       slot: number;
       contents: ChestContents;
     }
-  | { tick: number; type: "shield_blocked"; slot: number };
+  | { tick: number; type: "shield_blocked"; slot: number }
+  | {
+      tick: number;
+      type: "wall_built";
+      wallId: number;
+      slot: number;
+      x: number;
+      y: number;
+      rotation: 0 | 45 | 90 | 135;
+    }
+  | { tick: number; type: "wall_destroyed"; wallId: number; x: number; y: number };

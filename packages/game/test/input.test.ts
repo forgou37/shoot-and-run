@@ -68,7 +68,7 @@ describe("parsePlayersConfig (spec 003 reshape)", () => {
 describe("readStandardGamepad (standard mapping, A3.2)", () => {
   it("ignores stick movement within the deadzone", () => {
     const input = readStandardGamepad(fakePad({ axes: [0.2, -0.2] }), DEADZONE);
-    expect(input).toEqual({ left: false, right: false, up: false, down: false, jump: false, shoot: false, dash: false });
+    expect(input).toEqual({ left: false, right: false, up: false, down: false, jump: false, shoot: false, dash: false, build: false });
   });
 
   it("maps the left stick past the deadzone to directions", () => {
@@ -85,12 +85,34 @@ describe("readStandardGamepad (standard mapping, A3.2)", () => {
     expect(readStandardGamepad(fakePad({ pressed: [15] }), DEADZONE).right).toBe(true);
   });
 
-  it("maps A→jump (0), X→shoot (2), RB→dash (5), Start→pause (9)", () => {
+  it("maps A→jump (0), B→build (1), X→shoot (2), RB→dash (5), Start→pause (9)", () => {
     expect(readStandardGamepad(fakePad({ pressed: [0] }), DEADZONE).jump).toBe(true);
+    expect(readStandardGamepad(fakePad({ pressed: [1] }), DEADZONE).build).toBe(true);
     expect(readStandardGamepad(fakePad({ pressed: [2] }), DEADZONE).shoot).toBe(true);
     expect(readStandardGamepad(fakePad({ pressed: [5] }), DEADZONE).dash).toBe(true);
     expect(readPausePressed(fakePad({ pressed: [9] }))).toBe(true);
     expect(readPausePressed(fakePad())).toBe(false);
+  });
+});
+
+describe("KeyboardInput build binding (spec 018 T18.3)", () => {
+  it("samples the configured build key from content/players.json", () => {
+    const handlers = new Map<string, (e: { code: string }) => void>();
+    const win = {
+      addEventListener: (t: string, h: (e: { code: string }) => void) => handlers.set(t, h),
+      removeEventListener: (t: string) => handlers.delete(t)
+    } as unknown as Window;
+
+    const kb = new KeyboardInput(win);
+    const keys = parsePlayersConfig(playersJson).keyboards[0]!;
+    expect(keys.build).toBe("KeyR"); // profile 0 build binding
+
+    expect(kb.sample(keys).build).toBe(false);
+    handlers.get("keydown")!({ code: keys.build });
+    expect(kb.sample(keys).build).toBe(true);
+    handlers.get("keyup")!({ code: keys.build });
+    expect(kb.sample(keys).build).toBe(false);
+    kb.dispose();
   });
 });
 
@@ -103,7 +125,7 @@ describe("GamepadDevice", () => {
 
     pad = null; // unplugged
     expect(dev.connected).toBe(false);
-    expect(dev.sample()).toEqual({ left: false, right: false, up: false, down: false, jump: false, shoot: false, dash: false });
+    expect(dev.sample()).toEqual({ left: false, right: false, up: false, down: false, jump: false, shoot: false, dash: false, build: false });
     expect(dev.pausePressed()).toBe(false);
   });
 });

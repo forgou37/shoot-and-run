@@ -14,7 +14,7 @@ import { type PlayerInput } from "./input";
  * carrying any other value is rejected with ProtocolVersionError, so peers on
  * mismatched builds fail loudly at the handshake instead of desyncing silently.
  */
-export const PROTOCOL_VERSION = 1;
+export const PROTOCOL_VERSION = 2;
 
 /** A frame failed to parse (truncated / malformed). */
 export class WireFormatError extends Error {
@@ -37,7 +37,8 @@ export class ProtocolVersionError extends Error {
 
 /**
  * Pack a PlayerInput into one byte. Bit 0 left, 1 right, 2 up, 3 down, 4 jump,
- * 5 shoot, 6 dash; bit 7 reserved (always 0).
+ * 5 shoot, 6 dash, 7 build (spec 018 — was the reserved bit; PROTOCOL_VERSION
+ * bumped so peers on mismatched builds fail at the handshake).
  */
 export function encodeInputByte(input: PlayerInput): number {
   return (
@@ -47,11 +48,12 @@ export function encodeInputByte(input: PlayerInput): number {
     (input.down ? 1 << 3 : 0) |
     (input.jump ? 1 << 4 : 0) |
     (input.shoot ? 1 << 5 : 0) |
-    (input.dash ? 1 << 6 : 0)
+    (input.dash ? 1 << 6 : 0) |
+    (input.build ? 1 << 7 : 0)
   );
 }
 
-/** Unpack a PlayerInput from one byte (bit 7 is ignored). */
+/** Unpack a PlayerInput from one byte (all 8 bits map to a flag). */
 export function decodeInputByte(byte: number): PlayerInput {
   return {
     left: (byte & 1) !== 0,
@@ -60,7 +62,8 @@ export function decodeInputByte(byte: number): PlayerInput {
     down: (byte & (1 << 3)) !== 0,
     jump: (byte & (1 << 4)) !== 0,
     shoot: (byte & (1 << 5)) !== 0,
-    dash: (byte & (1 << 6)) !== 0
+    dash: (byte & (1 << 6)) !== 0,
+    build: (byte & (1 << 7)) !== 0
   };
 }
 

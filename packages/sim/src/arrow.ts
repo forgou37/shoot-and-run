@@ -1,10 +1,11 @@
 import { ARENA_HEIGHT, ARENA_WIDTH, TILE_SIZE, type ArenaData } from "./arena";
 import { ARROW_HALF_LONG, ARROW_HALF_SHORT, DT, PICKUP_RADIUS } from "./constants";
 import type { SimEvent } from "./events";
-import type { PlayerInput } from "./input";
+import { aimDir, type PlayerInput } from "./input";
 import { moveAxisX, moveAxisY, solidAt, wrapDelta, wrapMod } from "./physics";
-import type { ArrowState, PlayerState } from "./state";
+import type { ArrowState, PlayerState, WallState } from "./state";
 import type { DerivedTuning } from "./tuning";
+import { earliestWallHit } from "./wall";
 
 /** Flying arrows are a thin box aligned to their dominant velocity axis. */
 export function arrowHalves(a: { vx: number; vy: number }): { hw: number; hh: number } {
@@ -34,18 +35,7 @@ export function handleShooting(
     p.prevShootHeld = input.shoot;
     if (!pressed || p.quiver.length === 0) return;
 
-    const dirX = (input.right ? 1 : 0) - (input.left ? 1 : 0);
-    const dirY = (input.down ? 1 : 0) - (input.up ? 1 : 0);
-    let nx: number;
-    let ny: number;
-    if (dirX === 0 && dirY === 0) {
-      nx = p.facing;
-      ny = 0;
-    } else {
-      const len = Math.sqrt(dirX * dirX + dirY * dirY);
-      nx = dirX / len;
-      ny = dirY / len;
-    }
+    const { nx, ny } = aimDir(input, p.facing);
 
     const kind = p.quiver.shift()!;
     const arrow: ArrowState = {
@@ -67,6 +57,9 @@ export function handleShooting(
   });
 }
 
+/** What an arrow's move this tick resolves to, before any event is emitted. */
+type ArrowOutcome = "fly" | "stick" | "explode";
+
 /**
  * Flight per kind:
  * - normal: slight gravity, sticks on first solid hit
@@ -75,75 +68,107 @@ export function handleShooting(
  * - laser: straight line (no gravity), passes through the first contiguous
  *   obstacle, embeds in the second (center-point sampling; arrow speed per
  *   tick is well under a tile, so no tunneling)
+ *
+ * After the tile move, the arrow's swept path (pre → post) is tested against
+ * every wall (spec 018). A wall on the path is one-shot cover: it dissolves and
+ * stops the arrow (normal/laser/bounce stick, bomb explodes), overriding the tile
+ * outcome — the wall always lies on or before the tile stop along this segment.
+ * This runs before checkArrowKills, so a wall reliably shields the player behind
+ * it. Walls never reflect a bounce arrow: it is caught and sticks.
  */
 export function updateArrows(
   arena: ArenaData,
   arrows: ArrowState[],
+  walls: WallState[],
   t: DerivedTuning,
   events: SimEvent[],
   tick: number
 ): void {
   for (const a of arrows) {
     if (a.phase !== "flying") continue;
-    if (a.kind === "laser") {
-      updateLaser(a, arena, events, tick);
-      continue;
-    }
-    a.vy += t.arrowGravity * DT;
+    const preX = a.x;
+    const preY = a.y;
     const { hw, hh } = arrowHalves(a);
 
-    const movedX = moveAxisX(arena, a.x, a.y, hw, hh, a.vx * DT);
-    a.x = movedX.pos;
-    if (movedX.hit) {
-      if (a.kind === "bomb") {
-        a.phase = "exploding";
-        continue;
-      }
-      if (a.kind === "bounce" && a.bouncesLeft > 0) {
-        a.vx = -a.vx;
-        a.bouncesLeft--;
-      } else {
-        stick(a, events, tick);
-        continue;
+    let outcome: ArrowOutcome =
+      a.kind === "laser" ? moveLaser(a, arena) : moveBallistic(a, arena, t);
+
+    if (walls.length > 0) {
+      const hit = earliestWallHit(preX, preY, a.x, a.y, hw, hh, walls);
+      if (hit) {
+        a.x = hit.x;
+        a.y = hit.y;
+        const idx = walls.indexOf(hit.wall);
+        if (idx >= 0) walls.splice(idx, 1);
+        events.push({
+          tick,
+          type: "wall_destroyed",
+          wallId: hit.wall.id,
+          x: hit.wall.x,
+          y: hit.wall.y
+        });
+        outcome = a.kind === "bomb" ? "explode" : "stick";
       }
     }
-    const movedY = moveAxisY(arena, a.x, a.y, hw, hh, a.vy * DT);
-    a.y = movedY.pos;
-    if (movedY.hit) {
-      if (a.kind === "bomb") {
-        a.phase = "exploding";
-        continue;
-      }
-      if (a.kind === "bounce" && a.bouncesLeft > 0) {
-        a.vy = -a.vy;
-        a.bouncesLeft--;
-      } else {
-        stick(a, events, tick);
-      }
+
+    if (outcome === "explode") {
+      a.phase = "exploding";
+    } else if (outcome === "stick") {
+      a.phase = "stuck";
+      a.vx = 0;
+      a.vy = 0;
+      events.push({ tick, type: "arrow_stuck", arrowId: a.id, x: a.x, y: a.y });
     }
   }
 }
 
-function updateLaser(a: ArrowState, arena: ArenaData, events: SimEvent[], tick: number): void {
+/** Ballistic move (normal/bomb/bounce) for one tick. Mutates position/velocity;
+ *  returns the tile outcome without emitting (the caller emits after the wall
+ *  sweep so wall and tile outcomes can't double-fire). */
+function moveBallistic(a: ArrowState, arena: ArenaData, t: DerivedTuning): ArrowOutcome {
+  a.vy += t.arrowGravity * DT;
+  const { hw, hh } = arrowHalves(a);
+
+  const movedX = moveAxisX(arena, a.x, a.y, hw, hh, a.vx * DT);
+  a.x = movedX.pos;
+  if (movedX.hit) {
+    if (a.kind === "bomb") return "explode";
+    if (a.kind === "bounce" && a.bouncesLeft > 0) {
+      a.vx = -a.vx;
+      a.bouncesLeft--;
+    } else {
+      return "stick";
+    }
+  }
+
+  const movedY = moveAxisY(arena, a.x, a.y, hw, hh, a.vy * DT);
+  a.y = movedY.pos;
+  if (movedY.hit) {
+    if (a.kind === "bomb") return "explode";
+    if (a.kind === "bounce" && a.bouncesLeft > 0) {
+      a.vy = -a.vy;
+      a.bouncesLeft--;
+    } else {
+      return "stick";
+    }
+  }
+  return "fly";
+}
+
+/** Laser move for one tick: straight line, pierces the first contiguous obstacle
+ *  and embeds in the second. Returns the tile outcome without emitting. */
+function moveLaser(a: ArrowState, arena: ArenaData): ArrowOutcome {
   a.x = wrapMod(a.x + a.vx * DT, ARENA_WIDTH);
   a.y = wrapMod(a.y + a.vy * DT, ARENA_HEIGHT);
   const solidNow = solidAt(arena, Math.floor(a.x / TILE_SIZE), Math.floor(a.y / TILE_SIZE));
   if (a.pierced) {
-    if (solidNow) {
-      stick(a, events, tick); // embeds inside the second obstacle
-    }
+    if (solidNow) return "stick"; // embeds inside the second obstacle
   } else if (a.insideSolid && !solidNow) {
     a.pierced = true;
   } else if (solidNow) {
     a.insideSolid = true;
   }
-}
-
-function stick(a: ArrowState, events: SimEvent[], tick: number): void {
-  a.phase = "stuck";
-  a.vx = 0;
-  a.vy = 0;
-  events.push({ tick, type: "arrow_stuck", arrowId: a.id, x: a.x, y: a.y });
+  return "fly";
 }
 
 /**

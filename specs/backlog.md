@@ -21,6 +21,7 @@ Everything that is not in the current spec lives here. New ideas land here first
 | 012 | Player-hosted / listen-server: WebRTC DataChannel P2P, NAT traversal + TURN, host-leaving policy + **host migration** (moved from 013 — only meaningful with a player-host) | 011 |
 | 013 | Netplay polish (dedicated-server): spectators, reconnection, metrics, anti-cheat posture, lag-comp tuning — **done** (T13.1–T13.6, specs/013-netplay-polish.md; reordered ahead of 012 — these five ride the 011 dedicated host, host migration split out to 012) | 011 ✓ |
 | 017 | Lobby character select: pick your card with arrows/gamepad, exclusive per character, host places bots — **done** (specs/017-character-select.md; shell-only) | 003 ✓ |
+| 018 | Build-wall booster: a chest item grants a build charge; a dedicated button deploys a neutral solid 4×24 wall in front, dissolved when shot — **done** (specs/018-build-wall.md; first entity-vs-entity solid) | 002 ✓ |
 
 ---
 
@@ -33,6 +34,7 @@ Everything that is not in the current spec lives here. New ideas land here first
 - Dodge/roll with brief invulnerability.
 - Shield pickup that absorbs one hit.
 - Arrow-vs-arrow collision (deflection).
+- Build-wall follow-ups (deferred from spec 018): placement validation (refuse to build inside terrain/another wall), a build cooldown, per-player/arena wall caps beyond one-charge-per-pickup; multi-hit walls (018: one arrow dissolves it) — a timed 30s despawn shipped 2026-06-19 (`wallLifetimeMs`, reuses `wall_destroyed`); bot wall-awareness (path around / use walls); weighted chest tables to bias the wall drop rate; bomb-blast line-of-sight occlusion by walls (018 keeps blasts a pure radius); deeper platforming on built walls (coyote/wall-jump/-slide off a built wall — basic stand-on works).
 
 ## Power-ups (invisibility + flight moved to spec 002)
 

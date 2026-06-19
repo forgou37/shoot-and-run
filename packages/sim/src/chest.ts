@@ -14,7 +14,8 @@ const CHEST_CONTENTS_POOL: readonly ChestContents[] = [
   "bounce",
   "invisibility",
   "flight",
-  "shield"
+  "shield",
+  "wall"
 ];
 
 /**

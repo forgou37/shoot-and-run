@@ -47,6 +47,8 @@ export function mkPlayer(over: Partial<PlayerState> & Pick<PlayerState, "slot" |
     invisibleTicksLeft: 0,
     flightTicksLeft: 0,
     shielded: false,
+    wallCharges: 0,
+    prevBuildHeld: false,
     ...over
   };
 }
@@ -76,6 +78,7 @@ export function mkState(players: PlayerState[], arrows: ArrowState[] = [], chest
     arrows,
     chests,
     boosters: [],
+    walls: [],
     nextChestTick: 999999
   };
 }

@@ -6,7 +6,7 @@
     { "slot": 3, "name": "Igor Sh", "color": "#81c784" }
   ],
   "keyboards": [
-    { "left": "KeyA", "right": "KeyD", "up": "KeyW", "down": "KeyS", "jump": "KeyG", "shoot": "KeyF", "dash": "ShiftLeft" },
-    { "left": "ArrowLeft", "right": "ArrowRight", "up": "ArrowUp", "down": "ArrowDown", "jump": "Period", "shoot": "Slash", "dash": "ShiftRight" }
+    { "left": "KeyA", "right": "KeyD", "up": "KeyW", "down": "KeyS", "jump": "KeyG", "shoot": "KeyF", "dash": "ShiftLeft", "build": "KeyR" },
+    { "left": "ArrowLeft", "right": "ArrowRight", "up": "ArrowUp", "down": "ArrowDown", "jump": "Period", "shoot": "Slash", "dash": "ShiftRight", "build": "Comma" }
   ]
 }

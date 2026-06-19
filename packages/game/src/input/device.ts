@@ -57,9 +57,10 @@ export interface GamepadLike {
 const btn = (pad: GamepadLike, i: number): boolean => pad.buttons[i]?.pressed ?? false;
 
 /**
- * Standard-mapping gamepad → PlayerInput (spec 003 fixed point):
+ * Standard-mapping gamepad → PlayerInput (spec 003 fixed point + spec 018 build):
  * left-stick axes 0/1 past `deadzone`, OR d-pad buttons 12–15, for direction;
- * button 0 (A/Cross) jump, button 2 (X/Square) shoot, button 5 (RB) dash.
+ * button 0 (A/Cross) jump, button 2 (X/Square) shoot, button 5 (RB) dash,
+ * button 1 (B/Circle) build.
  */
 export function readStandardGamepad(pad: GamepadLike, deadzone: number): PlayerInput {
   const ax = pad.axes[0] ?? 0;
@@ -71,7 +72,8 @@ export function readStandardGamepad(pad: GamepadLike, deadzone: number): PlayerI
     down: ay > deadzone || btn(pad, 13),
     jump: btn(pad, 0),
     shoot: btn(pad, 2),
-    dash: btn(pad, 5)
+    dash: btn(pad, 5),
+    build: btn(pad, 1)
   };
 }
 

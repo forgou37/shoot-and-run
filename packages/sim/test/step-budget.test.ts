@@ -41,7 +41,8 @@ function scriptedInput(tick: number, slot: number): PlayerInput {
     down: false,
     jump: tick % 24 === slot * 6,
     shoot: tick % 9 === (slot * 2) % 9,
-    dash: phase % 31 === 0
+    dash: phase % 31 === 0,
+    build: phase % 53 === 0
   };
 }
 

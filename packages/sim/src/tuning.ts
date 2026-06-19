@@ -49,6 +49,12 @@ export interface Tuning {
   specialArrowsPerChest: number;
   /** Height a popped booster floats above its chest's spot before pickup (px). */
   boosterFloatOffsetPx: number;
+  /** Distance in front of the player center where a built wall spawns (spec 018, px). */
+  wallBuildDistancePx: number;
+  /** Build charges granted per "wall" booster collected (integer ≥ 1, spec 018). */
+  wallChargesPerPickup: number;
+  /** Lifetime of a built wall before it dissolves on its own (ms, spec 018). */
+  wallLifetimeMs: number;
 }
 
 const TUNING_KEYS: readonly (keyof Tuning)[] = [
@@ -81,7 +87,10 @@ const TUNING_KEYS: readonly (keyof Tuning)[] = [
   "chestIntervalMs",
   "maxChestsAlive",
   "specialArrowsPerChest",
-  "boosterFloatOffsetPx"
+  "boosterFloatOffsetPx",
+  "wallBuildDistancePx",
+  "wallChargesPerPickup",
+  "wallLifetimeMs"
 ];
 
 /** Validate untyped data (parsed content/tuning.json) as a Tuning object. */
@@ -112,6 +121,12 @@ export function parseTuning(data: unknown): Tuning {
   if (!Number.isInteger(t.specialArrowsPerChest) || t.specialArrowsPerChest < 1) {
     throw new Error("tuning: specialArrowsPerChest must be a positive integer");
   }
+  if (!Number.isInteger(t.wallChargesPerPickup) || t.wallChargesPerPickup < 1) {
+    throw new Error("tuning: wallChargesPerPickup must be a positive integer");
+  }
+  if (t.wallLifetimeMs <= 0) {
+    throw new Error("tuning: wallLifetimeMs must be positive");
+  }
   return TUNING_KEYS.reduce((acc, key) => {
     acc[key] = t[key];
     return acc;
@@ -134,6 +149,7 @@ export interface DerivedTuning extends Tuning {
   dashTicks: number;
   dashCooldownTicks: number;
   wallJumpLockTicks: number;
+  wallLifetimeTicks: number;
 }
 
 export function deriveTuning(t: Tuning): DerivedTuning {
@@ -148,6 +164,7 @@ export function deriveTuning(t: Tuning): DerivedTuning {
     matchRestartDelayTicks: msToTicks(t.matchRestartDelayMs),
     invisibilityTicks: msToTicks(t.invisibilityDurationMs),
     flightTicks: msToTicks(t.flightDurationMs),
-    chestIntervalTicks: msToTicks(t.chestIntervalMs)
+    chestIntervalTicks: msToTicks(t.chestIntervalMs),
+    wallLifetimeTicks: msToTicks(t.wallLifetimeMs)
   };
 }

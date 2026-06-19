@@ -9,17 +9,21 @@ import {
   PLAYER_HEIGHT,
   PLAYER_WIDTH,
   TILE_SIZE,
+  WALL_HALF_LENGTH,
+  WALL_HALF_THICKNESS,
   arrowHalves,
   createSim,
   parseArena,
   parseTuning,
+  wallAxes,
   wrapMod,
   type ArenaData,
   type ArrowKind,
   type ChestContents,
   type PlayerInput,
   type Sim,
-  type SimEvent
+  type SimEvent,
+  type WallState
 } from "@shoot-and-run/sim";
 import arenaJson from "../../../../content/arenas/arena-003.json";
 import tuningJson from "../../../../content/tuning.json";
@@ -37,6 +41,7 @@ import { ARCHER_TAGS, ArcherRenderer, aimSuffix, animKey, loadArcherAssets } fro
 import { ArrowRenderer, loadArrowAssets } from "../render/arrows";
 import { BoosterRenderer, loadBoosterAssets } from "../render/boosters";
 import { EnvironmentRenderer, loadEnvironmentAssets, themeFromArena } from "../render/environment";
+import { WallRenderer } from "../render/walls";
 
 const TILE_COLOR = 0x5a5a6e;
 const CHEST_COLOR = 0xd4a017;
@@ -53,7 +58,8 @@ const BOOSTER_COLORS: Record<ChestContents, number> = {
   bounce: 0xffd740,
   invisibility: 0xcdbfe8,
   flight: 0xe8f2ff,
-  shield: 0x4fa3e8
+  shield: 0x4fa3e8,
+  wall: 0x9e9e9e
 };
 const SHIELD_RING_COLOR = 0x9fd8ff;
 const PAUSE_OPTIONS = ["Resume", "To Lobby", "To Title"] as const;
@@ -108,6 +114,8 @@ export class ArenaScene extends Phaser.Scene {
   private arrowSprites: ArrowRenderer | null = null;
   /** Floating booster sprites (spec 014); null in `?rects=1` debug mode. */
   private boosters: BoosterRenderer | null = null;
+  /** Deployed-wall sprites (spec 018); null in `?rects=1` debug mode. */
+  private wallSprites: WallRenderer | null = null;
   /** Last sampled inputs per slot — drives the shell-side directional aim pose. */
   private lastInputs: PlayerInput[] = [];
 
@@ -182,6 +190,7 @@ export class ArenaScene extends Phaser.Scene {
         this.juice.boosterBobPeriodMs,
         tuning.boosterFloatOffsetPx
       );
+      this.wallSprites = new WallRenderer(this);
     }
     this.createParticles();
     this.overlayText = addPixelText(this, ARENA_WIDTH / 2, ARENA_HEIGHT / 2 - 24, "", 22, "#ffffff")
@@ -336,6 +345,7 @@ export class ArenaScene extends Phaser.Scene {
     this.applyJuice(events);
     this.archers?.onEvents(events);
     this.boosters?.onEvents(events);
+    this.wallSprites?.onEvents(events, (slot) => this.tintForSlot(slot));
     if (events.length > 0) {
       this.eventLog.push(...events);
       if (this.eventLog.length > 1000) {
@@ -512,6 +522,15 @@ export class ArenaScene extends Phaser.Scene {
         this.drawWrappedRect(b.x, b.y, BOOSTER_WIDTH, BOOSTER_HEIGHT, BOOSTER_COLORS[b.contents]);
       }
     }
+    // Deployed walls (spec 018): owner-tinted planks, or oriented rect outlines
+    // in ?rects debug mode. Static — no interpolation.
+    if (this.wallSprites) {
+      this.wallSprites.beginFrame();
+      for (const w of this.sim.state.walls) this.wallSprites.draw(w, this.tintForSlot(w.ownerSlot));
+      this.wallSprites.endFrame();
+    } else {
+      for (const w of this.sim.state.walls) this.drawWallOutline(w);
+    }
     this.sim.state.players.forEach((p, i) => {
       const prev = this.prev.players[i] ?? p;
       const x = lerpWrapped(prev.x, p.x, alpha, ARENA_WIDTH);
@@ -581,6 +600,42 @@ export class ArenaScene extends Phaser.Scene {
     return this.teamsMode
       ? `Team ${String(roundWinner + 1)} wins!`
       : `${this.slotName(roundWinner)} wins!`;
+  }
+
+  /** Phaser color int for a slot's roster color (white if unknown). */
+  private tintForSlot(slot: number): number {
+    const hex = this.slots.find((s) => s.slot === slot)?.color ?? "#ffffff";
+    return Phaser.Display.Color.HexStringToColor(hex).color;
+  }
+
+  /** ?rects=1 fallback: stroke a wall's oriented box outline, wrap-mirrored. */
+  private drawWallOutline(w: WallState): void {
+    const ax = wallAxes(w.rotation);
+    const ux = ax.ux * WALL_HALF_LENGTH;
+    const uy = ax.uy * WALL_HALF_LENGTH;
+    const vx = ax.vx * WALL_HALF_THICKNESS;
+    const vy = ax.vy * WALL_HALF_THICKNESS;
+    const corners: [number, number][] = [
+      [ux + vx, uy + vy],
+      [ux - vx, uy - vy],
+      [-ux - vx, -uy - vy],
+      [-ux + vx, -uy + vy]
+    ];
+    const xs = [0];
+    const ys = [0];
+    if (w.x - WALL_HALF_LENGTH < 0) xs.push(ARENA_WIDTH);
+    if (w.x + WALL_HALF_LENGTH > ARENA_WIDTH) xs.push(-ARENA_WIDTH);
+    if (w.y - WALL_HALF_LENGTH < 0) ys.push(ARENA_HEIGHT);
+    if (w.y + WALL_HALF_LENGTH > ARENA_HEIGHT) ys.push(-ARENA_HEIGHT);
+    this.entityGfx.lineStyle(1, this.tintForSlot(w.ownerSlot), 0.9);
+    for (const dx of xs) {
+      for (const dy of ys) {
+        this.entityGfx.strokePoints(
+          corners.map(([px, py]) => new Phaser.Geom.Point(w.x + dx + px, w.y + dy + py)),
+          true
+        );
+      }
+    }
   }
 
   /** Draw a centered rect, plus mirror copies when it straddles arena edges. */

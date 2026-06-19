@@ -10,7 +10,7 @@ import {
   serializeInputFrame
 } from "../src/wire";
 
-/** Build a PlayerInput from a 7-bit pattern (bit 0 left ... bit 6 dash). */
+/** Build a PlayerInput from an 8-bit pattern (bit 0 left ... bit 6 dash, bit 7 build). */
 function inputFromBits(bits: number): PlayerInput {
   return {
     left: (bits & 1) !== 0,
@@ -19,13 +19,14 @@ function inputFromBits(bits: number): PlayerInput {
     down: (bits & 8) !== 0,
     jump: (bits & 16) !== 0,
     shoot: (bits & 32) !== 0,
-    dash: (bits & 64) !== 0
+    dash: (bits & 64) !== 0,
+    build: (bits & 128) !== 0
   };
 }
 
 describe("input serialization (T8.4 / N5)", () => {
-  it("round-trips all 128 input combinations through a single byte", () => {
-    for (let bits = 0; bits < 128; bits++) {
+  it("round-trips all 256 input combinations through a single byte", () => {
+    for (let bits = 0; bits < 256; bits++) {
       const input = inputFromBits(bits);
       const bytes = serializeInput(input);
       expect(bytes.length).toBe(1);
@@ -34,9 +35,11 @@ describe("input serialization (T8.4 / N5)", () => {
     }
   });
 
-  it("ignores the reserved high bit when decoding", () => {
-    // 0xFF = all 7 flags + reserved bit 7; decode must equal the all-flags input.
-    expect(deserializeInput(Uint8Array.of(0xff))).toEqual(inputFromBits(0x7f));
+  it("decodes the build flag in the high bit (spec 018, bit 7)", () => {
+    // 0xFF = all 8 flags incl. build; 0x80 = build only.
+    expect(deserializeInput(Uint8Array.of(0xff))).toEqual(inputFromBits(0xff));
+    expect(deserializeInput(Uint8Array.of(0x80)).build).toBe(true);
+    expect(deserializeInput(Uint8Array.of(0x7f)).build).toBe(false);
   });
 
   it("frame round-trips tick + inputs across varint sizes", () => {

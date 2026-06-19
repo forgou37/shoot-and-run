@@ -68,6 +68,8 @@ function mkPlayer(slot: number, team: number | null, over: Partial<PlayerState> 
     invisibleTicksLeft: 0,
     flightTicksLeft: 0,
     shielded: false,
+    wallCharges: 0,
+    prevBuildHeld: false,
     ...over
   };
 }

@@ -42,6 +42,11 @@ export interface PlayerState {
   /** Shield charge (spec 014): absorbs the first lethal hit, then clears.
    *  A persistent charge — no timer. Cleared on death/round reset. */
   shielded: boolean;
+  /** Build charges (spec 018): each spends one deployable wall. A persistent
+   *  count — no timer. Granted by a "wall" booster, cleared on death/round reset. */
+  wallCharges: number;
+  /** Previous tick's build-held state, for press edge detection. */
+  prevBuildHeld: boolean;
 }
 
 /** "exploding" and "spent" are transient within a tick: a contacted bomb is
@@ -80,7 +85,12 @@ export interface RoundState {
   number: number;
 }
 
-export type ChestContents = Exclude<ArrowKind, "normal"> | "invisibility" | "flight" | "shield";
+export type ChestContents =
+  | Exclude<ArrowKind, "normal">
+  | "invisibility"
+  | "flight"
+  | "shield"
+  | "wall";
 
 export interface ChestState {
   id: number;
@@ -105,6 +115,25 @@ export interface BoosterState {
   spawnTick: number;
 }
 
+/**
+ * A deployed wall (spec 018): a thin 4×24 solid plank built in front of a player.
+ * Neutral — it blocks every player and every arrow (including the builder's own).
+ * Removed when a flying arrow hits it. `ownerSlot` is for FX tint + event
+ * attribution only; collision ignores it. `rotation` is the sprite rotation of the
+ * base (vertical) wall; the collider derives local length/thickness axes from it
+ * with exact constants so stored state stays JSON-stable.
+ */
+export interface WallState {
+  id: number;
+  ownerSlot: number;
+  x: number;
+  y: number;
+  rotation: 0 | 45 | 90 | 135;
+  /** Absolute tick the wall dissolves on its own (built tick + wallLifetimeTicks,
+   *  spec 018). Reaching it emits the same wall_destroyed event an arrow hit does. */
+  expireTick: number;
+}
+
 export interface MatchState {
   /** Per-player round-survival count, by player index (parallel to players).
    *  In teams mode this still tallies individual survivals but does not decide
@@ -127,6 +156,8 @@ export interface SimState {
   chests: ChestState[];
   /** Floating boosters popped by opened chests, awaiting pickup (spec 014). */
   boosters: BoosterState[];
+  /** Deployed walls (spec 018), in build order; each blocks until an arrow hits it. */
+  walls: WallState[];
   /** Next tick a chest spawn is attempted (arena must have chestSpots). */
   nextChestTick: number;
 }
